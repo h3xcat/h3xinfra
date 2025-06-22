@@ -1,0 +1,16 @@
+wildcardCertificate:
+  annotations: {}
+  dnsNames: []
+  commonName: ""
+clusterIssuerName: cloudflare-clusterissuer
+
+ipPool:
+  namespace: metallb-system
+  ipAddressPools:
+    annotations: {}
+    addresses:
+      ipv4: "192.168.101.100/32"
+      ipv6: "2001:db8:face::100/128"
+  l2Advertisement:
+    annotations: {}
+  autoAssign: false

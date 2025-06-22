@@ -1,0 +1,33 @@
+---
+# K3s teardown using external orchestration tool
+
+# Check if K3s binary exists before teardown on each node
+- name: Check K3s binary before teardown
+  hosts: k3s_cluster
+  gather_facts: false
+  tasks:
+    - name: Check if K3s binary exists
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary_before
+
+    - name: Set fact if K3s binary was found on this node
+      ansible.builtin.set_fact:
+        k3s_was_installed_on_node: "{{ k3s_binary_before.stat.exists }}"
+
+# Run the external K3s reset tool
+- import_playbook: k3s.orchestration.reset
+
+# Check if K3s binary was actually removed on each node
+- name: Check K3s binary after teardown
+  hosts: k3s_cluster
+  gather_facts: false
+  tasks:
+    - name: Check if K3s binary still exists
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary_after
+
+    - name: Set fact that K3s was removed on this node
+      ansible.builtin.set_fact:
+        k3s_was_removed_on_node: "{{ k3s_was_installed_on_node | default(false) and not k3s_binary_after.stat.exists }}"

@@ -1,0 +1,69 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Deploy Ingress-Nginx via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Add Ingress-Nginx Helm repository
+      kubernetes.core.helm_repository:
+        name: ingress-nginx
+        repo_url: https://kubernetes.github.io/ingress-nginx
+        state: present
+
+    - name: Create Ingress-Nginx namespace
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ ingressnginx_namespace }}"
+        state: present
+        wait: true
+
+    - name: Deploy Ingress-Nginx configuration via Helm
+      kubernetes.core.helm:
+        name: "{{ ingressnginx_release_name_prefix }}-pre"
+        chart_ref: "{{ playbook_dir }}/charts/h3xinfra-ingressnginx-pre"
+        namespace: "{{ ingressnginx_namespace }}"
+        create_namespace: false
+        values:
+          fullnameOverride: "{{ ingressnginx_release_name_prefix }}-pre"
+          wildcardCertificate:
+            commonName: "{{ ingressnginx_dns_names | first }}"
+          clusterIssuerName: "{{ certmanager_release_name_prefix }}-post-default-clusterissuer"
+          ipPool:
+            namespace: "{{ metallb_namespace }}"
+            ipAddressPools:
+              addresses:
+                ipv4: "{{ ingressnginx_loadbalancer_pools.ipv4 }}"
+                ipv6: "{{ ingressnginx_loadbalancer_pools.ipv6 }}"
+        set_values:
+        - value: "wildcardCertificate.dnsNames={{ ingressnginx_dns_names | to_json }}"
+          value_type: json
+        state: present
+        wait: true
+        timeout: "120s"
+
+    - name: Deploy Ingress-Nginx via Helm
+      kubernetes.core.helm:
+        name: "{{ ingressnginx_release_name_prefix }}-main"
+        chart_ref: "ingress-nginx/ingress-nginx"
+        chart_version: "{{ ingressnginx_chart_version }}"
+        namespace: "{{ ingressnginx_namespace }}"
+        create_namespace: false
+        values: 
+          controller:
+            service:
+              ipFamilies:
+                - IPv4
+                - IPv6
+              ipFamilyPolicy: PreferDualStack
+              annotations:
+                metallb.universe.tf/address-pool: "{{ ingressnginx_release_name_prefix }}-pre-pool"
+            extraArgs:
+              default-ssl-certificate: "{{ingressnginx_namespace}}/{{ ingressnginx_release_name_prefix }}-pre-wildcard-certificate"
+
+        state: present
+        wait: true
+        timeout: "120s"
+        

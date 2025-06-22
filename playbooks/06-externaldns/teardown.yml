@@ -1,0 +1,32 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Remove ExternalDNS via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Uninstall ExternalDNS via Helm
+      kubernetes.core.helm:
+        name: "{{ externaldns_release_name_prefix }}-main"
+        namespace: "{{ externaldns_namespace }}"
+        state: absent
+        wait: true
+        timeout: "300s"
+        
+    - name: Uninstall ExternalDNS configuration via Helm
+      kubernetes.core.helm:
+        name: "{{ externaldns_release_name_prefix }}-pre"
+        namespace: "{{ externaldns_namespace }}"
+        state: absent
+        wait: true
+        timeout: "300s"
+
+    - name: Remove ExternalDNS namespace
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Namespace
+        name: "{{ externaldns_namespace }}"
+        wait: true
+        timeout: "300s"

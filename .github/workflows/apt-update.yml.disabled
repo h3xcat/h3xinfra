@@ -1,0 +1,45 @@
+name: Apt Update
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 0'  # Run weekly at 2:00 AM on Sunday
+
+jobs:
+  apt_update:
+    name: Update apt packages on all nodes
+    
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          
+      - name: Setup Runner Environment
+        run: bash ./bin/setup-runner.sh
+        env:
+          WIREGUARD_CLIENT_IP: ${{ secrets.WIREGUARD_CLIENT_IP }}
+          WIREGUARD_NETWORK_CIDR: ${{ secrets.WIREGUARD_NETWORK_CIDR }}
+          WIREGUARD_GATEWAY_IP: ${{ secrets.WIREGUARD_GATEWAY_IP }}
+          WIREGUARD_PEER_PUBLIC_KEY: ${{ secrets.WIREGUARD_PEER_PUBLIC_KEY }}
+          WIREGUARD_ENDPOINT: ${{ secrets.WIREGUARD_ENDPOINT }}
+          WIREGUARD_PRIVATE_KEY: ${{ secrets.WIREGUARD_PRIVATE_KEY }}
+          WIREGUARD_PRESHARED_KEY: ${{ secrets.WIREGUARD_PRESHARED_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      
+      - name: Install Ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible
+      
+      - name: Run apt update playbook
+        run: |
+          ansible-playbook playbooks/99-utils/apt.yaml
+

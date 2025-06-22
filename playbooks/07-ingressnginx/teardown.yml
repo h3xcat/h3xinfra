@@ -1,0 +1,32 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Remove Ingress-Nginx via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Uninstall Ingress-Nginx via Helm
+      kubernetes.core.helm:
+        name: "{{ ingressnginx_release_name_prefix }}-main"
+        namespace: "{{ ingressnginx_namespace }}"
+        state: absent
+        wait: true
+        timeout: "300s"
+
+    - name: Uninstall Ingress-Nginx configuration via Helm
+      kubernetes.core.helm:
+        name: "{{ ingressnginx_release_name_prefix }}-pre"
+        namespace: "{{ ingressnginx_namespace }}"
+        state: absent
+        wait: true
+        timeout: "300s"
+
+    - name: Remove Ingress-Nginx namespace
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Namespace
+        name: "{{ ingressnginx_namespace }}"
+        wait: true
+        timeout: "300s"

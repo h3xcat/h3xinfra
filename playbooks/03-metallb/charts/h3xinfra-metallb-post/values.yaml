@@ -1,0 +1,13 @@
+
+# Override the full name to simplify resource naming
+fullnameOverride: "h3xinfra-metallb-post"
+
+ipPool:
+  ipAddressPools:
+    annotations: {}
+    addresses:
+      ipv4: "192.168.100.0/24"
+      ipv6: "2001:db8:face:1::/96"
+  l2Advertisement:
+    annotations: {}
+  autoAssign: true

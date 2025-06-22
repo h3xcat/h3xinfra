@@ -1,0 +1,23 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "h3xinfra-keycloak-main.fullname" . }}-keycloak
+
+  labels:
+    app: keycloak
+    {{- include "h3xinfra-keycloak-main.labels" . | nindent 4 }}
+  {{- with .Values.keycloak.certificate.annotations }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  secretName: {{ include "h3xinfra-keycloak-main.fullname" . }}-keycloak-certificate
+  secretTemplate:
+    labels:
+      app: keycloak
+      {{- include "h3xinfra-keycloak-main.labels" . | nindent 6 }}
+  issuerRef:
+    name: {{ .Values.keycloak.certificate.issuer | default "cloudflare-clusterissuer" }}
+    kind: ClusterIssuer
+  dnsNames:
+  - {{ .Values.keycloak.ingress.hostname | quote }}

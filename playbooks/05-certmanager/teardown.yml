@@ -1,0 +1,47 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Remove Cert-Manager via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Uninstall Cert-Manager configuration via Helm
+      kubernetes.core.helm:
+        name: "{{ certmanager_release_name_prefix }}-post"
+        namespace: "{{ certmanager_namespace }}"
+        state: absent
+        wait: true
+        timeout: "300s"
+
+    - name: Uninstall Cert-Manager via Helm
+      kubernetes.core.helm:
+        name: "{{ certmanager_release_name_prefix }}-main"
+        namespace: "{{ certmanager_namespace }}"
+        state: absent
+        wait: true
+        timeout: "300s"
+        
+    - name: Remove Cert-Manager namespace
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Namespace
+        name: "{{ certmanager_namespace }}"
+        wait: true
+        timeout: "300s"
+
+    - name: Remove Cert-Manager CRDs
+      kubernetes.core.k8s:
+        state: absent
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: "{{ item }}"
+        wait: true
+      loop:
+        - issuers.cert-manager.io
+        - clusterissuers.cert-manager.io
+        - certificates.cert-manager.io
+        - certificaterequests.cert-manager.io
+        - orders.acme.cert-manager.io
+        - challenges.acme.cert-manager.io

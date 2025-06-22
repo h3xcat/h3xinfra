@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "h3xinfra-keycloak-main.fullname" . }}-postgresql
+
+  labels:
+    app: postgresql
+    {{- include "h3xinfra-keycloak-main.labels" . | nindent 4 }}
+  {{- with .Values.postgresql.persistentVolumeClaim.annotations }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: {{ .Values.postgresql.persistentVolumeClaim.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.postgresql.persistentVolumeClaim.size }}

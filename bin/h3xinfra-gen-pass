@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+
+import random
+import string
+import subprocess
+import os
+import sys
+
+def generate_password(length=30):
+    """Generate a random alphanumeric password with uppercase and lowercase letters and digits."""
+    characters = string.ascii_letters + string.digits  # Letters (a-z, A-Z) and digits (0-9)
+    password = ''.join(random.choice(characters) for _ in range(length))
+    return password
+
+def encrypt_with_ansible_vault(password):
+    """Encrypt the password using ansible-vault with the vault password file."""
+    vault_pass_file = "/workspaces/home-infra/secrets/vault_pass.txt"
+    
+    # Check if vault password file exists
+    if not os.path.exists(vault_pass_file):
+        sys.stderr.write(f"Error: Vault password file not found at {vault_pass_file}\n")
+        return None
+    
+    try:
+        # Run ansible-vault encrypt_string command
+        result = subprocess.run([
+            'ansible-vault', 'encrypt_string',
+            '--vault-password-file', vault_pass_file,
+            '--encrypt-vault-id', 'default',
+            password
+        ], capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            return result.stdout.strip()
+        else:
+            sys.stderr.write(f"Error encrypting password: {result.stderr}\n")
+            return None
+            
+    except Exception as e:
+        sys.stderr.write(f"Error running ansible-vault: {e}\n")
+        return None
+
+def main():
+    password = generate_password()
+    
+    sys.stdout.write(f"Generated Password:\n")
+    sys.stdout.write(f"  {password}\n")
+    
+    sys.stdout.write(f"\nAnsible-Vault Encrypted Version:\n")
+    encrypted = encrypt_with_ansible_vault(password)
+    if encrypted:
+        sys.stdout.write(f"  {encrypted}\n")
+    else:
+        sys.stderr.write("Failed to encrypt password - make sure vault_pass.txt exists in secrets/ directory\n")
+        sys.stdout.write("You can still use the plain password above.\n")
+
+if __name__ == "__main__":
+    main()

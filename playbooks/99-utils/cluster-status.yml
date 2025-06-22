@@ -1,0 +1,34 @@
+---
+- name: Display cluster status
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Get node status
+      ansible.builtin.shell: kubectl get nodes -o wide
+      register: nodes_status
+      changed_when: false
+      delegate_to: localhost
+
+    - name: Show cluster nodes
+      ansible.builtin.debug:
+        var: nodes_status.stdout_lines
+        
+    - name: Get deployed pods
+      ansible.builtin.shell: kubectl get pods -A
+      register: pods_status
+      changed_when: false
+      delegate_to: localhost
+      
+    - name: Show deployed pods
+      ansible.builtin.debug:
+        var: pods_status.stdout_lines
+        
+    - name: Get services
+      ansible.builtin.shell: kubectl get services -A
+      register: services_status
+      changed_when: false
+      delegate_to: localhost
+      
+    - name: Show services
+      ansible.builtin.debug:
+        var: services_status.stdout_lines

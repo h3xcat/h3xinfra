@@ -1,0 +1,64 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Deploy ExternalDNS via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Add ExternalDNS Helm repository
+      kubernetes.core.helm_repository:
+        name: external-dns
+        repo_url: https://kubernetes-sigs.github.io/external-dns/
+        state: present
+
+    - name: Create ExternalDNS namespace
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ externaldns_namespace }}"
+        state: present
+        wait: true
+
+    - name: Deploy ExternalDNS configuration via Helm chart
+      kubernetes.core.helm:
+        name: "{{ externaldns_release_name_prefix }}-pre"
+        chart_ref: "{{ playbook_dir }}/charts/h3xinfra-externaldns-pre"
+        namespace: "{{ externaldns_namespace }}"
+        create_namespace: false
+        values:
+          fullnameOverride: "{{ externaldns_release_name_prefix }}-pre"
+          cloudflareApiToken:
+            token: "{{ cloudflare_api_token }}"
+        state: present
+        wait: true
+        timeout: "120s"
+    
+    - name: Deploy ExternalDNS via Helm
+      kubernetes.core.helm:
+        name: "{{ externaldns_release_name_prefix }}-main"
+        chart_ref: "external-dns/external-dns"
+        chart_version: "{{ externaldns_chart_version }}"
+        namespace: "{{ externaldns_namespace }}"
+        create_namespace: false
+        values: 
+          provider:
+            name: cloudflare
+          env:
+          - name: CF_API_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: "{{ externaldns_release_name_prefix }}-pre-cloudflare-api-token"
+                key: api-token
+          labelFilter: external-dns.alpha.kubernetes.io/publish=true
+          policy: sync
+          sources:
+          - ingress
+          - service
+        set_values:
+        - value: "domainFilters={{ externaldns_domain_filters | to_json }}"
+          value_type: json
+        state: present
+        wait: true
+        timeout: "120s"
+        

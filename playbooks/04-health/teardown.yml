@@ -1,0 +1,14 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+- name: Remove Health Endpoints via Helm
+  hosts: localhost
+  gather_facts: false
+  
+  tasks:
+  - name: Uninstall Health Endpoints via Helm
+    kubernetes.core.helm:
+      name: "{{ health_release_name_prefix }}-main"
+      namespace: "default"
+      state: absent
+      wait: true
+      timeout: "300s"

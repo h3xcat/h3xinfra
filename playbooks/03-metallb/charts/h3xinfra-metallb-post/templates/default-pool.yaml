@@ -1,0 +1,33 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: {{ include "h3xinfra-metallb-post.fullname" . }}-default-pool
+  labels:
+    {{- include "h3xinfra-metallb-post.labels" . | nindent 4 }}
+  {{- with .Values.ipPool.ipAddressPools.annotations }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  addresses:
+  {{- if .Values.ipPool.ipAddressPools.addresses.ipv4 }}
+  - {{ .Values.ipPool.ipAddressPools.addresses.ipv4 }}
+  {{- end }}
+  {{- if .Values.ipPool.ipAddressPools.addresses.ipv6 }}
+  - {{ .Values.ipPool.ipAddressPools.addresses.ipv6 }}
+  {{- end }}
+  autoAssign: {{ .Values.ipPool.autoAssign }}
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: {{ include "h3xinfra-metallb-post.fullname" . }}-default-advertisement
+  labels:
+    {{- include "h3xinfra-metallb-post.labels" . | nindent 4 }}
+  {{- with .Values.ipPool.l2Advertisement.annotations }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  ipAddressPools:
+  - {{ include "h3xinfra-metallb-post.fullname" . }}-default-pool

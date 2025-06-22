@@ -1,0 +1,56 @@
+# Enable both address families
+ipv4:
+  enabled: true
+ipv6:
+  enabled: true
+
+# Use Cilium's cluster-pool IPAM
+ipam:
+  mode: cluster-pool
+  operator:
+    # Overall pod CIDRs (must match K3s cluster-cidr)
+    clusterPoolIPv4PodCIDRList:
+      - 10.42.0.0/16
+    clusterPoolIPv6PodCIDRList:
+      - 2001:db8:cafe::/96
+    # Per-node subnet mask sizes (K3s controller-manager uses the same)
+    clusterPoolIPv4MaskSize: 24
+    clusterPoolIPv6MaskSize: 112
+
+# Disable IPv6 masquerade (pods use global IPv6 directly)
+enableIPv6Masquerade: false
+
+# Use eBPF-based masquerade for IPv4 for performance
+bpf:
+  masquerade: true
+  disableExternalIPMitigation: true
+
+kubeProxyReplacement: true
+
+# Changed to DSR mode to preserve source IP
+loadBalancer:
+  mode: "dsr"
+  dsrDispatch: "opt"
+
+# Changed to direct routing mode to be compatible with DSR
+routingMode: "native"
+
+# Uncommented as needed for native routing mode
+ipv4NativeRoutingCIDR: "10.42.0.0/16"
+autoDirectNodeRoutes : true
+
+extraConfig:
+  enable-ipv6-ndp: "true"
+  ipv6-mcast-device: "eth0"
+
+hubble:
+  tls:
+    auto:
+      enabled: true
+      method: cronJob
+      certValidityDuration: 1095
+      schedule: "0 0 1 */4 *"
+  relay:
+    enabled: true
+  ui:
+    enabled: true

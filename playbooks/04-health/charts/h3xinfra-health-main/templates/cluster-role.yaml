@@ -1,0 +1,22 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "h3xinfra-health-main.fullname" . }}-anonymous-reader
+rules:
+- nonResourceURLs:
+  - "/livez"
+  verbs:
+  - "get"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "h3xinfra-health-main.fullname" . }}-anonymous-reader
+subjects:
+- kind: User
+  name: system:anonymous
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: {{ include "h3xinfra-health-main.fullname" . }}-anonymous-reader
+  apiGroup: rbac.authorization.k8s.io

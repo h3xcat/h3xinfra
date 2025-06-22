@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "h3xinfra-keycloak-main.fullname" . }}-keycloak
+  
+  labels:
+    app: keycloak
+    {{- include "h3xinfra-keycloak-main.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "on"
+    {{- with .Values.keycloak.ingress.annotations }}
+      {{- . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.keycloak.ingress.className }}
+  tls:
+  - hosts:
+    - {{ .Values.keycloak.ingress.hostname | quote }}
+    secretName: {{ include "h3xinfra-keycloak-main.fullname" . }}-keycloak-certificate
+  rules:
+  - host: {{ .Values.keycloak.ingress.hostname | quote }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "h3xinfra-keycloak-main.fullname" . }}-keycloak
+            port:
+              number: 8443

@@ -1,0 +1,160 @@
+---
+- name: Prepare all K3s nodes
+  hosts: k3s_cluster
+  become: yes
+  tasks:
+    - name: Install prerequisites
+      apt:
+        name:
+          - curl
+          - ufw
+          - apparmor
+          - apparmor-utils
+          - open-iscsi
+          - nfs-common
+          - cryptsetup
+          - dmsetup
+        update_cache: yes
+        state: present
+
+    - name: Enable iscsi service
+      service:
+        name: iscsid
+        state: started
+        enabled: true
+    
+    - name: Disable UFW
+      service:
+        name: ufw
+        state: stopped
+        enabled: false
+    
+    - name: Disable multipath
+      service:
+        name: multipathd
+        state: stopped
+        enabled: false
+
+    - name: Enable AppArmor
+      service:
+        name: apparmor
+        state: started
+        enabled: true
+
+    - name: Disable swap immediately
+      command: swapoff -a
+      become: true
+      when: ansible_swaptotal_mb > 0
+
+    - name: Comment out any swap entries in /etc/fstab
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*\bswap\b.*)'
+        replace: '# \1 # commented by Ansible'
+
+    - name: Configure modprobe modules
+      modprobe:
+        name: "{{ item }}"
+        state: present
+        persistent: present
+      loop:
+        - br_netfilter
+        - overlay
+        - dm_crypt
+        - vfio_pci
+        - uio_pci_generic
+        - nvme-tcp
+
+    - name: Configure sysctl settings
+      ansible.posix.sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        sysctl_set: true
+        reload: yes
+      loop:
+        - { name: net.bridge.bridge-nf-call-iptables, value: "1" }
+        - { name: net.bridge.bridge-nf-call-ip6tables, value: "1" }
+        - { name: net.ipv4.ip_forward, value: "1" }
+        - { name: net.ipv6.conf.all.forwarding, value: "1" }
+        - { name: net.ipv6.conf.default.forwarding, value: "1" }
+        - { name: net.ipv6.conf.all.accept_ra, value: "2" }
+        - { name: net.ipv6.conf.default.accept_ra, value: "2" }
+        - { name: net.ipv6.conf.all.accept_ra_defrtr, value: "0" }
+        - { name: net.ipv6.conf.default.accept_ra_defrtr, value: "0" }
+        - { name: net.ipv6.conf.all.use_tempaddr, value: "0" }
+        - { name: net.ipv6.conf.default.use_tempaddr, value: "0" }
+
+    - name: Check current huge page allocation
+      shell: cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+      register: hugepage_current
+      changed_when: false
+
+    - name: Configure huge pages (2 GiB of 2 MiB pages)
+      shell: echo 1024 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+      register: hugepage_result
+      changed_when: true
+      when: hugepage_current.stdout != "1024"
+
+    - name: Verify huge page allocation
+      shell: cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+      register: hugepage_check
+      changed_when: false
+
+    - name: Make huge pages persistent across reboots
+      lineinfile:
+        path: /etc/default/grub
+        regexp: '^GRUB_CMDLINE_LINUX='
+        line: 'GRUB_CMDLINE_LINUX="hugepages=1024"'
+        backup: yes
+      register: grub_updated
+
+    - name: Update GRUB configuration
+      command: update-grub
+      when: grub_updated.changed
+
+    - name: Check if longhorn-storage-lv logical volume exists
+      shell: lvs ubuntu-vg/longhorn-storage-lv --noheadings 2>/dev/null
+      register: longhorn_lv_check
+      changed_when: false
+      failed_when: false
+
+    - name: Create logical volume for Longhorn storage
+      lvol:
+        vg: ubuntu-vg
+        lv: longhorn-storage-lv
+        size: 100%PVS
+        pvs: /dev/nvme0n1p3
+        state: present
+      when: longhorn_lv_check.rc != 0
+
+    - name: Format Longhorn logical volume with ext4
+      filesystem:
+        fstype: ext4
+        dev: /dev/ubuntu-vg/longhorn-storage-lv
+        resizefs: true
+
+    - name: Create Longhorn storage directory
+      file:
+        path: /mnt/longhorn-data
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Mount Longhorn storage
+      mount:
+        path: /mnt/longhorn-data
+        src: /dev/ubuntu-vg/longhorn-storage-lv
+        fstype: ext4
+        opts: defaults
+        state: mounted
+
+    - name: Set permissions on Longhorn directory
+      file:
+        path: /mnt/longhorn-data
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+        recurse: yes

@@ -1,0 +1,49 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Deploy Cilium via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+  - name: Add Cilium Helm repository
+    kubernetes.core.helm_repository:
+      name: cilium
+      repo_url: https://helm.cilium.io/
+      state: present
+
+  - name: Create Cilium namespace
+    kubernetes.core.k8s:
+      api_version: v1
+      kind: Namespace
+      name: "{{ cilium_namespace }}"
+      state: present
+      wait: true
+
+  - name: Deploy Cilium via Helm
+    kubernetes.core.helm:
+      name: "{{ cilium_release_name_prefix }}-main"
+      chart_ref: "cilium/cilium"
+      chart_version: "{{ cilium_chart_version }}"
+      namespace: "{{ cilium_namespace }}"
+      create_namespace: false
+      values_files: 
+      - "{{ playbook_dir }}/cilium-values.yaml"
+      set_values:
+      - value: "ipam.operator.clusterPoolIPv4PodCIDRList[0]={{ cluster_cidr.ipv4 }}"
+        value_type: string
+      - value: "ipam.operator.clusterPoolIPv6PodCIDRList[0]={{ cluster_cidr.ipv6 }}"
+        value_type: string
+      - value: "ipam.operator.clusterPoolIPv4MaskSize={{ cluster_cidr.ipv4_mask_size }}"
+        value_type: raw
+      - value: "ipam.operator.clusterPoolIPv6MaskSize={{ cluster_cidr.ipv6_mask_size }}"
+        value_type: raw
+      - value: "ipv4NativeRoutingCIDR={{ cluster_cidr.ipv4 }}"
+        value_type: string
+      - value: "extraConfig.ipv6-mcast-device={{ primary_network_interface }}"
+        value_type: string
+
+      state: present
+      wait: true
+      timeout: "120s"
+

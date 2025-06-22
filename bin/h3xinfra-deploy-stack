@@ -1,0 +1,5 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+ansible-playbook "$WORKSPACE_FOLDER/playbooks/stack-standup.yml" --user ansible

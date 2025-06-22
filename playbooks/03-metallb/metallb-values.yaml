@@ -1,0 +1,31 @@
+# Configuration for MetalLB Helm chart
+# Reference: https://metallb.universe.tf/installation/
+# Reference: https://github.com/metallb/metallb/tree/main/charts/metallb
+
+controller:
+  enabled: true
+  logLevel: info
+
+speaker:
+  enabled: true
+  logLevel: info
+  frr:
+    enabled: false
+  # Enable IPv6 support in the speaker component
+  tolerateMaster: true
+  nodeSelector: {}
+  affinity: {}
+  # Allow IPv6 traffic through MetalLB
+  extraEnv:
+    - name: METALLB_ML_BIND_DUAL_STACK
+      value: "true"
+
+rbac:
+  create: true
+
+# Enable CRDs - MetalLB now uses custom resources instead of configInline
+crds:
+  enabled: true
+
+# configInline is removed as it's deprecated
+# Configuration will be applied using separate IPAddressPool and L2Advertisement/BGPAdvertisement CRs

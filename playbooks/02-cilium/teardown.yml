@@ -1,0 +1,15 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Remove Cilium via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+  - name: Uninstall Cilium via Helm
+    kubernetes.core.helm:
+      name: "{{ cilium_release_name_prefix }}-main"
+      namespace: "{{ cilium_namespace }}"
+      state: absent
+      wait: true
+      timeout: "300s"

@@ -1,0 +1,35 @@
+---
+- name: Create dedicated ansible user on all hosts
+  hosts: all:!localhost
+  become: true
+  vars:
+    ansible_user_name: ansible
+    ansible_user_comment: "Ansible Automation User"
+    ansible_user_shell: /bin/bash
+    ansible_user_groups: "sudo"
+    
+  tasks:
+    - name: Create ansible user
+      user:
+        name: "{{ ansible_user_name }}"
+        comment: "{{ ansible_user_comment }}"
+        shell: "{{ ansible_user_shell }}"
+        groups: "{{ ansible_user_groups }}"
+        append: yes
+      register: user_creation
+      
+    - name: Add SSH public key to ansible user
+      authorized_key:
+        user: "{{ ansible_user_name }}"
+        key: "{{ ansible_ssh_public_key }}"
+        state: present
+      when: user_creation is succeeded
+      
+    - name: Configure passwordless sudo for ansible user
+      community.general.sudoers:
+        name: "{{ ansible_user_name }}"
+        user: "{{ ansible_user_name }}"
+        commands: ALL
+        state: present
+        nopassword: yes
+      when: user_creation is succeeded

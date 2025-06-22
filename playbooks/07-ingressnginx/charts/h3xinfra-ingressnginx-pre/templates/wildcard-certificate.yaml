@@ -1,0 +1,20 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name:  {{ include "h3xinfra-ingressnginx-pre.fullname" . }}-wildcard-certificate
+  labels:
+    {{- include "h3xinfra-ingressnginx-pre.labels" . | nindent 4 }}
+  {{- with .Values.wildcardCertificate.annotations }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  secretName: {{ include "h3xinfra-ingressnginx-pre.fullname" . }}-wildcard-certificate
+  issuerRef:
+    name: {{ .Values.clusterIssuerName }}
+    kind: ClusterIssuer
+  commonName: {{ .Values.wildcardCertificate.commonName }}
+  {{ with .Values.wildcardCertificate.dnsNames }}
+  dnsNames:
+    {{ . | toYaml | nindent 4 }}
+  {{- end }}

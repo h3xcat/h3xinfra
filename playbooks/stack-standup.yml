@@ -1,0 +1,31 @@
+---
+# Master playbook to orchestrate the complete K3s cluster setup
+# using the component-based directory structure
+
+- import_playbook: 00-prep/standup.yml
+
+- import_playbook: 01-k3s/standup.yml
+
+# Single kubectl connection check for components that need kubernetes
+- import_playbook: 99-utils/kube-connect.yml
+
+- import_playbook: 02-cilium/standup.yml
+
+- import_playbook: 03-metallb/standup.yml
+
+- import_playbook: 04-health/standup.yml
+
+- import_playbook: 05-certmanager/standup.yml
+
+- import_playbook: 06-externaldns/standup.yml
+
+- import_playbook: 07-ingressnginx/standup.yml
+
+- import_playbook: 08-longhorn/standup.yml
+
+- import_playbook: 09-mailu/standup.yml
+
+- import_playbook: 10-keycloak/standup.yml
+
+# Display cluster status
+- import_playbook: 99-utils/cluster-status.yml

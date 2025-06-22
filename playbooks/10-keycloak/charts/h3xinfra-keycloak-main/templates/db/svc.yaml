@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "h3xinfra-keycloak-main.fullname" . }}-postgresql
+
+  labels:
+    app: postgresql
+    {{- include "h3xinfra-keycloak-main.labels" . | nindent 4 }}
+  {{- with .Values.postgresql.service.annotations }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  selector:
+    app: postgresql
+    {{- include "h3xinfra-keycloak-main.selectorLabels" . | nindent 4 }}
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP

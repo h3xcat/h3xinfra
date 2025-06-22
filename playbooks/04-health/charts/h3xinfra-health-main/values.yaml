@@ -1,0 +1,3 @@
+
+# Override the full name to simplify resource naming
+fullnameOverride: "h3xinfra-health-main"

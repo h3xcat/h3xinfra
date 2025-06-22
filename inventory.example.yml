@@ -1,0 +1,262 @@
+# Example Ansible Inventory for Home Infrastructure
+# Replace all example values with your actual configuration
+#
+# =============================================================================
+# IP ALLOCATION TABLE
+# =============================================================================
+# Replace 2001:db8:: with your actual ISP IPv6 allocation
+# Replace 192.168.x.x with your actual private IPv4 ranges
+#
+# ┌─────────────────────────┬─────────────────────────┬─────────────────────────┐
+# │ Component               │ IPv4 Range              │ IPv6 Range              │
+# ├─────────────────────────┼─────────────────────────┼─────────────────────────┤
+# │ K8s Node IPs            │ 192.168.1.10-12         │ 2001:db8::10-12         │
+# │ MetalLB Pool (dynamic)  │ 192.168.100.0/24        │ 2001:db8:face:1::/96    │
+# │ Manual Service IPs      │ 192.168.101.0/24        │ 2001:db8:face:0::/96    │
+# │ ├─ Ingress NGINX LB     │ 192.168.101.100/32      │ 2001:db8:face::100/128  │
+# │ ├─ Mailu LB             │ 192.168.101.101/32      │ 2001:db8:face::101/128  │
+# │ └─ Mailu Public         │ 203.0.113.10 (example)  │ 2001:db8:face::101      │
+# │ K8s Cluster CIDR        │ 10.42.0.0/16            │ 2001:db8:cafe::/96      │
+# │ K8s Service CIDR        │ 10.43.0.0/16            │ fd00:cafe:43::/112      │
+# └─────────────────────────┴─────────────────────────┴─────────────────────────┘
+#
+# IPv6 Architecture Notes:
+# - IPv6 uses public addresses directly (NO NAT required!) because ISPs provide large allocations
+# - Consumer ISPs typically allocate /56 to /64 prefixes (trillions of addresses per household)
+# - All IPv6 addresses use your ISP's public allocation with different subnet designations
+# - Base allocation example: 2001:db8::/64 (replace with your actual ISP allocation)
+# - face:1::/96 subnet: Used by MetalLB for dynamic load balancer allocation
+# - face:0::/96 subnet: Used for manually assigned service IPs (face:: = face:0::)
+# - cafe::/96 subnet: Used for Kubernetes pod networking (cluster CIDR)
+# - Service CIDR: Uses private ULA range (fd00:cafe:43::/112) for internal cluster services
+# - Node IPs: Use main subnet (2001:db8::10-12)
+#
+# IPv4 Architecture Notes:
+# - IPv4 uses private RFC 1918 ranges because consumer ISPs typically provide only ONE public IPv4
+# - All IPv4 traffic requires NAT (Network Address Translation) to reach the internet
+# - MetalLB gets a large pool for dynamic load balancing (private IPs)
+# - Individual services get specific IPs outside the MetalLB pool (manual assignment)
+# - Cluster and service CIDRs use standard RFC 1918 private ranges
+#
+# Subnet Design Principles:
+# - IPv4: Uses private addresses + NAT (limited to 1 public IP from ISP)
+# - IPv6: Uses public addresses directly (abundant allocation from ISP, no NAT needed)
+# - Pods get public IPv6 (enables direct external connectivity without port forwarding)
+# - Internal services use private IPv6 ULA (cluster communication only)  
+# - Load balancer IPs are manually assigned outside MetalLB pool (prevents conflicts)
+# - IPv6 subnets use logical naming:
+#   * face:0:: (or face::) = manual service IP allocation
+#   * face:1:: = MetalLB dynamic allocation  
+#   * cafe:: = pod networking
+#
+# Why IPv6 is Different:
+# - IPv4: 1 public IP → everything private → NAT required → port forwarding complexity
+# - IPv6: Huge allocation → public IPs everywhere → direct connectivity → simplified networking
+#
+# IMPORTANT: Firewall Configuration for IPv6
+# - Your router/firewall must allow the face::/80 subnet through the WAN interface
+# - This enables external access to services like Ingress NGINX and Mailu
+# - Unlike IPv4 (which uses port forwarding), IPv6 requires subnet-based firewall rules
+# - Example firewall rule: "Allow inbound traffic to 2001:db8:face::/80 from any"
+---
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "/usr/bin/python3"
+  vars:
+    health_release_name_prefix: "homeinfra-health"
+
+    cilium_namespace: "kube-system"
+    cilium_release_name_prefix: "homeinfra-cilium"
+    cilium_chart_version: "1.17.3" 
+    
+    metallb_namespace: "metallb-system"
+    metallb_release_name_prefix: "homeinfra-metallb"
+    metallb_chart_version: "0.13.10"
+
+    # Example network ranges - replace with your actual network configuration
+    # Note: IPv6 addresses use subnets within your ISP's public allocation
+    # IPv4 pattern: MetalLB gets a pool, individual services get specific IPs outside the pool
+    metallb_loadbalancer_pools:
+      ipv4: "192.168.100.0/24"  # Large range for general load balancer use
+      ipv6: "2001:db8:face:1::/96"  # Dedicated subnet for load balancer pools
+
+    ingressnginx_loadbalancer_pools:
+      ipv4: "192.168.101.100/32"  # Specific IP outside MetalLB pool
+      ipv6: "2001:db8:face::100/128"  # Manual assignment in face:0:: subnet
+
+    mailu_loadbalancer_pools:
+      ipv4: "192.168.101.101/32"  # Specific IP outside MetalLB pool  
+      ipv6: "2001:db8:face::101/128"  # Manual assignment in face:0:: subnet
+    
+    # Example public IP addresses - replace with your actual public IPs
+    mailu_public_addresses:
+      ipv4: "203.0.113.10"  # Example public IPv4 (replace with actual)
+      ipv6: "2001:db8:face::101"  # Same as load balancer IP for this service
+
+    cluster_cidr:
+      ipv4: "10.42.0.0/16"
+      ipv6: "2001:db8:cafe::/96"  # Dedicated subnet for pod networking within your public allocation
+      ipv4_mask_size: 24
+      ipv6_mask_size: 112
+
+    # Replace with your actual primary network interface
+    primary_network_interface: "eth0"
+    
+    certmanager_namespace: "cert-manager"
+    certmanager_release_name_prefix: "homeinfra-certmanager"
+    certmanager_chart_version: "v1.17.2"
+
+    mailu_namespace: "mailu"
+    mailu_release_name_prefix: "homeinfra-mailu"
+    mailu_chart_version: "2.2.2"
+    # Replace with your actual domain
+    mailu_domain: "example.com"
+    mailu_db_password: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      changeme_please_encrypt_your_actual_password_with_ansible_vault
+    mailu_dns_names:
+    - "mail.app.example.com"
+    - "mail.example.com"
+    mailu_secret_key: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      changeme_please_encrypt_your_actual_secret_key_with_ansible_vault
+    mailu_admin_password: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      changeme_please_encrypt_your_actual_admin_password_with_ansible_vault
+    # Replace with your actual SMTP relay configuration
+    mailu_external_relay_host: "[smtp.example.com]:587"
+    mailu_external_relay_username: "your-smtp-username"
+    mailu_external_relay_password: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          changeme_please_encrypt_your_actual_smtp_password_with_ansible_vault
+
+    # Replace with your actual email address
+    certmanager_cluster_issuer_email: "admin@example.com"
+    certmanager_cluster_issuer_dns: 
+    - 'example.com'
+    - '*.example.com'
+    - 'second-domain.com'
+    - '*.second-domain.com'
+    # Replace with your actual Cloudflare API token
+    cloudflare_api_token: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      changeme_please_encrypt_your_actual_cloudflare_api_token_with_ansible_vault
+
+    externaldns_namespace: "external-dns"
+    externaldns_release_name_prefix: "homeinfra-externaldns"
+    externaldns_chart_version: "1.16.1"
+    externaldns_domain_filters:
+    - "example.com"
+    - "second-domain.com"
+    - "third-domain.com"
+
+    ingressnginx_dns_names:
+    - "example.com"
+    - "*.example.com"
+    - "*.app.example.com"
+    ingressnginx_namespace: "ingress-nginx"
+    ingressnginx_release_name_prefix: "homeinfra-ingressnginx"
+    ingressnginx_chart_version: "4.12.2"
+
+    longhorn_cifs_username: "longhorn"
+    longhorn_cifs_password: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      changeme_please_encrypt_your_actual_cifs_password_with_ansible_vault
+    # Replace with your actual NAS backup target
+    longhorn_cifs_backup_target: "cifs://nas.home.local/longhorn-backup"
+    longhorn_namespace: "longhorn-system"
+    longhorn_release_name_prefix: "homeinfra-longhorn"
+    longhorn_chart_version: "v1.9.0"
+    # Generate your own basic auth secret: echo "username:$(openssl passwd -stdin -apr1 < password_file)"
+    longhorn_basic_auth_secret: "admin:$apr1$example$hashgoeshere/"
+    longhorn_ingress_host: "longhorn.app.example.com"
+    
+
+    keycloak_release_name_prefix: "homeinfra-keycloak"
+    keycloak_namespace: keycloak
+    
+    keycloak_admin_username: admin
+    keycloak_admin_password: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      changeme_please_encrypt_your_actual_keycloak_admin_password_with_ansible_vault
+    keycloak_db_username: keycloak
+    keycloak_db_password: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      changeme_please_encrypt_your_actual_keycloak_db_password_with_ansible_vault
+    keycloak_ingress_hostname: "identity.app.example.com"
+
+
+k3s_cluster:
+  children:
+    server:
+      hosts:
+        # Replace with your actual server hostnames and IP addresses
+        homeserver01.home.local:
+          ansible_host: 192.168.1.10
+          extra_server_args: "--node-ip=192.168.1.10,2001:db8::10"  # Use your actual public IPv6
+        homeserver02.home.local:
+          ansible_host: 192.168.1.11
+          extra_server_args: "--node-ip=192.168.1.11,2001:db8::11"  # Use your actual public IPv6
+        homeserver03.home.local:
+          ansible_host: 192.168.1.12
+          extra_server_args: "--node-ip=192.168.1.12,2001:db8::12"  # Use your actual public IPv6
+    agent:
+      hosts:
+        # Add agent nodes here if needed
+        # homeagent01.home.local:
+        #   ansible_host: 192.168.1.20
+        #   extra_agent_args: "--node-ip=192.168.1.20"
+  vars:
+    ansible_port: 22
+    ansible_user: ansible  # Replace with your actual ansible user
+    k3s_version: v1.33.0+k3s1
+    # Generate your own cluster token with: openssl rand -hex 32
+    token: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      changeme_please_encrypt_your_actual_k3s_token_with_ansible_vault
+
+    api_endpoint: "{{ hostvars[groups['server'][0]]['ansible_host'] | default(groups['server'][0]) }}"
+    # Optional vars:
+    # extra_server_args: ""
+    # extra_agent_args: ""
+    # cluster_context: k3s-ansible
+    # api_port: 6443
+    # k3s_server_location: /var/lib/rancher/k3s
+    # systemd_dir: /etc/systemd/system
+    # extra_service_envs: [ 'ENV_VAR1=VALUE1', 'ENV_VAR2=VALUE2' ]
+    # user_kubectl: true
+    # extra_manifests: [ '/path/to/manifest1.yaml', '/path/to/manifest2.yaml' ]
+    # airgap_dir: /tmp/k3s-airgap-images
+
+    # server_config_yaml: |  # configuration file for server nodes
+    server_config_yaml: |
+      cluster-cidr: 10.42.0.0/16,2001:db8:cafe::/96  # IPv6 subnet for pod networking
+      service-cidr: 10.43.0.0/16,fd00:cafe:43::/112  # Private ULA for internal services (43 = service IPv4)
+      tls-san:
+      - k8s.home.local  # Replace with your actual k8s hostname
+      kube-controller-manager-arg: "node-cidr-mask-size-ipv6=112"
+      flannel-backend: none
+      disable-network-policy: true
+      disable-kube-proxy: false      
+      disable:
+      - servicelb
+      - traefik
+      kube-apiserver-arg:
+      - "anonymous-auth=true"
+      - "enable-aggregator-routing=true"
+
+    # agent_config_yaml: |   # configuration file for agent nodes
+    #   ... inner YAML goes here ...
+    # registries_config_yaml: | # private registry configuration
+    #   ... inner YAML goes here ...
+
+    # Global application variables
+    domain_name: home.local  # Replace with your actual local domain
+    keycloak_admin_password: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      changeme_please_encrypt_your_actual_keycloak_admin_password_with_ansible_vault
+    keycloak_db_password: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      changeme_please_encrypt_your_actual_keycloak_db_password_with_ansible_vault

@@ -1,0 +1,27 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+- name: Deploy Health Endpoints via Helm
+  hosts: localhost
+  gather_facts: false
+  
+  tasks:
+    - name: Deploy Health Endpoints via Helm
+      kubernetes.core.helm:
+        name: "{{ health_release_name_prefix }}-main"
+        chart_ref: "{{ playbook_dir }}/charts/h3xinfra-health-main"
+        namespace: default
+        create_namespace: false
+        values:
+          fullnameOverride: "{{ health_release_name_prefix }}-main"
+        state: present
+        wait: true
+        timeout: "120s"
+
+      
+    - name: Test anonymous access to livez endpoint
+      ansible.builtin.uri:
+        url: "https://{{ hostvars[groups['server'][0]]['ansible_host'] }}:6443/livez"
+        method: GET
+        validate_certs: no
+        status_code: 200
+      

@@ -1,0 +1,137 @@
+---
+# Kubernetes connection setup with conditional execution for stack deployments
+- name: Connect to K3s cluster
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    kubeconfig_path: "~/.kube/config"
+    expected_server_url: "https://k8s.home.arpa:6443"
+
+  tasks:
+  - name: "kube-connect: Check if connection was already established in this session"
+    debug:
+      msg: "{{ 'Connection already established in this session - skipping' if (hostvars['localhost']['kube_connected'] | default(false)) else 'Establishing kubectl connection' }}"
+
+  - name: "kube-connect: Skip connection setup if already established in this session"
+    meta: end_play
+    when: hostvars['localhost']['kube_connected'] | default(false)
+
+  - name: "kube-connect: Check if kubeconfig file exists"
+    stat:
+      path: "{{ kubeconfig_path }}"
+    register: kubeconfig_stat
+
+  - name: "kube-connect: Check kubeconfig server URL (if file exists)"
+    shell: kubectl config view -o jsonpath='{.clusters[?(@.name == "default")].cluster.server}'
+    register: server_url
+    ignore_errors: yes
+    changed_when: false
+    when: kubeconfig_stat.stat.exists
+    
+  - name: "kube-connect: Test kubectl connection"
+    shell: kubectl get nodes -o name
+    register: kubectl_test
+    ignore_errors: yes
+    changed_when: false
+    when: kubeconfig_stat.stat.exists and server_url.stdout == expected_server_url
+    
+  - name: "kube-connect: Set flag to skip configuration"
+    set_fact:
+      skip_config: "{{ kubeconfig_stat.stat.exists and server_url.stdout == expected_server_url and kubectl_test.rc == 0 }}"
+    
+  - name: "kube-connect: Display diagnostics when connection fails"
+    debug:
+      msg: 
+        - "Kubeconfig status: {{ 'Exists' if kubeconfig_stat.stat.exists else 'Missing' }}"
+        - "Server URL: {{ server_url.stdout | default('Not set') }}"
+        - "Expected URL: {{ expected_server_url }}"
+        - "Connection test: {{ 'Success' if kubectl_test.rc is defined and kubectl_test.rc == 0 else 'Failed' }}"
+        - "Will skip configuration: {{ skip_config | default(false) }}"
+    when: not skip_config
+
+  - name: "kube-connect: Attempting to fetch kubeconfig from control node"
+    debug:
+      msg: "Connecting to {{ groups['server'][0] }} to fetch kubeconfig..."
+    when: not skip_config
+
+  - name: "kube-connect: Fetch kubeconfig from control node"
+    become: yes
+    slurp:
+      src: /etc/rancher/k3s/k3s.yaml
+    delegate_to: "{{ groups['server'][0] }}"
+    register: kubeconf_raw
+    ignore_errors: true  # Don't fail if K3s is already removed
+    when: not skip_config
+
+  - name: "kube-connect: Display kubeconfig fetch result"
+    debug:
+      msg: "{{ 'Successfully fetched kubeconfig from remote server' if kubeconf_raw is succeeded else 'Failed to fetch kubeconfig from remote server' }}"
+    when: not skip_config
+
+  - name: "kube-connect: Create kubeconfig directory"
+    ansible.builtin.file:
+      path: "{{ kubeconfig_path | dirname }}"
+      mode: "0755"
+      state: directory
+    when: not skip_config and kubeconf_raw is succeeded
+
+  - name: "kube-connect: Save kubeconfig locally"
+    copy:
+      content: "{{ kubeconf_raw.content | b64decode }}"
+      dest: "{{ kubeconfig_path }}"
+      mode: '0600'
+    delegate_to: localhost
+    register: new_kubeconfig
+    when: not skip_config and kubeconf_raw is succeeded
+
+  - name: "kube-connect: Extract original server URL from kubeconfig"
+    shell: kubectl config view -o jsonpath='{.clusters[0].cluster.server}'
+    register: original_server_url
+    when: not skip_config and kubeconf_raw is succeeded
+    
+  - name: "kube-connect: Show original vs expected server URL"
+    debug:
+      msg: 
+        - "Original server URL from K3s: {{ original_server_url.stdout | default('Not found') }}"
+        - "Expected server URL: {{ expected_server_url }}"
+        - "Will use expected URL since original is localhost"
+    when: not skip_config and kubeconf_raw is succeeded
+    
+  - name: "kube-connect: Update cluster server using kubectl config"
+    ansible.builtin.command:
+      cmd: kubectl config set-cluster default --server="{{ expected_server_url }}"
+    delegate_to: localhost
+    when: not skip_config and new_kubeconfig is changed
+
+  - name: "kube-connect: Verify configuration after update"
+    block:
+    - name: "kube-connect: Test kubectl connection after update"
+      shell: kubectl get nodes -o name
+      register: kubectl_verify
+      changed_when: false
+    - name: "kube-connect: Display success or failure message"
+      debug:
+        msg: "{{ 'Connection to K3s cluster successful!' if kubectl_verify.rc == 0 else 'Failed to connect to K3s cluster after configuration update. Check network and cluster status.' }}"
+    when: not skip_config and kubeconf_raw is succeeded
+    
+  - name: "kube-connect: Display status message"
+    debug:
+      msg: "Kubeconfig is already set up and connected to {{ expected_server_url }}. No changes made."
+    when: skip_config
+
+  - name: "kube-connect: Final connectivity test"
+    shell: kubectl get nodes -o name
+    register: final_test
+    ignore_errors: yes
+    changed_when: false
+    
+  - name: "kube-connect: Display final connection status"
+    debug:
+      msg: "{{ 'SUCCESS: kubectl is properly configured and connected to the cluster' if final_test.rc == 0 else 'FAILED: kubectl connection is not working. Error: ' + (final_test.stderr | default('Unknown error')) }}"
+  
+  - name: "kube-connect: Set connection established flag for subsequent playbooks"
+    set_fact:
+      kube_connected: true
+    delegate_facts: true
+    when: final_test.rc == 0

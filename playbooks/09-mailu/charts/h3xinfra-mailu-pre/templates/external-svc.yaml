@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "h3xinfra-mailu-pre.fullname" . }}-external
+  annotations:
+    metallb.universe.tf/address-pool: {{ include "h3xinfra-mailu-pre.fullname" . }}-pool
+    external-dns.alpha.kubernetes.io/hostname: {{ .Values.hostname }}
+    external-dns.alpha.kubernetes.io/target: "{{ .Values.publicAddresses.ipv4 }},{{ .Values.publicAddresses.ipv6 }}"
+  labels:
+    external-dns.alpha.kubernetes.io/publish: "true"
+spec:
+  externalTrafficPolicy: Local
+  ipFamilies:
+    - IPv4
+    - IPv6
+  ipFamilyPolicy: PreferDualStack
+  ports:
+  - name: pop3s
+    port: 995
+    protocol: TCP
+    targetPort: 995
+  - name: imaps
+    port: 993
+    protocol: TCP
+    targetPort: 993
+  - name: smtp
+    port: 25
+    protocol: TCP
+    targetPort: 25
+  - name: smtps
+    port: 465
+    protocol: TCP
+    targetPort: 465
+  - name: sieve
+    port: 4190
+    protocol: TCP
+    targetPort: 4190
+  selector:
+    app.kubernetes.io/component: front
+    app.kubernetes.io/instance: {{ .Values.mailuInstanceName | default "mailu" }}
+    app.kubernetes.io/name: mailu
+  type: LoadBalancer

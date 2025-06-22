@@ -1,0 +1,14 @@
+# Ignore secrets directory
+/secrets/
+
+# Common ignore patterns
+*.swp
+*~
+.DS_Store
+
+# Ignore generated files
+playbooks/10-keycloak/generated/
+
+
+__pycache__/
+*.pyc

@@ -1,0 +1,38 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Remove MetalLB via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+  - name: Uninstall MetalLB configuration via Helm
+    kubernetes.core.helm:
+      name: "{{ metallb_release_name_prefix }}-post"
+      namespace: "{{ metallb_namespace }}"
+      state: absent
+      wait: true
+      timeout: "300s"
+
+  - name: Uninstall MetalLB via Helm
+    kubernetes.core.helm:
+      name: "{{ metallb_release_name_prefix }}-main"
+      namespace: "{{ metallb_namespace }}"
+      state: absent
+      wait: true
+      timeout: "300s"
+
+  - name: Remove MetalLB namespace
+    kubernetes.core.k8s:
+      api_version: v1
+      kind: Namespace
+      name: "{{ metallb_namespace }}"
+      state: absent
+      wait: true
+      timeout: "300s"
+
+  - name: Remove MetalLB CRDs
+    ansible.builtin.shell: |
+      kubectl delete crd ipaddresspools.metallb.io l2advertisements.metallb.io bgpadvertisements.metallb.io communities.metallb.io bgppeers.metallb.io --ignore-not-found
+    changed_when: false
+    

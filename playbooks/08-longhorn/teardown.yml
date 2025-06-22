@@ -1,0 +1,90 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Remove Longhorn via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Uninstall Longhorn configuration via Helm
+      kubernetes.core.helm:
+        name: "{{ longhorn_release_name_prefix }}-post"
+        namespace: "{{ longhorn_namespace }}"
+        state: absent
+        wait: true
+        timeout: "300s"
+
+    - name: Uninstall Longhorn via Helm
+      kubernetes.core.helm:
+        name: "{{ longhorn_release_name_prefix }}-main"
+        namespace: "{{ longhorn_namespace }}"
+        state: absent
+        wait: true
+        timeout: "300s"
+
+    - name: Uninstall Longhorn pre-configuration via Helm
+      kubernetes.core.helm:
+        name: "{{ longhorn_release_name_prefix }}-pre"
+        namespace: "{{ longhorn_namespace }}"
+        state: absent
+        wait: true
+        timeout: "300s"
+
+    - name: Force remove longhorn resources if still stuck
+      ansible.builtin.shell: |
+        CHANGES_MADE=0
+        echo "Deleting webhook configurations..."
+        if kubectl delete ValidatingWebhookConfiguration longhorn-webhook-validator 2>/dev/null; then
+          echo "Deleted ValidatingWebhookConfiguration longhorn-webhook-validator"
+          CHANGES_MADE=1
+        fi
+        if kubectl delete MutatingWebhookConfiguration longhorn-webhook-mutator 2>/dev/null; then
+          echo "Deleted MutatingWebhookConfiguration longhorn-webhook-mutator"
+          CHANGES_MADE=1
+        fi
+        echo "Processing Longhorn CRDs..."
+        for crd in $(kubectl get crd -o jsonpath={.items[*].metadata.name} | tr ' ' '\n' | grep longhorn.io); do
+          echo "Processing CRD: $crd"
+          kubectl -n {{longhorn_namespace}} get $crd -o yaml | sed "s/\- longhorn.io//g" | kubectl apply -f -
+          if kubectl -n {{longhorn_namespace}} delete $crd --all 2>/dev/null; then
+            echo "Deleted $crd instances"
+            CHANGES_MADE=1
+          fi
+          if kubectl delete crd/$crd 2>/dev/null; then
+            echo "Deleted CRD $crd"
+            CHANGES_MADE=1
+          fi
+        done
+        echo "Force removal completed."
+        echo "CHANGES_MADE=$CHANGES_MADE"
+      register: force_removal_output
+      changed_when: "'CHANGES_MADE=1' in force_removal_output.stdout"
+
+    - name: Show force removal output
+      debug:
+        var: force_removal_output.stdout_lines
+
+    - name: Remove Longhorn namespace
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Namespace
+        name: "{{ longhorn_namespace }}"
+        wait: true
+        timeout: "300s"
+
+        
+- name: Remove Longhorn CLI
+  hosts: k3s_cluster
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Remove Longhorn CLI binary
+      file:
+        path: /usr/local/bin/longhornctl
+        state: absent
+
+    - name: Display CLI removal completion
+      debug:
+        msg: "Longhorn CLI binary removed from {{ inventory_hostname }}"

@@ -1,0 +1,10 @@
+clusterIssuer:
+  annotations: {}
+  acme:
+    server: "https://acme-v02.api.letsencrypt.org/directory"
+    email: ""
+    dnsZones: []
+
+cloudflareApiToken:
+  annotations: {}
+  token: ""

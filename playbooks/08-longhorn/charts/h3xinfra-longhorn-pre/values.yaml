@@ -1,0 +1,4 @@
+
+longhornCifsSecret:
+  cifsUsername: "longhorn"
+  cifsPassword: ""

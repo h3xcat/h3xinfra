@@ -1,0 +1,72 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+# Function to display usage
+usage() {
+    echo "Usage: $0 [NAMESPACE_SUBSTRING]"
+    echo ""
+    echo "Examples:"
+    echo "  $0                    # Connect and set context to 'default' namespace"
+    echo "  $0 nginx             # Connect and set context to first namespace containing 'nginx'"
+    echo "  $0 keycloak          # Connect and set context to first namespace containing 'keycloak'"
+    echo ""
+    exit 1
+}
+
+# Parse arguments
+NAMESPACE_ARG="${1:-}"
+
+# Check for help flag
+if [ "$NAMESPACE_ARG" = "--help" ] || [ "$NAMESPACE_ARG" = "-h" ]; then
+    usage
+fi
+
+echo "Starting kubectl configuration process..."
+set +e
+ansible-playbook "$WORKSPACE_FOLDER/playbooks/99-utils/kube-connect.yml" > /dev/null
+ANSIBLE_EXIT_CODE=$?
+set -e
+
+if [ $ANSIBLE_EXIT_CODE -ne 0 ]; then
+    echo "ERROR: Failed to configure kubectl connection"
+    exit 1
+fi
+
+# Determine target namespace
+TARGET_NAMESPACE="default"
+
+if [ -n "$NAMESPACE_ARG" ]; then
+    echo "Searching for namespace containing: '$NAMESPACE_ARG'"
+    
+    # Get all namespaces and find first match containing the substring
+    set +e
+    MATCHING_NAMESPACE=$(kubectl get namespaces -o custom-columns=NAME:.metadata.name --no-headers | grep "$NAMESPACE_ARG" | head -1)
+    KUBECTL_EXIT_CODE=$?
+    set -e
+
+    if [ -z "$MATCHING_NAMESPACE" ]; then
+        echo "ERROR: No namespace found containing substring '$NAMESPACE_ARG'"
+        echo "Available namespaces:"
+        kubectl get namespaces -o custom-columns=NAME:.metadata.name --no-headers | sort | sed 's/^/  /'
+        exit 1
+    fi
+    
+    TARGET_NAMESPACE="$MATCHING_NAMESPACE"
+else
+    echo "No namespace specified, using default namespace"
+    echo "Available namespaces:"
+    kubectl get namespaces -o custom-columns=NAME:.metadata.name --no-headers | sort | sed 's/^/  /'
+fi
+
+set +e
+kubectl config set-context --current --namespace="$TARGET_NAMESPACE" > /dev/null
+KUBECTL_CONFIG_EXIT_CODE=$?
+set -e
+
+if [ $KUBECTL_CONFIG_EXIT_CODE -eq 0 ]; then
+    echo "SUCCESS: kubectl context set to namespace '$TARGET_NAMESPACE'"
+else
+    echo "ERROR: Failed to set kubectl context to namespace '$TARGET_NAMESPACE'"
+    exit 1
+fi

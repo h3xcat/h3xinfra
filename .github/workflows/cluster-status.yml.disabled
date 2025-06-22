@@ -1,0 +1,59 @@
+name: Kubernetes Cluster Status
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 * * *'  # Run daily at 8:00 AM
+
+jobs:
+  check_cluster:
+    name: Check Kubernetes cluster status
+    
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Runner Environment
+        run: bash ./bin/setup-runner.sh
+        env:
+          WIREGUARD_PRIVATE_KEY: ${{ secrets.WIREGUARD_PRIVATE_KEY }}
+          WIREGUARD_PRESHARED_KEY: ${{ secrets.WIREGUARD_PRESHARED_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      
+      - name: Install Ansible and kubectl
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible
+          
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+      
+      - name: Configure kubectl connection
+        run: |
+          echo "Setting up kubectl connection to K3s cluster..."
+          bash ./bin/kube-connect
+          
+      - name: Verify kubectl configuration
+        run: |
+          echo "Verifying kubectl configuration..."
+          echo "Current context:"
+          kubectl config current-context || echo "No current context set"
+          echo "Testing kubectl connectivity..."
+          kubectl get nodes -o wide || {
+            echo "kubectl connection failed, showing diagnostics..."
+            echo "Network connectivity test:"
+            ping -c 3 k8s.home.arpa || echo "Cannot reach k8s.home.arpa"
+            exit 1
+          }
+          
+      - name: Run cluster status playbook
+        run: |
+          ansible-playbook playbooks/99-utils/cluster-status.yml

@@ -1,0 +1,38 @@
+# Default values for keycloak.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+secrets:
+  admin:
+    username: ""  # Will be populated by Ansible
+    password: ""  # Will be populated by Ansible
+  
+  database:
+    username: ""  # Will be populated by Ansible
+    password: ""  # Will be populated by Ansible
+
+keycloak:
+  statefulSet:
+    annotations: {}
+  service:
+    annotations: {}
+  serviceDiscovery:
+    annotations: {}
+  ingress:
+    annotations: {}
+    hostname: identity.app.example.com 
+    className: nginx
+  certificate:
+    annotations: {}
+    enabled: true
+    issuer: cloudflare-clusterissuer
+
+postgresql:
+  service:
+    annotations: {}
+  persistentVolumeClaim:
+    annotations: {}
+    storageClass: "longhorn"
+    size: 50Gi
+  deployment:
+    annotations: {}

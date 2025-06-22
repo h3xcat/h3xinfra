@@ -1,0 +1,50 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+- name: Deploy MetalLB via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+  - name: Add MetalLB Helm repository
+    kubernetes.core.helm_repository:
+      name: metallb
+      repo_url: https://metallb.github.io/metallb
+      state: present
+
+  - name: Create MetalLB namespace
+    kubernetes.core.k8s:
+      api_version: v1
+      kind: Namespace
+      name: "{{ metallb_namespace }}"
+      state: present
+      wait: true
+
+  - name: Deploy MetalLB via Helm
+    kubernetes.core.helm:
+      name: "{{ metallb_release_name_prefix }}-main"
+      chart_ref: "metallb/metallb"
+      chart_version: "{{ metallb_chart_version }}"
+      namespace: "{{ metallb_namespace }}"
+      create_namespace: false
+      values_files: 
+      - "{{ playbook_dir }}/metallb-values.yaml"
+      state: present
+      wait: true
+      timeout: "120s"
+
+  - name: Deploy MetalLB configuration via Helm chart
+    kubernetes.core.helm:
+      name: "{{ metallb_release_name_prefix }}-post"
+      chart_ref: "{{ playbook_dir }}/charts/h3xinfra-metallb-post"
+      namespace: "{{ metallb_namespace }}"
+      create_namespace: false
+      values:
+        fullnameOverride: "{{ metallb_release_name_prefix }}-post"
+      set_values:
+      - value: "ipPool.ipAddressPools.addresses.ipv4={{ metallb_loadbalancer_pools.ipv4 }}"
+        value_type: string
+      - value: "ipPool.ipAddressPools.addresses.ipv6={{ metallb_loadbalancer_pools.ipv6 }}"
+        value_type: string
+      state: present
+      wait: true
+      timeout: "120s"

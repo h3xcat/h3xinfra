@@ -1,0 +1,53 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Deploy Cert-Manager via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Add Cert-Manager Helm repository
+      kubernetes.core.helm_repository:
+        name: cert-manager
+        repo_url: https://charts.jetstack.io
+        state: present
+
+    - name: Create Cert-Manager namespace
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ certmanager_namespace }}"
+        state: present
+        wait: true
+      
+    - name: Deploy Cert-Manager via Helm
+      kubernetes.core.helm:
+        name: "{{ certmanager_release_name_prefix }}-main"
+        chart_ref: "cert-manager/cert-manager"
+        chart_version: "{{ certmanager_chart_version }}"
+        namespace: "{{ certmanager_namespace }}"
+        create_namespace: false
+        values:
+          crds:
+            enabled: true
+        state: present
+        wait: true
+        timeout: "120s"
+        
+    - name: Deploy Cert-Manager configuration via Helm chart
+      kubernetes.core.helm:
+        name: "{{ certmanager_release_name_prefix }}-post"
+        chart_ref: "{{ playbook_dir }}/charts/h3xinfra-certmanager-post"
+        namespace: "{{ certmanager_namespace }}"
+        create_namespace: false
+        values:
+          fullnameOverride: "{{ certmanager_release_name_prefix }}-post"
+          clusterIssuer:
+            acme:
+              email: "{{ certmanager_cluster_issuer_email }}"
+              dnsZones: "{{ certmanager_cluster_issuer_dns }}"
+          cloudflareApiToken:
+            token: "{{ cloudflare_api_token }}"
+        state: present
+        wait: true
+        timeout: "120s"

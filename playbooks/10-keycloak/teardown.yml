@@ -1,0 +1,23 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Remove Keycloak via Helm
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Uninstall Keycloak via Helm
+      kubernetes.core.helm:
+        name: "{{ keycloak_release_name_prefix }}-main"
+        release_namespace: "{{ keycloak_namespace }}"
+        state: absent
+        wait: true
+        timeout: "300s"
+
+    - name: Remove Keycloak namespace
+      kubernetes.core.k8s:
+        name: "{{ keycloak_namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: absent
+        wait: true
+        timeout: "300s"
