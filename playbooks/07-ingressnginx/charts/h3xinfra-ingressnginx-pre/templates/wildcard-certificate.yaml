@@ -14,7 +14,7 @@ spec:
     name: {{ .Values.clusterIssuerName }}
     kind: ClusterIssuer
   commonName: {{ .Values.wildcardCertificate.commonName }}
-  {{ with .Values.wildcardCertificate.dnsNames }}
+  {{- with .Values.wildcardCertificate.dnsNames }}
   dnsNames:
-    {{ . | toYaml | nindent 4 }}
+    {{- . | toYaml | nindent 4 }}
   {{- end }}

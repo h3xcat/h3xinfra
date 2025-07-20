@@ -21,7 +21,8 @@ spec:
             name: {{ include "h3xinfra-certmanager-post.fullname" . }}-cloudflare-api-token
             key: api-token
       selector:
-        dnsZones: {{ with .Values.clusterIssuer.acme.dnsZones }}
+        dnsZones:
+        {{- with .Values.clusterIssuer.acme.dnsZones }}
           {{- toYaml . | nindent 8 }}
           {{- else }}
           {{ fail "No DNS zones specified for ClusterIssuer" }}
