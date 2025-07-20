@@ -29,7 +29,7 @@
         kind: Namespace
         name: "{{ certmanager_namespace }}"
         wait: true
-        timeout: "300s"
+        wait_timeout: 300
 
     - name: Remove Cert-Manager CRDs
       kubernetes.core.k8s:

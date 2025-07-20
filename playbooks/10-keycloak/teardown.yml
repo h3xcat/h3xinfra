@@ -20,4 +20,4 @@
         kind: Namespace
         state: absent
         wait: true
-        timeout: "300s"
+        wait_timeout: 300

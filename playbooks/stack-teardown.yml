@@ -19,6 +19,7 @@
       register: kubectl_result
       ignore_errors: true
       changed_when: false
+      no_log: true
 
     - name: Set kubectl status fact
       ansible.builtin.set_fact:

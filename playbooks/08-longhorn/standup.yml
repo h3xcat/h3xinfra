@@ -71,7 +71,7 @@
         values: 
           defaultSettings:
             # Storage Configuration
-            defaultDataPath: /mnt/longhorn-data
+            defaultDataPath: /var/lib/longhorn/
             storageMinimalAvailablePercentage: 10
             storageOverProvisioningPercentage: 200
             storageReservedPercentageForDefaultDisk: 5

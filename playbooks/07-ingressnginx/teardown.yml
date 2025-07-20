@@ -29,4 +29,4 @@
         kind: Namespace
         name: "{{ ingressnginx_namespace }}"
         wait: true
-        timeout: "300s"
+        wait_timeout: 300

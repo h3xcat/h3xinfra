@@ -101,23 +101,56 @@
       register: hugepage_check
       changed_when: false
 
-    - name: Make huge pages persistent across reboots
+    - name: Check if GRUB configuration exists
+      stat:
+        path: /etc/default/grub
+      register: grub_exists
+
+    - name: Make huge pages persistent across reboots (GRUB systems)
       lineinfile:
         path: /etc/default/grub
         regexp: '^GRUB_CMDLINE_LINUX='
         line: 'GRUB_CMDLINE_LINUX="hugepages=1024"'
         backup: yes
       register: grub_updated
+      when: grub_exists.stat.exists
 
     - name: Update GRUB configuration
       command: update-grub
-      when: grub_updated.changed
+      when: grub_updated.changed and grub_exists.stat.exists
+
+    - name: Configure hugepages for Raspberry Pi (boot config)
+      lineinfile:
+        path: /boot/firmware/cmdline.txt
+        regexp: '^((?!.*hugepages=).*)'
+        line: '\1 hugepages=1024'
+        backup: no
+        backrefs: yes
+      register: rpi_cmdline_updated
+      when: not grub_exists.stat.exists
+
+    - name: Alternative Raspberry Pi hugepages configuration (if cmdline.txt doesn't exist)
+      lineinfile:
+        path: /boot/cmdline.txt
+        regexp: '^((?!.*hugepages=).*)'
+        line: '\1 hugepages=1024'
+        backup: no
+        backrefs: yes
+      register: rpi_cmdline_alt_updated
+      when: not grub_exists.stat.exists and rpi_cmdline_updated is failed
+
+    - name: Check if ubuntu-vg volume group exists
+      shell: vgs ubuntu-vg --noheadings 2>/dev/null
+      register: ubuntu_vg_check
+      changed_when: false
+      failed_when: false
 
     - name: Check if longhorn-storage-lv logical volume exists
       shell: lvs ubuntu-vg/longhorn-storage-lv --noheadings 2>/dev/null
       register: longhorn_lv_check
       changed_when: false
       failed_when: false
+      when: ubuntu_vg_check.rc == 0
 
     - name: Create logical volume for Longhorn storage
       lvol:
@@ -126,33 +159,35 @@
         size: 100%PVS
         pvs: /dev/nvme0n1p3
         state: present
-      when: longhorn_lv_check.rc != 0
+      when: ubuntu_vg_check.rc == 0 and longhorn_lv_check.rc != 0
 
     - name: Format Longhorn logical volume with ext4
       filesystem:
         fstype: ext4
         dev: /dev/ubuntu-vg/longhorn-storage-lv
         resizefs: true
+      when: ubuntu_vg_check.rc == 0 and longhorn_lv_check.rc != 0
 
     - name: Create Longhorn storage directory
       file:
-        path: /mnt/longhorn-data
+        path: /var/lib/longhorn/
         state: directory
         mode: '0755'
         owner: root
         group: root
 
-    - name: Mount Longhorn storage
+    - name: Mount Longhorn storage (LVM)
       mount:
-        path: /mnt/longhorn-data
+        path: /var/lib/longhorn/
         src: /dev/ubuntu-vg/longhorn-storage-lv
         fstype: ext4
         opts: defaults
         state: mounted
+      when: ubuntu_vg_check.rc == 0 and longhorn_lv_check.rc != 0
 
     - name: Set permissions on Longhorn directory
       file:
-        path: /mnt/longhorn-data
+        path: /var/lib/longhorn/
         state: directory
         mode: '0755'
         owner: root

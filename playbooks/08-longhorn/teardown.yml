@@ -71,7 +71,7 @@
         kind: Namespace
         name: "{{ longhorn_namespace }}"
         wait: true
-        timeout: "300s"
+        wait_timeout: 300
 
         
 - name: Remove Longhorn CLI

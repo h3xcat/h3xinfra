@@ -1,6 +1,8 @@
 # Ignore secrets directory
 /secrets/
 
+/inventory.yml
+
 # Common ignore patterns
 *.swp
 *~
@@ -12,3 +14,4 @@ playbooks/10-keycloak/generated/
 
 __pycache__/
 *.pyc
+

@@ -7,6 +7,9 @@
     ansible_user_comment: "Ansible Automation User"
     ansible_user_shell: /bin/bash
     ansible_user_groups: "sudo"
+    # Override connection settings to use h3xcat user for this playbook
+    ansible_user: h3xcat
+    ansible_ssh_private_key_file: null  # Use default SSH key or prompt for password
     
   tasks:
     - name: Create ansible user
