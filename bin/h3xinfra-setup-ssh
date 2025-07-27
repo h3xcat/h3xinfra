@@ -1,0 +1,11 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+if [ -d /tmp/host-ssh ]; then    
+    mkdir -p ~/.ssh
+    cp -r /tmp/host-ssh/. ~/.ssh
+    chmod 700 ~/.ssh
+    find ~/.ssh -type f -exec chmod 600 {} +
+    chown -R $(whoami):$(whoami) ~/.ssh
+fi

@@ -2,4 +2,4 @@ longhornIngress:
   host: longhorn.app
 
 longhornBasicAuthSecret:
-  auth: "" # echo "h3xcat:$(openssl passwd -stdin -apr1 < "$WORKSPACE_FOLDER/secrets/longhorn_pass.txt")"
+  auth: "" # echo "h3xcat:$(openssl passwd -stdin -apr1 < "$H3XINFRA_FOLDER/secrets/longhorn_pass.txt")"

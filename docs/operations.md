@@ -20,6 +20,7 @@ This project includes a complete devcontainer configuration for consistent devel
   - GitHub Copilot integration
 - **Environment Configuration**:
   - `WORKSPACE_FOLDER` environment variable
+  - `H3XINFRA_FOLDER` environment variable pointing to public h3xinfra repo
   - `ANSIBLE_CONFIG` pointing to project ansible.cfg
   - `bin/` directory added to PATH
 - **Volume Mounts**:
@@ -233,6 +234,7 @@ chmod 600 ~/.ssh/id_*
 ```bash
 # Check environment setup
 echo $WORKSPACE_FOLDER
+echo $H3XINFRA_FOLDER
 echo $ANSIBLE_CONFIG
 echo $PATH | grep bin
 
@@ -242,10 +244,10 @@ echo $PATH | grep bin
 #### Command Not Found Errors
 ```bash
 # Verify bin directory is in PATH
-echo $PATH | grep -o "${WORKSPACE_FOLDER}/bin"
+echo $PATH | grep -o "${H3XINFRA_FOLDER}/bin"
 
 # If missing, restart the container or manually add:
-export PATH="${PATH}:${WORKSPACE_FOLDER}/bin"
+export PATH="${PATH}:${H3XINFRA_FOLDER}/bin"
 ```
 
 ### Cluster Access Issues

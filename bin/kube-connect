@@ -24,7 +24,7 @@ fi
 
 echo "Starting kubectl configuration process..."
 set +e
-ansible-playbook "$WORKSPACE_FOLDER/playbooks/99-utils/kube-connect.yml" > /dev/null
+ansible-playbook "$H3XINFRA_FOLDER/playbooks/99-utils/kube-connect.yml" > /dev/null
 ANSIBLE_EXIT_CODE=$?
 set -e
 

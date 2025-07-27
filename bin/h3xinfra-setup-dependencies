@@ -1,0 +1,21 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+# Install Ansible
+sudo apt-get update
+sudo apt-get install -y software-properties-common
+sudo add-apt-repository --yes --update ppa:ansible/ansible
+sudo apt-get install -y ansible
+sudo apt-get autoremove -y
+sudo apt-get clean
+
+ansible-galaxy collection install git+https://github.com/k3s-io/k3s-ansible.git
+ansible-galaxy collection install kubernetes.core
+
+# Install python dependencies
+pip3 install --upgrade pip
+pip3 install kubernetes
+
+# Install helm-diff
+helm plugin install https://github.com/databus23/helm-diff

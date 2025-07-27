@@ -1,7 +1,0 @@
-apiVersion: v2
-name: h3xinfra-keycloak-main
-description: A Helm chart for Keycloak identity and access management
-type: application
-version: 0.1.0
-appVersion: "26.0.0"
-dependencies: []

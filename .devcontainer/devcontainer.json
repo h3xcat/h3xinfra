@@ -34,6 +34,7 @@
 	// "customizations": {},
 	"containerEnv": {
 		"WORKSPACE_FOLDER": "${containerWorkspaceFolder}",
+		"H3XINFRA_FOLDER": "${containerWorkspaceFolder}",
 		"ANSIBLE_CONFIG": "${containerWorkspaceFolder}/ansible.cfg",
 	},
 	"remoteEnv": {

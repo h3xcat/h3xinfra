@@ -23,9 +23,9 @@
 
 - import_playbook: 08-longhorn/standup.yml
 
-- import_playbook: 09-mailu/standup.yml
+# - import_playbook: 09-mailu/standup.yml
 
-- import_playbook: 10-keycloak/standup.yml
+# - import_playbook: 10-keycloak/standup.yml
 
 # Display cluster status
 - import_playbook: 99-utils/cluster-status.yml

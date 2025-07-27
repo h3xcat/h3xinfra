@@ -119,6 +119,7 @@ The project includes a sophisticated devcontainer setup with:
 ### Environment Variables
 
 - `WORKSPACE_FOLDER`: Points to project root
+- `H3XINFRA_FOLDER`: Points to public h3xinfra project
 - `ANSIBLE_CONFIG`: Points to project ansible.cfg
 - `PATH`: Extended to include `${WORKSPACE_FOLDER}/bin`
 
