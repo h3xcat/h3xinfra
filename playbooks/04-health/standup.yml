@@ -7,12 +7,12 @@
   tasks:
     - name: Deploy Health Endpoints via Helm
       kubernetes.core.helm:
-        name: "{{ health_release_name_prefix }}-main"
+        name: "{{ health.release_name_prefix }}-main"
         chart_ref: "{{ playbook_dir }}/charts/h3xinfra-health-main"
         namespace: default
         create_namespace: false
         values:
-          fullnameOverride: "{{ health_release_name_prefix }}-main"
+          fullnameOverride: "{{ health.release_name_prefix }}-main"
         state: present
         wait: true
         timeout: "120s"

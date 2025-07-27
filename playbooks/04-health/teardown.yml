@@ -7,7 +7,7 @@
   tasks:
   - name: Uninstall Health Endpoints via Helm
     kubernetes.core.helm:
-      name: "{{ health_release_name_prefix }}-main"
+      name: "{{ health.release_name_prefix }}-main"
       namespace: "default"
       state: absent
       wait: true

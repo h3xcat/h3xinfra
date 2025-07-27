@@ -8,16 +8,16 @@
   tasks:
   - name: Uninstall MetalLB configuration via Helm
     kubernetes.core.helm:
-      name: "{{ metallb_release_name_prefix }}-post"
-      namespace: "{{ metallb_namespace }}"
+      name: "{{ metallb.release_name_prefix }}-post"
+      namespace: "{{ metallb.namespace }}"
       state: absent
       wait: true
       timeout: "300s"
 
   - name: Uninstall MetalLB via Helm
     kubernetes.core.helm:
-      name: "{{ metallb_release_name_prefix }}-main"
-      namespace: "{{ metallb_namespace }}"
+      name: "{{ metallb.release_name_prefix }}-main"
+      namespace: "{{ metallb.namespace }}"
       state: absent
       wait: true
       timeout: "300s"
@@ -26,7 +26,7 @@
     kubernetes.core.k8s:
       api_version: v1
       kind: Namespace
-      name: "{{ metallb_namespace }}"
+      name: "{{ metallb.namespace }}"
       state: absent
       wait: true
       wait_timeout: 300

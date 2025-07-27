@@ -16,16 +16,16 @@
       kubernetes.core.k8s:
         api_version: v1
         kind: Namespace
-        name: "{{ certmanager_namespace }}"
+        name: "{{ certmanager.namespace }}"
         state: present
         wait: true
       
     - name: Deploy Cert-Manager via Helm
       kubernetes.core.helm:
-        name: "{{ certmanager_release_name_prefix }}-main"
+        name: "{{ certmanager.release_name_prefix }}-main"
         chart_ref: "cert-manager/cert-manager"
-        chart_version: "{{ certmanager_chart_version }}"
-        namespace: "{{ certmanager_namespace }}"
+        chart_version: "{{ certmanager.chart_version }}"
+        namespace: "{{ certmanager.namespace }}"
         create_namespace: false
         values:
           crds:
@@ -36,16 +36,16 @@
         
     - name: Deploy Cert-Manager configuration via Helm chart
       kubernetes.core.helm:
-        name: "{{ certmanager_release_name_prefix }}-post"
+        name: "{{ certmanager.release_name_prefix }}-post"
         chart_ref: "{{ playbook_dir }}/charts/h3xinfra-certmanager-post"
-        namespace: "{{ certmanager_namespace }}"
+        namespace: "{{ certmanager.namespace }}"
         create_namespace: false
         values:
-          fullnameOverride: "{{ certmanager_release_name_prefix }}-post"
+          fullnameOverride: "{{ certmanager.release_name_prefix }}-post"
           clusterIssuer:
             acme:
-              email: "{{ certmanager_cluster_issuer_email }}"
-              dnsZones: "{{ certmanager_cluster_issuer_dns }}"
+              email: "{{ certmanager.cluster_issuer_email }}"
+              dnsZones: "{{ certmanager.cluster_issuer_dns }}"
           cloudflareApiToken:
             token: "{{ cloudflare_api_token }}"
         state: present

@@ -16,16 +16,16 @@
     kubernetes.core.k8s:
       api_version: v1
       kind: Namespace
-      name: "{{ cilium_namespace }}"
+      name: "{{ cilium.namespace }}"
       state: present
       wait: true
 
   - name: Deploy Cilium via Helm
     kubernetes.core.helm:
-      name: "{{ cilium_release_name_prefix }}-main"
+      name: "{{ cilium.release_name_prefix }}-main"
       chart_ref: "cilium/cilium"
-      chart_version: "{{ cilium_chart_version }}"
-      namespace: "{{ cilium_namespace }}"
+      chart_version: "{{ cilium.chart_version }}"
+      namespace: "{{ cilium.namespace }}"
       create_namespace: false
       values_files: 
       - "{{ playbook_dir }}/cilium-values.yaml"

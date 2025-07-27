@@ -8,24 +8,24 @@
   tasks:
     - name: Uninstall Longhorn configuration via Helm
       kubernetes.core.helm:
-        name: "{{ longhorn_release_name_prefix }}-post"
-        namespace: "{{ longhorn_namespace }}"
+        name: "{{ longhorn.release_name_prefix }}-post"
+        namespace: "{{ longhorn.namespace }}"
         state: absent
         wait: true
         timeout: "300s"
 
     - name: Uninstall Longhorn via Helm
       kubernetes.core.helm:
-        name: "{{ longhorn_release_name_prefix }}-main"
-        namespace: "{{ longhorn_namespace }}"
+        name: "{{ longhorn.release_name_prefix }}-main"
+        namespace: "{{ longhorn.namespace }}"
         state: absent
         wait: true
         timeout: "300s"
 
     - name: Uninstall Longhorn pre-configuration via Helm
       kubernetes.core.helm:
-        name: "{{ longhorn_release_name_prefix }}-pre"
-        namespace: "{{ longhorn_namespace }}"
+        name: "{{ longhorn.release_name_prefix }}-pre"
+        namespace: "{{ longhorn.namespace }}"
         state: absent
         wait: true
         timeout: "300s"
@@ -45,8 +45,8 @@
         echo "Processing Longhorn CRDs..."
         for crd in $(kubectl get crd -o jsonpath={.items[*].metadata.name} | tr ' ' '\n' | grep longhorn.io); do
           echo "Processing CRD: $crd"
-          kubectl -n {{longhorn_namespace}} get $crd -o yaml | sed "s/\- longhorn.io//g" | kubectl apply -f -
-          if kubectl -n {{longhorn_namespace}} delete $crd --all 2>/dev/null; then
+          kubectl -n {{longhorn.namespace}} get $crd -o yaml | sed "s/\- longhorn.io//g" | kubectl apply -f -
+          if kubectl -n {{longhorn.namespace}} delete $crd --all 2>/dev/null; then
             echo "Deleted $crd instances"
             CHANGES_MADE=1
           fi
@@ -69,7 +69,7 @@
         state: absent
         api_version: v1
         kind: Namespace
-        name: "{{ longhorn_namespace }}"
+        name: "{{ longhorn.namespace }}"
         wait: true
         wait_timeout: 300
 

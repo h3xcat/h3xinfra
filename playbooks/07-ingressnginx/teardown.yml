@@ -8,16 +8,16 @@
   tasks:
     - name: Uninstall Ingress-Nginx via Helm
       kubernetes.core.helm:
-        name: "{{ ingressnginx_release_name_prefix }}-main"
-        namespace: "{{ ingressnginx_namespace }}"
+        name: "{{ ingressnginx.release_name_prefix }}-main"
+        namespace: "{{ ingressnginx.namespace }}"
         state: absent
         wait: true
         timeout: "300s"
 
     - name: Uninstall Ingress-Nginx configuration via Helm
       kubernetes.core.helm:
-        name: "{{ ingressnginx_release_name_prefix }}-pre"
-        namespace: "{{ ingressnginx_namespace }}"
+        name: "{{ ingressnginx.release_name_prefix }}-pre"
+        namespace: "{{ ingressnginx.namespace }}"
         state: absent
         wait: true
         timeout: "300s"
@@ -27,6 +27,6 @@
         state: absent
         api_version: v1
         kind: Namespace
-        name: "{{ ingressnginx_namespace }}"
+        name: "{{ ingressnginx.namespace }}"
         wait: true
         wait_timeout: 300

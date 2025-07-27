@@ -8,16 +8,16 @@
   tasks:
     - name: Uninstall Cert-Manager configuration via Helm
       kubernetes.core.helm:
-        name: "{{ certmanager_release_name_prefix }}-post"
-        namespace: "{{ certmanager_namespace }}"
+        name: "{{ certmanager.release_name_prefix }}-post"
+        namespace: "{{ certmanager.namespace }}"
         state: absent
         wait: true
         timeout: "300s"
 
     - name: Uninstall Cert-Manager via Helm
       kubernetes.core.helm:
-        name: "{{ certmanager_release_name_prefix }}-main"
-        namespace: "{{ certmanager_namespace }}"
+        name: "{{ certmanager.release_name_prefix }}-main"
+        namespace: "{{ certmanager.namespace }}"
         state: absent
         wait: true
         timeout: "300s"
@@ -27,7 +27,7 @@
         state: absent
         api_version: v1
         kind: Namespace
-        name: "{{ certmanager_namespace }}"
+        name: "{{ certmanager.namespace }}"
         wait: true
         wait_timeout: 300
 

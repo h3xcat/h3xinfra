@@ -42,31 +42,31 @@
       kubernetes.core.k8s:
         api_version: v1
         kind: Namespace
-        name: "{{ longhorn_namespace }}"
+        name: "{{ longhorn.namespace }}"
         state: present
         wait: true
 
     - name: Deploy Longhorn pre-configuration via Helm
       kubernetes.core.helm:
-        name: "{{ longhorn_release_name_prefix }}-pre"
+        name: "{{ longhorn.release_name_prefix }}-pre"
         chart_ref: "{{ playbook_dir }}/charts/h3xinfra-longhorn-pre"
-        namespace: "{{ longhorn_namespace }}"
+        namespace: "{{ longhorn.namespace }}"
         create_namespace: false
         values:
-          fullnameOverride: "{{ longhorn_release_name_prefix }}-pre"
+          fullnameOverride: "{{ longhorn.release_name_prefix }}-pre"
           longhornCifsSecret:
-            cifsUsername: "{{ longhorn_cifs_username }}"
-            cifsPassword: "{{ longhorn_cifs_password }}"
+            cifsUsername: "{{ longhorn.cifs_username }}"
+            cifsPassword: "{{ longhorn.cifs_password }}"
         state: present
         wait: true
         timeout: "120s"
 
     - name: Deploy Longhorn via Helm
       kubernetes.core.helm:
-        name: "{{ longhorn_release_name_prefix }}-main"
+        name: "{{ longhorn.release_name_prefix }}-main"
         chart_ref: "longhorn/longhorn"
-        chart_version: "{{ longhorn_chart_version }}"
-        namespace: "{{ longhorn_namespace }}"
+        chart_version: "{{ longhorn.chart_version }}"
+        namespace: "{{ longhorn.namespace }}"
         create_namespace: false
         values: 
           defaultSettings:
@@ -91,8 +91,8 @@
             # Backup and Maintenance
             createDefaultDiskLabeledNodes: "false"
           defaultBackupStore:
-            backupTarget: "{{ longhorn_cifs_backup_target }}"
-            backupTargetCredentialSecret: "{{ longhorn_release_name_prefix }}-pre-cifs-secret"
+            backupTarget: "{{ longhorn.cifs_backup_target }}"
+            backupTargetCredentialSecret: "{{ longhorn.release_name_prefix }}-pre-cifs-secret"
 
         state: present
         wait: true
@@ -100,17 +100,17 @@
 
     - name: Deploy Longhorn configuration via Helm
       kubernetes.core.helm:
-        name: "{{ longhorn_release_name_prefix }}-post"
+        name: "{{ longhorn.release_name_prefix }}-post"
         chart_ref: "{{ playbook_dir }}/charts/h3xinfra-longhorn-post"
-        namespace: "{{ longhorn_namespace }}"
+        namespace: "{{ longhorn.namespace }}"
         create_namespace: false
         values:
-          fullnameOverride: "{{ longhorn_release_name_prefix }}-post"
+          fullnameOverride: "{{ longhorn.release_name_prefix }}-post"
           longhornIngress:
-            host: "{{ longhorn_ingress_host }}"
+            host: "{{ longhorn.ingress_host }}"
 
           longhornBasicAuthSecret:
-            auth: "{{ longhorn_basic_auth_secret }}"
+            auth: "{{ longhorn.basic_auth_secret }}"
         state: present
         wait: true
         timeout: "120s"

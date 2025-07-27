@@ -65,35 +65,26 @@ all:
       ansible_connection: local
       ansible_python_interpreter: "/usr/bin/python3"
   vars:
-    health_release_name_prefix: "homeinfra-health"
+    health:
+      release_name_prefix: "homeinfra-health"
 
-    cilium_namespace: "kube-system"
-    cilium_release_name_prefix: "homeinfra-cilium"
-    cilium_chart_version: "1.17.3" 
+    cilium:
+      namespace: "kube-system"
+      release_name_prefix: "homeinfra-cilium"
+      chart_version: "1.17.3" 
     
-    metallb_namespace: "metallb-system"
-    metallb_release_name_prefix: "homeinfra-metallb"
-    metallb_chart_version: "0.13.10"
+    metallb:
+      namespace: "metallb-system"
+      release_name_prefix: "homeinfra-metallb"
+      chart_version: "0.13.10"
 
-    # Example network ranges - replace with your actual network configuration
-    # Note: IPv6 addresses use subnets within your ISP's public allocation
-    # IPv4 pattern: MetalLB gets a pool, individual services get specific IPs outside the pool
-    metallb_loadbalancer_pools:
-      ipv4: "192.168.100.0/24"  # Large range for general load balancer use
-      ipv6: "2001:db8:face:1::/96"  # Dedicated subnet for load balancer pools
+      # Example network ranges - replace with your actual network configuration
+      # Note: IPv6 addresses use subnets within your ISP's public allocation
+      # IPv4 pattern: MetalLB gets a pool, individual services get specific IPs outside the pool
+      loadbalancer_pools:
+        ipv4: "192.168.100.0/24"  # Large range for general load balancer use
+        ipv6: "2001:db8:face:1::/96"  # Dedicated subnet for load balancer pools
 
-    ingressnginx_loadbalancer_pools:
-      ipv4: "192.168.101.100/32"  # Specific IP outside MetalLB pool
-      ipv6: "2001:db8:face::100/128"  # Manual assignment in face:0:: subnet
-
-    mailu_loadbalancer_pools:
-      ipv4: "192.168.101.101/32"  # Specific IP outside MetalLB pool  
-      ipv6: "2001:db8:face::101/128"  # Manual assignment in face:0:: subnet
-    
-    # Example public IP addresses - replace with your actual public IPs
-    mailu_public_addresses:
-      ipv4: "203.0.113.10"  # Example public IPv4 (replace with actual)
-      ipv6: "2001:db8:face::101"  # Same as load balancer IP for this service
 
     cluster_cidr:
       ipv4: "10.42.0.0/16"
@@ -104,88 +95,103 @@ all:
     # Replace with your actual primary network interface
     primary_network_interface: "eth0"
     
-    certmanager_namespace: "cert-manager"
-    certmanager_release_name_prefix: "homeinfra-certmanager"
-    certmanager_chart_version: "v1.17.2"
+    certmanager:
+      namespace: "cert-manager"
+      release_name_prefix: "homeinfra-certmanager"
+      chart_version: "v1.17.2"
+      # Replace with your actual email address
+      cluster_issuer_email: "admin@example.com"
+      cluster_issuer_dns: 
+      - 'example.com'
+      - '*.example.com'
+      - 'second-domain.com'
+      - '*.second-domain.com'
+    mailu:
+      namespace: "mailu"
+      release_name_prefix: "homeinfra-mailu"
+      chart_version: "2.2.2"
+      # Replace with your actual domain
+      domain: "example.com"
+      db_password: !vault |
+        $ANSIBLE_VAULT;1.1;AES256
+        changeme_please_encrypt_your_actual_password_with_ansible_vault
+      dns_names:
+      - "mail.app.example.com"
+      - "mail.example.com"
+      secret_key: !vault |
+        $ANSIBLE_VAULT;1.1;AES256
+        changeme_please_encrypt_your_actual_secret_key_with_ansible_vault
+      admin_password: !vault |
+        $ANSIBLE_VAULT;1.1;AES256
+        changeme_please_encrypt_your_actual_admin_password_with_ansible_vault
+      # Replace with your actual SMTP relay configuration
+      external_relay_host: "[smtp.example.com]:587"
+      external_relay_username: "your-smtp-username"
+      external_relay_password: !vault |
+            $ANSIBLE_VAULT;1.1;AES256
+            changeme_please_encrypt_your_actual_smtp_password_with_ansible_vault
+      loadbalancer_pools:
+        ipv4: "192.168.101.101/32"  # Specific IP outside MetalLB pool  
+        ipv6: "2001:db8:face::101/128"  # Manual assignment in face:0:: subnet
+      
+      # Example public IP addresses - replace with your actual public IPs
+      public_addresses:
+        ipv4: "203.0.113.10"  # Example public IPv4 (replace with actual)
+        ipv6: "2001:db8:face::101"  # Same as load balancer IP for this service
 
-    mailu_namespace: "mailu"
-    mailu_release_name_prefix: "homeinfra-mailu"
-    mailu_chart_version: "2.2.2"
-    # Replace with your actual domain
-    mailu_domain: "example.com"
-    mailu_db_password: !vault |
-      $ANSIBLE_VAULT;1.1;AES256
-      changeme_please_encrypt_your_actual_password_with_ansible_vault
-    mailu_dns_names:
-    - "mail.app.example.com"
-    - "mail.example.com"
-    mailu_secret_key: !vault |
-      $ANSIBLE_VAULT;1.1;AES256
-      changeme_please_encrypt_your_actual_secret_key_with_ansible_vault
-    mailu_admin_password: !vault |
-      $ANSIBLE_VAULT;1.1;AES256
-      changeme_please_encrypt_your_actual_admin_password_with_ansible_vault
-    # Replace with your actual SMTP relay configuration
-    mailu_external_relay_host: "[smtp.example.com]:587"
-    mailu_external_relay_username: "your-smtp-username"
-    mailu_external_relay_password: !vault |
-          $ANSIBLE_VAULT;1.1;AES256
-          changeme_please_encrypt_your_actual_smtp_password_with_ansible_vault
-
-    # Replace with your actual email address
-    certmanager_cluster_issuer_email: "admin@example.com"
-    certmanager_cluster_issuer_dns: 
-    - 'example.com'
-    - '*.example.com'
-    - 'second-domain.com'
-    - '*.second-domain.com'
     # Replace with your actual Cloudflare API token
     cloudflare_api_token: !vault |
       $ANSIBLE_VAULT;1.1;AES256
       changeme_please_encrypt_your_actual_cloudflare_api_token_with_ansible_vault
 
-    externaldns_namespace: "external-dns"
-    externaldns_release_name_prefix: "homeinfra-externaldns"
-    externaldns_chart_version: "1.16.1"
-    externaldns_domain_filters:
-    - "example.com"
-    - "second-domain.com"
-    - "third-domain.com"
+    externaldns:
+      namespace: "external-dns"
+      release_name_prefix: "homeinfra-externaldns"
+      chart_version: "1.16.1"
+      domain_filters:
+      - "example.com"
+      - "second-domain.com"
+      - "third-domain.com"
 
-    ingressnginx_dns_names:
-    - "example.com"
-    - "*.example.com"
-    - "*.app.example.com"
-    ingressnginx_namespace: "ingress-nginx"
-    ingressnginx_release_name_prefix: "homeinfra-ingressnginx"
-    ingressnginx_chart_version: "4.12.2"
+    ingressnginx:
+      namespace: "ingress-nginx"
+      release_name_prefix: "homeinfra-ingressnginx"
+      chart_version: "4.12.2"
+      loadbalancer_pools:
+        ipv4: "192.168.101.100/32"  # Specific IP outside MetalLB pool
+        ipv6: "2001:db8:face::100/128"  # Manual assignment in face:0:: subnet
+      dns_names:
+      - "example.com"
+      - "*.example.com"
+      - "*.app.example.com"
 
-    longhorn_cifs_username: "longhorn"
-    longhorn_cifs_password: !vault |
-      $ANSIBLE_VAULT;1.1;AES256
-      changeme_please_encrypt_your_actual_cifs_password_with_ansible_vault
-    # Replace with your actual NAS backup target
-    longhorn_cifs_backup_target: "cifs://nas.home.local/longhorn-backup"
-    longhorn_namespace: "longhorn-system"
-    longhorn_release_name_prefix: "homeinfra-longhorn"
-    longhorn_chart_version: "v1.9.0"
-    # Generate your own basic auth secret: echo "username:$(openssl passwd -stdin -apr1 < password_file)"
-    longhorn_basic_auth_secret: "admin:$apr1$example$hashgoeshere/"
-    longhorn_ingress_host: "longhorn.app.example.com"
+    longhorn:
+      namespace: "longhorn-system"
+      release_name_prefix: "homeinfra-longhorn"
+      chart_version: "v1.9.0"
+      cifs_username: "longhorn"
+      cifs_password: !vault |
+        $ANSIBLE_VAULT;1.1;AES256
+        changeme_please_encrypt_your_actual_cifs_password_with_ansible_vault
+      # Replace with your actual NAS backup target
+      cifs_backup_target: "cifs://nas.home.local/longhorn-backup"
+      # Generate your own basic auth secret: echo "username:$(openssl passwd -stdin -apr1 < password_file)"
+      basic_auth_secret: "admin:$apr1$example$hashgoeshere/"
+      ingress_host: "longhorn.app.example.com"
     
-
-    keycloak_release_name_prefix: "homeinfra-keycloak"
-    keycloak_namespace: keycloak
-    
-    keycloak_admin_username: admin
-    keycloak_admin_password: !vault |
-      $ANSIBLE_VAULT;1.1;AES256
-      changeme_please_encrypt_your_actual_keycloak_admin_password_with_ansible_vault
-    keycloak_db_username: keycloak
-    keycloak_db_password: !vault |
-      $ANSIBLE_VAULT;1.1;AES256
-      changeme_please_encrypt_your_actual_keycloak_db_password_with_ansible_vault
-    keycloak_ingress_hostname: "identity.app.example.com"
+    keycloak:
+      release_name_prefix: "homeinfra-keycloak"
+      namespace: keycloak
+      
+      admin_username: admin
+      admin_password: !vault |
+        $ANSIBLE_VAULT;1.1;AES256
+        changeme_please_encrypt_your_actual_keycloak_admin_password_with_ansible_vault
+      db_username: keycloak
+      db_password: !vault |
+        $ANSIBLE_VAULT;1.1;AES256
+        changeme_please_encrypt_your_actual_keycloak_db_password_with_ansible_vault
+      ingress_hostname: "identity.app.example.com"
 
 
 k3s_cluster:
@@ -254,9 +260,3 @@ k3s_cluster:
 
     # Global application variables
     domain_name: home.local  # Replace with your actual local domain
-    keycloak_admin_password: !vault |
-      $ANSIBLE_VAULT;1.1;AES256
-      changeme_please_encrypt_your_actual_keycloak_admin_password_with_ansible_vault
-    keycloak_db_password: !vault |
-      $ANSIBLE_VAULT;1.1;AES256
-      changeme_please_encrypt_your_actual_keycloak_db_password_with_ansible_vault

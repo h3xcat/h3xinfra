@@ -8,8 +8,8 @@
   tasks:
   - name: Uninstall Cilium via Helm
     kubernetes.core.helm:
-      name: "{{ cilium_release_name_prefix }}-main"
-      namespace: "{{ cilium_namespace }}"
+      name: "{{ cilium.release_name_prefix }}-main"
+      namespace: "{{ cilium.namespace }}"
       state: absent
       wait: true
       timeout: "300s"
