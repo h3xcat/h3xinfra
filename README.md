@@ -43,8 +43,6 @@ This project provides Ansible playbooks and configurations to deploy and manage 
 │   ├── 06-externaldns/    # External DNS with Cloudflare
 │   ├── 07-ingressnginx/   # Nginx ingress controller
 │   ├── 08-longhorn/       # Longhorn storage system
-│   ├── 09-mailu/          # Mailu email server
-│   ├── 10-keycloak/       # Keycloak identity management
 │   └── 99-utils/          # Utility playbooks
 └── README.md              # This file
 ```
