@@ -1,2 +1,29 @@
 ---
+# Create kubelet configuration before K3s installation
+- name: Create kubelet configuration
+  hosts: k3s_cluster
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Create kubelet config directory
+      ansible.builtin.file:
+        path: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Create kubelet configuration file for shutdown grace periods
+      ansible.builtin.copy:
+        content: |
+          apiVersion: kubelet.config.k8s.io/v1beta1
+          kind: KubeletConfiguration
+          shutdownGracePeriod: 90s
+          shutdownGracePeriodCriticalPods: 30s
+        dest: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-shutdown-grace-period.yaml
+        mode: '0644'
+        owner: root
+        group: root
+
+# Import the main k3s orchestration playbook
 - import_playbook: k3s.orchestration.site
