@@ -33,11 +33,11 @@
 - import_playbook: 99-utils/kube-connect.yml
   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
 
-- import_playbook: 10-keycloak/teardown.yml
-  when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
+# - import_playbook: 10-keycloak/teardown.yml
+#   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
 
-- import_playbook: 09-mailu/teardown.yml
-  when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
+# - import_playbook: 09-mailu/teardown.yml
+#   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
 
 - import_playbook: 08-longhorn/teardown.yml
   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
