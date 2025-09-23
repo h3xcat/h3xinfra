@@ -42,6 +42,9 @@
 - import_playbook: 08-longhorn/teardown.yml
   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
 
+- import_playbook: 09-smb/teardown.yml
+  when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
+
 - import_playbook: 02-cilium/teardown.yml
   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
 

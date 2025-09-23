@@ -62,6 +62,9 @@
                 metallb.universe.tf/address-pool: "{{ ingressnginx.release_name_prefix }}-pre-pool"
             extraArgs:
               default-ssl-certificate: "{{ ingressnginx.namespace }}/{{ ingressnginx.release_name_prefix }}-pre-wildcard-certificate"
+            config:
+              annotations-risk-level: "Critical"
+            allowSnippetAnnotations: true
 
         state: present
         wait: true

@@ -1,0 +1,15 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Remove SMB CSI Driver via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+  - name: Uninstall SMB CSI Driver via Helm
+    kubernetes.core.helm:
+      name: "{{ smb.release_name_prefix }}-main"
+      namespace: "{{ smb.namespace }}"
+      state: absent
+      wait: true
+      timeout: "300s"

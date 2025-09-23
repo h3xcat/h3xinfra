@@ -23,6 +23,8 @@
 
 - import_playbook: 08-longhorn/standup.yml
 
+- import_playbook: 09-smb/standup.yml
+
 # - import_playbook: 09-mailu/standup.yml
 
 # - import_playbook: 10-keycloak/standup.yml
