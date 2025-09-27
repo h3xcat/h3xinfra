@@ -1,0 +1,29 @@
+# Default values for authentik.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+authentik:
+  secret_key: ""  # Will be populated by Ansible
+  db_password: ""  # Will be populated by Ansible
+  redis_password: ""  # Will be populated by Ansible
+
+server:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hostname: auth.app.example.com
+
+postgresql:
+  enabled: true
+  auth:
+    password: ""  # Will be populated by Ansible
+    database: authentik
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: "longhorn"
+
+redis:
+  enabled: true
+  auth:
+    password: ""  # Will be populated by Ansible

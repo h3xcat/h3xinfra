@@ -5,7 +5,7 @@ IFS=$'\n\t'
 # find . -exec sudo chown $(whoami):$(whoami) {} \;
 
 # Fix permissions
-if [ -d "$WORKSPACE_FOLDER/bin" ]; then
+if [ -d "$H3XINFRA_FOLDER/bin" ]; then
     find "$H3XINFRA_FOLDER/bin" -type f -exec chmod +x {} \; -print
 fi
 find "$H3XINFRA_FOLDER" ! -user $(whoami) -exec echo "Changing ownership of: {}" \; -exec sudo chown $(whoami): {} \;

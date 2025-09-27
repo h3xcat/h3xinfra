@@ -1,0 +1,176 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+- name: Deploy Mailu via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+  - name: Add Mailu Helm repository
+    kubernetes.core.helm_repository:
+      name: mailu
+      repo_url: https://mailu.github.io/helm-charts
+      state: present
+
+  - name: Create Mailu namespace
+    kubernetes.core.k8s:
+      api_version: v1
+      kind: Namespace
+      name: "{{ mailu.namespace }}"
+      state: present
+      wait: true
+
+  - name: Deploy Mailu configuration via Helm
+    kubernetes.core.helm:
+      name: "{{ mailu.release_name_prefix }}-pre"
+      chart_ref: "{{ playbook_dir }}/charts/h3xinfra-mailu-pre"
+      namespace: "{{ mailu.namespace }}"
+      create_namespace: false
+      values:
+        fullnameOverride: "{{ mailu.release_name_prefix }}-pre"
+        hostname: "{{ mailu.dns_names | first }}"
+        clusterIssuerName: "{{ certmanager.release_name_prefix }}-post-default-clusterissuer"
+        mailuInstanceName: "{{ mailu.release_name_prefix }}-main"
+        certificate:
+          commonName: "{{ mailu.dns_names | first }}"
+        ipPool:
+          namespace: "{{ metallb.namespace }}"
+          ipAddressPools:
+            addresses:
+              ipv4: "{{ mailu.loadbalancer_pools.ipv4 }}"
+              ipv6: "{{ mailu.loadbalancer_pools.ipv6 }}"
+
+        publicAddresses:
+          ipv4: "{{ mailu.public_addresses.ipv4 }}"
+          ipv6: "{{ mailu.public_addresses.ipv6 }}"
+      set_values:
+      - value: "certificate.dnsNames={{ mailu.dns_names | to_json }}"
+        value_type: json
+      state: present
+      wait: true
+      timeout: "120s"
+
+  - name: Deploy Mailu via Helm
+    kubernetes.core.helm:
+      name: "{{ mailu.release_name_prefix }}-main"
+      chart_ref: "mailu/mailu"
+      chart_version: "{{ mailu.chart_version }}"
+      namespace: "{{ mailu.namespace }}"
+      create_namespace: false
+      
+      values:
+        global:
+          storageClass: "longhorn"
+          database:
+            roundcube:
+              password: "{{ mailu.db_password }}"
+
+        domain: "{{ mailu.domain }}"
+
+        secretKey: "{{ mailu.secret_key }}"
+        logLevel: "INFO"
+        subnet6: "{{ cluster_cidr.ipv6 }}"
+
+        tls:
+          outboundLevel: "dane"
+
+        initialAccount:
+          enabled: true
+          username: "admin"
+          domain: "{{ mailu.domain }}"
+          password: "{{ mailu.admin_password }}"
+
+        externalRelay:
+          host: "{{ mailu.external_relay_host }}"
+          username: "{{ mailu.external_relay_username }}"
+          password: "{{ mailu.external_relay_password }}"
+
+        ingress:
+          ingressClassName: "nginx"
+          realIpFrom: "{{ ingressnginx.loadbalancer_pools.ipv4 }}"
+          existingSecret: "{{ mailu.release_name_prefix }}-pre-certificate"
+
+        persistence:
+          single_pvc: false
+          storageClass: "longhorn"
+
+        front:
+          hostPort:
+            enabled: false
+          externalService:
+            type: "LoadBalancer"
+            annotations:
+              metallb.universe.tf/address-pool: "{{ mailu.release_name_prefix }}-pre-pool"
+
+        mariadb:
+          primary:
+            persistence:
+              enabled: true
+              storageClass: "longhorn"
+              size: "100Gi"
+
+        redis:
+          master:
+            persistence:
+              storageClass: "longhorn"
+
+        admin:
+          persistence:
+            storageClass: "longhorn"
+          updateStrategy:
+            type: "Recreate"
+
+        webmail:
+          persistence:
+            storageClass: "longhorn"
+          updateStrategy:
+            type: "Recreate"
+
+        postfix:
+          persistence:
+            storageClass: "longhorn"
+          updateStrategy:
+            type: "Recreate"
+
+        dovecot:
+          persistence:
+            storageClass: "longhorn"
+          updateStrategy:
+            type: "Recreate"
+
+        rspamd:
+          persistence:
+            storageClass: "longhorn"
+          updateStrategy:
+            type: "Recreate"
+          overrides:
+            dkim_signing.conf: |
+              sign_headers = (o)from:(x)sender:(o)reply-to:(o)subject:(o)to:(o)cc:(x)mime-version:(x)content-type:(x)content-transfer-encoding:resent-to:resent-cc:resent-from:resent-sender:resent-message-id:(x)in-reply-to:(x)references:list-id:list-help:list-owner:list-unsubscribe:list-unsubscribe-post:list-subscribe:list-post:(x)openpgp:(x)autocrypt
+
+        clamav:
+          persistence:
+            storageClass: "longhorn"
+
+        webdav:
+          persistence:
+            storageClass: "longhorn"
+          updateStrategy:
+            type: "Recreate"
+
+        fetchmail:
+          persistence:
+            storageClass: "longhorn"
+          updateStrategy:
+            type: "Recreate"
+
+        postgresql:
+          primary:
+            persistence:
+              storageClass: "longhorn"
+
+      set_values:
+      - value: "hostnames={{ mailu.dns_names | to_json }}"
+        value_type: json
+      state: present
+      wait: true
+      timeout: "900s"
+

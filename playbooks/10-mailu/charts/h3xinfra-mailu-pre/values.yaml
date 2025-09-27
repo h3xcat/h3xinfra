@@ -1,0 +1,43 @@
+# Default values for mailu-custom-resources
+# This file contains default values for your custom resources
+
+# Namespace configuration
+namespace: mailu
+
+# Hostname configuration
+hostname: mail.app.example.com
+
+
+publicAddresses:
+  ipv4: ""
+  ipv6: ""
+
+ipPool:
+  namespace: metallb-system
+  ipAddressPools:
+    annotations: {}
+    addresses:
+      ipv4: ""
+      ipv6: ""
+  l2Advertisement:
+    annotations: {}
+  autoAssign: false
+
+
+
+# Cluster issuer for certificate management
+clusterIssuerName: ""
+
+# Certificate configuration
+certificate:
+  # Common name for the certificate
+  commonName: ""
+  
+  # DNS names to include in the certificate
+  dnsNames: []
+  
+  # Optional annotations for the certificate
+  annotations: {}
+    # cert-manager.io/cluster-issuer: "your-cluster-issuer"
+    # cert-manager.io/duration: "2160h"
+    # cert-manager.io/renew-before: "360h"

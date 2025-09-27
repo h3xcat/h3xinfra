@@ -1,0 +1,63 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Deploy Authentik via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Add Authentik Helm repository
+      kubernetes.core.helm_repository:
+        name: goauthentik
+        repo_url: https://charts.goauthentik.io/
+        state: present
+
+    - name: Create Authentik namespace
+      kubernetes.core.k8s:
+        name: "{{ authentik.namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+        wait: true
+
+    - name: Deploy Authentik Helm chart
+      kubernetes.core.helm:
+        name: "{{ authentik.release_name_prefix }}-main"
+        chart_ref: goauthentik/authentik
+        chart_version: "2025.8.3"
+        release_namespace: "{{ authentik.namespace }}"
+        create_namespace: false
+        wait: true
+        values:
+          authentik:
+            secret_key: "{{ authentik.secret_key }}"
+            postgresql:
+              password: "{{ authentik.db_password }}"
+            redis:
+              password: "{{ authentik.redis_password }}"
+          
+          server:
+            ingress:
+              enabled: true
+              ingressClassName: nginx
+              hosts: 
+              - "{{ authentik.ingress_hostname }}"
+          
+          postgresql:
+            enabled: true
+            auth:
+              password: "{{ authentik.db_password }}"
+              database: authentik
+            persistence:
+              enabled: true
+              size: 8Gi
+              storageClass: longhorn
+          
+          redis:
+            enabled: true
+            auth:
+              enabled: true
+              password: "{{ authentik.redis_password }}"
+        state: present
+        wait: true
+        timeout: "300s"

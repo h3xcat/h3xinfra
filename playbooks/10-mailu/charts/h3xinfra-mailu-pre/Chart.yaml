@@ -1,0 +1,7 @@
+apiVersion: v2
+name: h3xinfra-mailu-pre
+description: Custom resources for Mailu deployment (MetalLB IP pools, certificates, etc.)
+type: application
+version: 0.1.0
+appVersion: "0.0.1"
+dependencies: []

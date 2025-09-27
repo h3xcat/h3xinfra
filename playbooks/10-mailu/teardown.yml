@@ -1,0 +1,32 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Remove Mailu via Helm
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+  - name: Uninstall Mailu via Helm
+    kubernetes.core.helm:
+      name: "{{ mailu.release_name_prefix }}-main"
+      namespace: "{{ mailu.namespace }}"
+      state: absent
+      wait: true
+      timeout: "300s"
+
+  - name: Uninstall Mailu configuration via Helm
+    kubernetes.core.helm:
+      name: "{{ mailu.release_name_prefix }}-pre"
+      namespace: "{{ mailu.namespace }}"
+      state: absent
+      wait: true
+      timeout: "300s"
+
+  - name: Remove Mailu namespace
+    kubernetes.core.k8s:
+      api_version: v1
+      kind: Namespace
+      name: "{{ mailu.namespace }}"
+      state: absent
+      wait: true
+      wait_timeout: 300

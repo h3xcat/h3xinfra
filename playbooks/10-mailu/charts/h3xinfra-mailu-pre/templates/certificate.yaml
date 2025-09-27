@@ -1,0 +1,20 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name:  {{ include "h3xinfra-mailu-pre.fullname" . }}-certificate
+  labels:
+    {{- include "h3xinfra-mailu-pre.labels" . | nindent 4 }}
+  {{- with .Values.certificate.annotations }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  secretName: {{ include "h3xinfra-mailu-pre.fullname" . }}-certificate
+  issuerRef:
+    name: {{ .Values.clusterIssuerName }}
+    kind: ClusterIssuer
+  commonName: {{ .Values.certificate.commonName }}
+  {{- with .Values.certificate.dnsNames }}
+  dnsNames:
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}

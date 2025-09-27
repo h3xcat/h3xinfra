@@ -14,8 +14,9 @@ def generate_password(length=30):
 
 def encrypt_with_ansible_vault(password):
     """Encrypt the password using ansible-vault with the vault password file."""
-    vault_pass_file = "/workspaces/home-infra/secrets/vault_pass.txt"
-    
+    workspace_folder = os.getenv('WORKSPACE_FOLDER', '/workspaces/h3xinfra')
+    vault_pass_file = os.path.join(workspace_folder, "secrets/vault_pass.txt")
+
     # Check if vault password file exists
     if not os.path.exists(vault_pass_file):
         sys.stderr.write(f"Error: Vault password file not found at {vault_pass_file}\n")

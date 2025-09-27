@@ -33,16 +33,16 @@
 - import_playbook: 99-utils/kube-connect.yml
   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
 
-# - import_playbook: 10-keycloak/teardown.yml
-#   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
-
-# - import_playbook: 09-mailu/teardown.yml
-#   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
-
-- import_playbook: 08-longhorn/teardown.yml
+- import_playbook: 11-authentik/teardown.yml
   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
 
-- import_playbook: 09-smb/teardown.yml
+- import_playbook: 10-mailu/teardown.yml
+  when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
+
+- import_playbook: 09-longhorn/teardown.yml
+  when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
+
+- import_playbook: 08-smb/teardown.yml
   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
 
 - import_playbook: 02-cilium/teardown.yml

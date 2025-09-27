@@ -179,19 +179,20 @@ all:
       basic_auth_secret: "admin:$apr1$example$hashgoeshere/"
       ingress_host: "longhorn.app.example.com"
     
-    keycloak:
-      release_name_prefix: "homeinfra-keycloak"
-      namespace: keycloak
-      
-      admin_username: admin
-      admin_password: !vault |
+    authentik:
+      release_name_prefix: "h3xinfra-authentik"
+      namespace: authentik
+
+      secret_key: !vault |
         $ANSIBLE_VAULT;1.1;AES256
-        changeme_please_encrypt_your_actual_keycloak_admin_password_with_ansible_vault
-      db_username: keycloak
+        changeme
       db_password: !vault |
         $ANSIBLE_VAULT;1.1;AES256
-        changeme_please_encrypt_your_actual_keycloak_db_password_with_ansible_vault
-      ingress_hostname: "identity.app.example.com"
+        changeme
+      redis_password: !vault |
+        $ANSIBLE_VAULT;1.1;AES256
+        changeme
+      ingress_hostname: "auth.app.example.com"
 
 
 k3s_cluster:

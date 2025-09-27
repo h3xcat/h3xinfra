@@ -1,0 +1,7 @@
+apiVersion: v2
+name: h3xinfra-authentik-main
+description: A Helm chart for Authentik identity and access management
+type: application
+version: 0.1.0
+appVersion: "2025.8.3"
+dependencies: []
