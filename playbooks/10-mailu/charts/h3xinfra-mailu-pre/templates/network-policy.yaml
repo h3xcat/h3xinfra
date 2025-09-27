@@ -1,0 +1,93 @@
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "h3xinfra-mailu-pre.fullname" . }}-email-access-policy
+  namespace: {{ .Values.namespace | default "mailu" }}
+  labels:
+    {{- include "h3xinfra-mailu-pre.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/component: front
+      app.kubernetes.io/instance: {{ .Values.mailuInstanceName | default "mailu" }}
+      app.kubernetes.io/name: mailu
+  ingress:
+  # Allow SMTP (port 25) from anywhere - required for receiving mail from other mail servers
+  - fromEntities:
+    - "world"
+    toPorts:
+    - ports:
+      - port: "25"
+        protocol: TCP
+  
+  # Allow SMTPS (port 465) from anywhere - required for authenticated mail submission
+  - fromEntities:
+    - "world"
+    toPorts:
+    - ports:
+      - port: "465"
+        protocol: TCP
+  
+  # Restrict IMAPS (port 993) to private networks only
+  - fromCIDRSet:
+    # RFC 1918 IPv4 private networks
+    - cidr: 10.0.0.0/8
+    - cidr: 172.16.0.0/12  
+    - cidr: 192.168.0.0/16
+    # IPv6 ULA (Unique Local Address) ranges
+    - cidr: fc00::/7
+    {{- range .Values.networkPolicy.allowedIPv6Networks }}
+    # Additional allowed IPv6 networks
+    - cidr: {{ . }}
+    {{- end }}
+    toPorts:
+    - ports:
+      - port: "993"
+        protocol: TCP
+  
+  # Restrict POP3S (port 995) to private networks only  
+  - fromCIDRSet:
+    # RFC 1918 IPv4 private networks
+    - cidr: 10.0.0.0/8
+    - cidr: 172.16.0.0/12
+    - cidr: 192.168.0.0/16
+    # IPv6 ULA (Unique Local Address) ranges
+    - cidr: fc00::/7
+    {{- range .Values.networkPolicy.allowedIPv6Networks }}
+    # Additional allowed IPv6 networks
+    - cidr: {{ . }}
+    {{- end }}
+    toPorts:
+    - ports:
+      - port: "995"
+        protocol: TCP
+  
+  # Restrict ManageSieve (port 4190) to private networks only
+  - fromCIDRSet:
+    # RFC 1918 IPv4 private networks  
+    - cidr: 10.0.0.0/8
+    - cidr: 172.16.0.0/12
+    - cidr: 192.168.0.0/16
+    # IPv6 ULA (Unique Local Address) ranges
+    - cidr: fc00::/7
+    {{- range .Values.networkPolicy.allowedIPv6Networks }}
+    # Additional allowed IPv6 networks
+    - cidr: {{ . }}
+    {{- end }}
+    toPorts:
+    - ports:
+      - port: "4190"
+        protocol: TCP
+  
+  # Allow cluster-internal traffic (for health checks, etc.)
+  - fromEntities:
+    - "cluster"
+    - "kube-apiserver"
+  
+  # Allow traffic from the same namespace
+  - fromEndpoints:
+    - matchLabels:
+        k8s:io.kubernetes.pod.namespace: {{ .Values.namespace | default "mailu" }}
+{{- end }}

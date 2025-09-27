@@ -42,6 +42,10 @@
         publicAddresses:
           ipv4: "{{ mailu.public_addresses.ipv4 }}"
           ipv6: "{{ mailu.public_addresses.ipv6 }}"
+        
+        networkPolicy:
+          enabled: "{{ mailu.network_policy.enabled }}"
+          allowedIPv6Networks: "{{ mailu.network_policy.allowed_ipv6_networks }}"
       set_values:
       - value: "certificate.dnsNames={{ mailu.dns_names | to_json }}"
         value_type: json

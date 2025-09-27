@@ -41,3 +41,12 @@ certificate:
     # cert-manager.io/cluster-issuer: "your-cluster-issuer"
     # cert-manager.io/duration: "2160h"
     # cert-manager.io/renew-before: "360h"
+
+# Network Policy configuration
+networkPolicy:
+  # Enable Cilium Network Policy to restrict email service access
+  enabled: true
+  
+  # Additional IPv6 networks to allow access to restricted ports (IMAPS, POP3S, Sieve)
+  # These are in addition to RFC 1918 private networks and ULA ranges
+  allowedIPv6Networks: []
