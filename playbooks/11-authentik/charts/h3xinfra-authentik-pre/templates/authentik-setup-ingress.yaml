@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "h3xinfra-authentik-pre.fullname" . }}-ingress-setup
+  labels:
+    {{- include "h3xinfra-authentik-pre.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    {{- with .Values.authentikIngress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.authentikIngress.trustedSetupIPs }}
+    nginx.ingress.kubernetes.io/whitelist-source-range: "{{ join "," .Values.authentikIngress.trustedSetupIPs }}"
+    {{- end }}
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - {{ .Values.authentikIngress.host }}
+  rules:
+  - host: {{ .Values.authentikIngress.host }}
+    http:
+      paths:
+      - path: /if/flow/initial-setup/
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Values.authentikIngress.serviceName }}
+            port:
+              number: 443

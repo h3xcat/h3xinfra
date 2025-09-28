@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "h3xinfra-authentik-pre.fullname" . }}-ingress
+  labels:
+    {{- include "h3xinfra-authentik-pre.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    {{- with .Values.authentikIngress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - {{ .Values.authentikIngress.host }}
+  rules:
+  - host: {{ .Values.authentikIngress.host }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Values.authentikIngress.serviceName }}
+            port:
+              number: 443

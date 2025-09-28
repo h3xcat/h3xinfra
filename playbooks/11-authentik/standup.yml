@@ -20,6 +20,22 @@
         state: present
         wait: true
 
+    - name: Deploy Authentik pre-configuration via Helm
+      kubernetes.core.helm:
+        name: "{{ authentik.release_name_prefix }}-pre"
+        chart_ref: "{{ playbook_dir }}/charts/h3xinfra-authentik-pre"
+        namespace: "{{ authentik.namespace }}"
+        create_namespace: false
+        values:
+          fullnameOverride: "{{ authentik.release_name_prefix }}-pre"
+          authentikIngress:
+            host: "{{ authentik.ingress_hostname }}"
+            serviceName: "{{ authentik.release_name_prefix }}-main-server"
+            trustedSetupIPs: "{{ authentik.trusted_setup_ips }}"
+        state: present
+        wait: true
+        timeout: "120s"
+
     - name: Deploy Authentik Helm chart
       kubernetes.core.helm:
         name: "{{ authentik.release_name_prefix }}-main"
@@ -35,13 +51,16 @@
               password: "{{ authentik.db_password }}"
             redis:
               password: "{{ authentik.redis_password }}"
-          
+            email:
+              host: "{{ authentik.email_host }}"
+              port: 465
+              username: "{{ authentik.email_username }}"
+              password: "{{ authentik.email_password }}"
+              use_ssl: true
+              from: "{{ authentik.email_from }}"
           server:
             ingress:
-              enabled: true
-              ingressClassName: nginx
-              hosts: 
-              - "{{ authentik.ingress_hostname }}"
+              enabled: false
           
           postgresql:
             enabled: true

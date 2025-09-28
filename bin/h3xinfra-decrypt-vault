@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+
+import subprocess
+import os
+import sys
+import argparse
+import yaml
+import tempfile
+from pathlib import Path
+
+# Custom YAML loader to handle !vault tags
+class VaultLoader(yaml.SafeLoader):
+    pass
+
+def vault_constructor(loader, node):
+    """Handle !vault tagged values in YAML."""
+    return loader.construct_scalar(node)
+
+VaultLoader.add_constructor('!vault', vault_constructor)
+
+def get_vault_password_file():
+    """Get the path to the vault password file."""
+    workspace_folder = os.getenv('WORKSPACE_FOLDER', '/workspaces/h3xinfra-private')
+    vault_pass_file = os.path.join(workspace_folder, "secrets/vault_pass.txt")
+    
+    if not os.path.exists(vault_pass_file):
+        sys.stderr.write(f"Error: Vault password file not found at {vault_pass_file}\n")
+        sys.stderr.write("Make sure the vault password file exists in the secrets/ directory\n")
+        return None
+    
+    return vault_pass_file
+
+def decrypt_vault_string(encrypted_string):
+    """Decrypt an ansible-vault encrypted string."""
+    vault_pass_file = get_vault_password_file()
+    if not vault_pass_file:
+        return None
+    
+    try:
+        # Create a temporary file with the encrypted string
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as temp_file:
+            temp_file.write(encrypted_string)
+            temp_file_path = temp_file.name
+        
+        # Run ansible-vault decrypt command
+        result = subprocess.run([
+            'ansible-vault', 'decrypt',
+            '--vault-password-file', vault_pass_file,
+            '--output=-',
+            temp_file_path
+        ], capture_output=True, text=True)
+        
+        # Clean up temporary file
+        os.unlink(temp_file_path)
+        
+        if result.returncode == 0:
+            return result.stdout.strip()
+        else:
+            sys.stderr.write(f"Error decrypting vault string: {result.stderr}\n")
+            return None
+            
+    except Exception as e:
+        sys.stderr.write(f"Error running ansible-vault: {e}\n")
+        return None
+
+def is_vault_encrypted(value):
+    """Check if a value is ansible-vault encrypted."""
+    if not isinstance(value, str):
+        return False
+    return value.strip().startswith('$ANSIBLE_VAULT;')
+
+def decrypt_inventory_passwords(inventory_file, filter_key=None):
+    """Extract and decrypt all vault-encrypted passwords from inventory.yml."""
+    vault_pass_file = get_vault_password_file()
+    if not vault_pass_file:
+        return False
+    
+    if not os.path.exists(inventory_file):
+        sys.stderr.write(f"Error: Inventory file not found at {inventory_file}\n")
+        return False
+    
+    try:
+        with open(inventory_file, 'r') as f:
+            inventory = yaml.load(f, Loader=VaultLoader)
+        
+        found_secrets = []
+        
+        def find_vault_values(obj, path=""):
+            """Recursively find vault-encrypted values in the inventory."""
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    new_path = f"{path}.{key}" if path else key
+                    if is_vault_encrypted(value):
+                        if not filter_key or filter_key.lower() in key.lower():
+                            found_secrets.append({
+                                'path': new_path,
+                                'key': key,
+                                'encrypted': value
+                            })
+                    else:
+                        find_vault_values(value, new_path)
+            elif isinstance(obj, list):
+                for i, item in enumerate(obj):
+                    new_path = f"{path}[{i}]"
+                    find_vault_values(item, new_path)
+        
+        find_vault_values(inventory)
+        
+        if not found_secrets:
+            if filter_key:
+                print(f"No vault-encrypted values found matching filter: '{filter_key}'")
+            else:
+                print("No vault-encrypted values found in inventory file")
+            return True
+        
+        print(f"Found {len(found_secrets)} vault-encrypted value(s):\n")
+        
+        for secret in found_secrets:
+            print(f"Path: {secret['path']}")
+            print(f"Key:  {secret['key']}")
+            
+            # Decrypt the value
+            decrypted = decrypt_vault_string(secret['encrypted'])
+            if decrypted:
+                print(f"Value: {decrypted}")
+            else:
+                print("Value: [DECRYPTION FAILED]")
+            print("-" * 60)
+        
+        return True
+        
+    except yaml.YAMLError as e:
+        sys.stderr.write(f"Error parsing YAML file: {e}\n")
+        return False
+    except Exception as e:
+        sys.stderr.write(f"Error processing inventory file: {e}\n")
+        return False
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Decrypt Ansible Vault encrypted values from inventory files',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                           # Decrypt all vault values from default inventory.yml
+  %(prog)s -f password               # Show only values with 'password' in the key name
+  %(prog)s -f db_password            # Show only database password values
+  %(prog)s -i custom-inventory.yml   # Use a different inventory file
+  %(prog)s --string 'encrypted-text' # Decrypt a single vault string
+        """
+    )
+    
+    parser.add_argument('-i', '--inventory', 
+                       default='inventory.yml',
+                       help='Path to inventory file (default: inventory.yml)')
+    
+    parser.add_argument('-f', '--filter',
+                       help='Filter results by key name (case-insensitive)')
+    
+    parser.add_argument('-s', '--string',
+                       help='Decrypt a single vault-encrypted string directly')
+    
+    args = parser.parse_args()
+    
+    # Handle single string decryption
+    if args.string:
+        if not is_vault_encrypted(args.string):
+            sys.stderr.write("Error: Provided string does not appear to be vault-encrypted\n")
+            sys.stderr.write("Vault strings should start with '$ANSIBLE_VAULT;'\n")
+            return 1
+        
+        decrypted = decrypt_vault_string(args.string)
+        if decrypted:
+            print("Decrypted value:")
+            print(decrypted)
+            return 0
+        else:
+            return 1
+    
+    # Handle inventory file processing
+    inventory_path = args.inventory
+    
+    # If path is relative, try both current directory and workspace
+    if not os.path.isabs(inventory_path):
+        if os.path.exists(inventory_path):
+            # Use current directory version
+            pass
+        else:
+            # Try workspace directory
+            workspace_folder = os.getenv('WORKSPACE_FOLDER', '/workspaces/h3xinfra-private')
+            workspace_inventory = os.path.join(workspace_folder, inventory_path)
+            if os.path.exists(workspace_inventory):
+                inventory_path = workspace_inventory
+    
+    success = decrypt_inventory_passwords(inventory_path, args.filter)
+    return 0 if success else 1
+
+if __name__ == "__main__":
+    sys.exit(main())

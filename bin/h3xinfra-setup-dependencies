@@ -15,7 +15,7 @@ ansible-galaxy collection install kubernetes.core
 
 # Install python dependencies
 pip3 install --upgrade pip
-pip3 install kubernetes
+pip3 install kubernetes ruamel.yaml
 
 # Install helm-diff
 helm plugin install https://github.com/databus23/helm-diff

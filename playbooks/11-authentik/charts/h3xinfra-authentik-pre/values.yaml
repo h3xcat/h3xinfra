@@ -1,0 +1,5 @@
+authentikIngress:
+  host: auth.app
+  annotations: {}
+  serviceName: "authentik-server"
+  whitelistSourceRange: []

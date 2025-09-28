@@ -13,6 +13,14 @@
         wait: true
         timeout: "300s"
 
+    - name: Uninstall Authentik pre-configuration via Helm
+      kubernetes.core.helm:
+        name: "{{ authentik.release_name_prefix }}-pre"
+        release_namespace: "{{ authentik.namespace }}"
+        state: absent
+        wait: true
+        timeout: "120s"
+
     - name: Remove Authentik namespace
       kubernetes.core.k8s:
         name: "{{ authentik.namespace }}"
