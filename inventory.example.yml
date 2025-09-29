@@ -178,6 +178,10 @@ all:
       # Generate your own basic auth secret: echo "username:$(openssl passwd -stdin -apr1 < password_file)"
       basic_auth_secret: "admin:$apr1$example$hashgoeshere/"
       ingress_host: "longhorn.app.example.com"
+      trusted_ips:
+      - "192.168.50.0/24"
+      - "2001:db8:aabb::/64"
+
     
     authentik:
       release_name_prefix: "h3xinfra-authentik"

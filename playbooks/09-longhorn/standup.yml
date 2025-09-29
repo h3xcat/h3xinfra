@@ -108,6 +108,7 @@
           fullnameOverride: "{{ longhorn.release_name_prefix }}-post"
           longhornIngress:
             host: "{{ longhorn.ingress_host }}"
+            trustedIPs: "{{ longhorn.trusted_ips }}"
 
           longhornBasicAuthSecret:
             auth: "{{ longhorn.basic_auth_secret }}"

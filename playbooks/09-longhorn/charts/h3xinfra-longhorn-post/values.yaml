@@ -1,5 +1,6 @@
 longhornIngress:
   host: longhorn.app
+  trustedIPs: []
 
 longhornBasicAuthSecret:
   auth: "" # echo "h3xcat:$(openssl passwd -stdin -apr1 < "$H3XINFRA_FOLDER/secrets/longhorn_pass.txt")"

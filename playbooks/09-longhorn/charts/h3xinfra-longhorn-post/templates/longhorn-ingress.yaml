@@ -8,6 +8,9 @@ metadata:
     nginx.ingress.kubernetes.io/auth-realm: 'Authentication Required'
     nginx.ingress.kubernetes.io/proxy-body-size: "1m"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    {{- if .Values.longhornIngress.trustedIPs }}
+    nginx.ingress.kubernetes.io/whitelist-source-range: {{ join "," .Values.longhornIngress.trustedIPs | quote }}
+    {{- end }}
 spec:
   ingressClassName: nginx
   tls:
