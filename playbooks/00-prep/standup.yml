@@ -183,7 +183,7 @@
         fstype: ext4
         opts: defaults
         state: mounted
-      when: ubuntu_vg_check.rc == 0
+      when: ubuntu_vg_check.rc == 0 and longhorn_lv_check.rc != 0
 
     - name: Set permissions on Longhorn directory
       file:
@@ -192,4 +192,3 @@
         mode: '0755'
         owner: root
         group: root
-        recurse: yes

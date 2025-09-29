@@ -1,7 +1,7 @@
 ---
 - import_playbook: ../99-utils/kube-connect.yml
 - name: Deploy Mailu via Helm
-  hosts: localhost
+  hosts: k8s
   gather_facts: false
 
   tasks:

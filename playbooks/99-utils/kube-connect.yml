@@ -23,7 +23,7 @@
     register: kubeconfig_stat
 
   - name: "kube-connect: Check kubeconfig server URL (if file exists)"
-    shell: kubectl config view -o jsonpath='{.clusters[?(@.name == "default")].cluster.server}'
+    shell: kubectl config view --raw -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || echo "unknown"
     register: server_url
     ignore_errors: yes
     changed_when: false
@@ -34,11 +34,11 @@
     register: kubectl_test
     ignore_errors: yes
     changed_when: false
-    when: kubeconfig_stat.stat.exists and server_url.stdout == expected_server_url
+    when: kubeconfig_stat.stat.exists
     
   - name: "kube-connect: Set flag to skip configuration"
     set_fact:
-      skip_config: "{{ kubeconfig_stat.stat.exists and server_url.stdout == expected_server_url and kubectl_test.rc == 0 }}"
+      skip_config: "{{ kubeconfig_stat.stat.exists and ((server_url.stdout == expected_server_url) or (server_url.stdout == 'https://127.0.0.1:6443')) and kubectl_test.rc == 0 }}"
     
   - name: "kube-connect: Display diagnostics when connection fails"
     debug:
@@ -83,7 +83,7 @@
       mode: '0600'
     delegate_to: localhost
     register: new_kubeconfig
-    when: not skip_config and kubeconf_raw is succeeded
+    when: not skip_config and kubeconf_raw is succeeded and not ansible_check_mode
 
   - name: "kube-connect: Extract original server URL from kubeconfig"
     shell: kubectl config view -o jsonpath='{.clusters[0].cluster.server}'

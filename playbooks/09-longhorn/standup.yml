@@ -28,7 +28,7 @@
         msg: "{{ longhorn_cli_version_output.stdout }}"
 
 - name: Deploy Longhorn via Helm
-  hosts: localhost
+  hosts: k8s
   gather_facts: true
   vars:
   tasks:
@@ -109,9 +109,16 @@
           longhornIngress:
             host: "{{ longhorn.ingress_host }}"
             trustedIPs: "{{ longhorn.trusted_ips }}"
-
-          longhornBasicAuthSecret:
-            auth: "{{ longhorn.basic_auth_secret }}"
+            auth:
+              method: "{{ longhorn.auth.method }}"
+              basic:
+                secret: "{{ longhorn.auth.basic.secret }}"
+                realm: "{{ longhorn.auth.basic.realm }}"
+              oauth:
+                auth_url: "{{ longhorn.auth.oauth.auth_url }}"
+                signin_url: "{{ longhorn.auth.oauth.signin_url }}"
+                response_headers: "{{ longhorn.auth.oauth.response_headers }}"
+                
         state: present
         wait: true
         timeout: "120s"

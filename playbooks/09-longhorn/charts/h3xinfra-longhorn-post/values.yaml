@@ -1,6 +1,48 @@
-longhornIngress:
-  host: longhorn.app
-  trustedIPs: []
+# Default values for h3xinfra-longhorn-post
+# This chart configures Longhorn ingress and authentication
 
+fullnameOverride: ""
+
+longhornIngress:
+  # Hostname for the Longhorn UI ingress
+  host: "longhorn.app"
+  
+  # List of trusted IP ranges that can access the Longhorn UI
+  trustedIPs: []
+  # Example:
+  # trustedIPs:
+  #   - "192.168.1.0/24"
+  #   - "10.0.0.0/8"
+  
+  # Authentication configuration
+  auth:
+    # Authentication method: "basic", "oauth", or "none"  
+    method: "none"
+    
+    # Basic authentication settings (used when method is "basic")
+    basic:
+      # HTTP basic auth string in format "username:password_hash"
+      # Generate with: echo "username:$(openssl passwd -stdin -apr1 <<< 'password')"
+      secret: ""
+      # Authentication realm message shown to users
+      realm: "Authentication Required"
+    
+    # OAuth authentication settings (used when method is "oauth")
+    oauth:
+      # OAuth provider authentication endpoint
+      auth_url: "https://auth.example.com/oauth2/auth"
+      # OAuth sign-in redirect URL
+      signin_url: "https://auth.example.com/oauth2/start?rd=$scheme://$host$request_uri"
+      # Headers to pass from OAuth response
+      response_headers: "x-auth-request-user, x-auth-request-email"
+  
+  # Additional custom annotations for the ingress
+  annotations: {}
+  # Example:
+  # annotations:
+  #   nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+  #   nginx.ingress.kubernetes.io/custom-annotation: "value"
+
+# Deprecated - kept for backward compatibility
 longhornBasicAuthSecret:
   auth: "" # echo "h3xcat:$(openssl passwd -stdin -apr1 < "$H3XINFRA_FOLDER/secrets/longhorn_pass.txt")"

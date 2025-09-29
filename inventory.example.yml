@@ -176,7 +176,33 @@ all:
       # Replace with your actual NAS backup target
       cifs_backup_target: "cifs://nas.home.local/longhorn-backup"
       # Generate your own basic auth secret: echo "username:$(openssl passwd -stdin -apr1 < password_file)"
-      basic_auth_secret: "admin:$apr1$example$hashgoeshere/"
+      
+      ingress:
+        enabled: true
+        annotations:
+          nginx.ingress.kubernetes.io/auth-url: |-
+              http://ak-outpost-example.authentik.svc.cluster.local:9000/outpost.goauthentik.io/auth/nginx
+          # If you're using domain-level auth, use the authentication URL instead of the application URL
+          nginx.ingress.kubernetes.io/auth-signin: |-
+              https://app.company/outpost.goauthentik.io/start?rd=$scheme://$http_host$escaped_request_uri
+          nginx.ingress.kubernetes.io/auth-response-headers: |-
+              Set-Cookie,X-authentik-username,X-authentik-groups,X-authentik-entitlements,X-authentik-email,X-authentik-name,X-authentik-uid
+          nginx.ingress.kubernetes.io/auth-snippet: |
+              proxy_set_header X-Forwarded-Host $http_host;
+          
+              nginx.ingress.kubernetes.io/auth-type: basic
+              nginx.ingress.kubernetes.io/auth-secret: {{ include "h3xinfra-longhorn-post.fullname" . }}-basic-auth-secret
+              nginx.ingress.kubernetes.io/auth-realm: 'Authentication Required'
+
+
+      auth:
+        method: "basic"  # Options: none, basic, oauth
+        htpasswd: "admin:$apr1$example$hashgoeshere/"
+        # url: "http://ak-outpost-example.authentik.svc.cluster.local:9000/outpost.goauthentik.io/auth/nginx"
+        # signin: "https://app.company/outpost.goauthentik.io/start?rd=$scheme://$http_host$escaped_request_uri
+        # response_headers: "Set-Cookie,X-authentik-username,X-authentik-groups,X-authentik-entitlements,X-authentik-email,X-authentik-name,X-authentik-uid"
+        # auth_snippet: "proxy_set_header X-Forwarded-Host $http_host;"
+
       ingress_host: "longhorn.app.example.com"
       trusted_ips:
       - "192.168.50.0/24"

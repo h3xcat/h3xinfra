@@ -1,7 +1,8 @@
 ---
 - import_playbook: ../99-utils/kube-connect.yml
+
 - name: Remove Health Endpoints via Helm
-  hosts: localhost
+  hosts: k8s
   gather_facts: false
   
   tasks:
