@@ -1,7 +1,11 @@
 # Ignore secrets directory
 /secrets/
 
+# Ignore private inventory configurations
 /inventory.yml
+
+# The inventory directory contains example configurations
+# Users should copy and customize these files for their environment
 
 # Common ignore patterns
 *.swp

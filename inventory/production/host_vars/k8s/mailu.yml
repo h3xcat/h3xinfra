@@ -1,0 +1,28 @@
+---
+mailu:
+  namespace: "mailu"
+  release_name_prefix: "h3xinfra-mailu"
+  chart_version: "2.4.0"
+  # Replace with your actual domain
+  domain: "example.com"
+  
+  db_password: "{{ mailu_db_password }}"
+  dns_names:
+  - "mail.app.example.com"
+  - "mail.example.com"
+  secret_key: "{{ mailu_secret_key }}"
+  admin_password: "{{ mailu_admin_password }}"
+  
+  # Replace with your actual SMTP relay configuration
+  external_relay_host: "[smtp.example.com]:587"
+  external_relay_username: "your-smtp-username"
+  external_relay_password: "{{ mailu_external_relay_password }}"
+  
+  loadbalancer_pools:
+    ipv4: "192.168.101.101/32"  # Specific IP outside MetalLB pool  
+    ipv6: "2001:db8:face::101/128"  # Manual assignment in face:0:: subnet
+  
+  # Example public IP addresses - replace with your actual public IPs
+  public_addresses:
+    ipv4: "203.0.113.10"  # Example public IPv4 (replace with actual)
+    ipv6: "2001:db8:face::101"  # Same as load balancer IP for this service

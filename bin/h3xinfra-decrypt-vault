@@ -69,23 +69,31 @@ def is_vault_encrypted(value):
         return False
     return value.strip().startswith('$ANSIBLE_VAULT;')
 
-def decrypt_inventory_passwords(inventory_file, filter_key=None):
-    """Extract and decrypt all vault-encrypted passwords from inventory.yml."""
+def decrypt_inventory_passwords(inventory_path, filter_key=None):
+    """Extract and decrypt all vault-encrypted passwords from inventory structure."""
     vault_pass_file = get_vault_password_file()
     if not vault_pass_file:
         return False
     
-    if not os.path.exists(inventory_file):
-        sys.stderr.write(f"Error: Inventory file not found at {inventory_file}\n")
+    # Handle both old inventory.yml and new inventory/production structure
+    if os.path.isfile(inventory_path):
+        # Old style single file
+        inventory_files = [inventory_path]
+    elif os.path.isdir(inventory_path):
+        # New style directory structure - scan for YAML files
+        inventory_files = []
+        for root, dirs, files in os.walk(inventory_path):
+            for file in files:
+                if file.endswith(('.yml', '.yaml')):
+                    inventory_files.append(os.path.join(root, file))
+    else:
+        sys.stderr.write(f"Error: Inventory path not found at {inventory_path}\n")
         return False
     
     try:
-        with open(inventory_file, 'r') as f:
-            inventory = yaml.load(f, Loader=VaultLoader)
-        
         found_secrets = []
         
-        def find_vault_values(obj, path=""):
+        def find_vault_values(obj, path="", source_file=""):
             """Recursively find vault-encrypted values in the inventory."""
             if isinstance(obj, dict):
                 for key, value in obj.items():
@@ -95,16 +103,25 @@ def decrypt_inventory_passwords(inventory_file, filter_key=None):
                             found_secrets.append({
                                 'path': new_path,
                                 'key': key,
-                                'encrypted': value
+                                'encrypted': value,
+                                'file': source_file
                             })
                     else:
-                        find_vault_values(value, new_path)
+                        find_vault_values(value, new_path, source_file)
             elif isinstance(obj, list):
                 for i, item in enumerate(obj):
                     new_path = f"{path}[{i}]"
-                    find_vault_values(item, new_path)
+                    find_vault_values(item, new_path, source_file)
         
-        find_vault_values(inventory)
+        # Process each inventory file
+        for inventory_file in inventory_files:
+            try:
+                with open(inventory_file, 'r') as f:
+                    inventory = yaml.load(f, Loader=VaultLoader)
+                find_vault_values(inventory, source_file=inventory_file)
+            except Exception as e:
+                sys.stderr.write(f"Warning: Could not process {inventory_file}: {e}\n")
+                continue
         
         if not found_secrets:
             if filter_key:
@@ -116,6 +133,7 @@ def decrypt_inventory_passwords(inventory_file, filter_key=None):
         print(f"Found {len(found_secrets)} vault-encrypted value(s):\n")
         
         for secret in found_secrets:
+            print(f"File: {secret['file']}")
             print(f"Path: {secret['path']}")
             print(f"Key:  {secret['key']}")
             
@@ -142,17 +160,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                           # Decrypt all vault values from default inventory.yml
-  %(prog)s -f password               # Show only values with 'password' in the key name
-  %(prog)s -f db_password            # Show only database password values
-  %(prog)s -i custom-inventory.yml   # Use a different inventory file
-  %(prog)s --string 'encrypted-text' # Decrypt a single vault string
+  %(prog)s                                # Decrypt all vault values from default inventory
+  %(prog)s -f password                    # Show only values with 'password' in the key name
+  %(prog)s -f db_password                 # Show only database password values
+  %(prog)s -i inventory/production        # Use a different inventory directory
+  %(prog)s -i inventory.yml               # Use legacy single inventory file
+  %(prog)s --string 'encrypted-text'     # Decrypt a single vault string
         """
     )
     
     parser.add_argument('-i', '--inventory', 
-                       default='inventory.yml',
-                       help='Path to inventory file (default: inventory.yml)')
+                       default='inventory/production',
+                       help='Path to inventory file or directory (default: inventory/production)')
     
     parser.add_argument('-f', '--filter',
                        help='Filter results by key name (case-insensitive)')

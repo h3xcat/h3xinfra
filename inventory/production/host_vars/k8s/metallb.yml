@@ -1,0 +1,12 @@
+---
+metallb:
+  namespace: "metallb-system"
+  release_name_prefix: "h3xinfra-metallb"
+  chart_version: "0.15.2"
+
+  # Example network ranges - replace with your actual network configuration
+  # Note: IPv6 addresses use subnets within your ISP's public allocation
+  # IPv4 pattern: MetalLB gets a pool, individual services get specific IPs outside the pool
+  loadbalancer_pools:
+    ipv4: "192.168.100.0/24"  # Large range for general load balancer use
+    ipv6: "2001:db8:face:1::/96"  # Dedicated subnet for load balancer pools

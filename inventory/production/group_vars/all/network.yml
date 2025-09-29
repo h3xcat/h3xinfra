@@ -1,0 +1,65 @@
+---
+# =============================================================================
+# NETWORK CONFIGURATION & IP ALLOCATION GUIDE
+# =============================================================================
+# Replace 2001:db8:: with your actual ISP IPv6 allocation
+# Replace 192.168.x.x with your actual private IPv4 ranges
+#
+# ┌─────────────────────────┬─────────────────────────┬─────────────────────────┐
+# │ Component               │ IPv4 Range              │ IPv6 Range              │
+# ├─────────────────────────┼─────────────────────────┼─────────────────────────┤
+# │ K8s Node IPs            │ 192.168.1.10-12         │ 2001:db8::10-12         │
+# │ MetalLB Pool (dynamic)  │ 192.168.100.0/24        │ 2001:db8:face:1::/96    │
+# │ Manual Service IPs      │ 192.168.101.0/24        │ 2001:db8:face:0::/96    │
+# │ ├─ Ingress NGINX LB     │ 192.168.101.100/32      │ 2001:db8:face::100/128  │
+# │ ├─ Mailu LB             │ 192.168.101.101/32      │ 2001:db8:face::101/128  │
+# │ └─ Mailu Public         │ 203.0.113.10 (example)  │ 2001:db8:face::101      │
+# │ K8s Cluster CIDR        │ 10.42.0.0/16            │ 2001:db8:cafe::/96      │
+# │ K8s Service CIDR        │ 10.43.0.0/16            │ fd00:cafe:43::/112      │
+# └─────────────────────────┴─────────────────────────┴─────────────────────────┘
+#
+# IPv6 Architecture Notes:
+# - IPv6 uses public addresses directly (NO NAT required!) because ISPs provide large allocations
+# - Consumer ISPs typically allocate /56 to /64 prefixes (trillions of addresses per household)
+# - All IPv6 addresses use your ISP's public allocation with different subnet designations
+# - Base allocation example: 2001:db8::/64 (replace with your actual ISP allocation)
+# - face:1::/96 subnet: Used by MetalLB for dynamic load balancer allocation
+# - face:0::/96 subnet: Used for manually assigned service IPs (face:: = face:0::)
+# - cafe::/96 subnet: Used for Kubernetes pod networking (cluster CIDR)
+# - Service CIDR: Uses private ULA range (fd00:cafe:43::/112) for internal cluster services
+# - Node IPs: Use main subnet (2001:db8::10-12)
+#
+# IPv4 Architecture Notes:
+# - IPv4 uses private RFC 1918 ranges because consumer ISPs typically provide only ONE public IPv4
+# - All IPv4 traffic requires NAT (Network Address Translation) to reach the internet
+# - MetalLB gets a large pool for dynamic load balancing (private IPs)
+# - Individual services get specific IPs outside the MetalLB pool (manual assignment)
+# - Cluster and service CIDRs use standard RFC 1918 private ranges
+#
+# Subnet Design Principles:
+# - IPv4: Uses private addresses + NAT (limited to 1 public IP from ISP)
+# - IPv6: Uses public addresses directly (abundant allocation from ISP, no NAT needed)
+# - Pods get public IPv6 (enables direct external connectivity without port forwarding)
+# - Internal services use private IPv6 ULA (cluster communication only)  
+# - Load balancer IPs are manually assigned outside MetalLB pool (prevents conflicts)
+# - IPv6 subnets use logical naming:
+#   * face:0:: (or face::) = manual service IP allocation
+#   * face:1:: = MetalLB dynamic allocation  
+#   * cafe:: = pod networking
+#
+# Why IPv6 is Different:
+# - IPv4: 1 public IP → everything private → NAT required → port forwarding complexity
+# - IPv6: Huge allocation → public IPs everywhere → direct connectivity → simplified networking
+#
+# IMPORTANT: Firewall Configuration for IPv6
+# - Your router/firewall must allow the face::/80 subnet through the WAN interface
+# - This enables external access to services like Ingress NGINX and Mailu
+# - Unlike IPv4 (which uses port forwarding), IPv6 requires subnet-based firewall rules
+# - Example firewall rule: "Allow inbound traffic to 2001:db8:face::/80 from any"
+
+# Network configuration
+cluster_cidr:
+  ipv4: "10.42.0.0/16"
+  ipv6: "2001:db8:cafe:0::/96"
+  ipv4_mask_size: 24
+  ipv6_mask_size: 112

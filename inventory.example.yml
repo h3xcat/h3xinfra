@@ -1,4 +1,9 @@
-# Example Ansible Inventory for Home Infrastructure
+# Example Ansible Inventory for Home Infrastructure (Single File Format)
+# 
+# Note: This project uses a structured inventory format under inventory/production/
+# This file is kept as a reference for those who prefer single-file inventories.
+# See inventory/README.md for the recommended structured format.
+#
 # Replace all example values with your actual configuration
 #
 # =============================================================================

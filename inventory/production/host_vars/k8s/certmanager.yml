@@ -1,0 +1,10 @@
+---
+certmanager:
+  namespace: "cert-manager"
+  release_name_prefix: "h3xinfra-certmanager"
+  chart_version: "v1.18.2"
+
+  cluster_issuer_email: "letsencrypt@example.com"
+  cluster_issuer_dns: 
+  - 'example.com'
+  - '*.example.com'

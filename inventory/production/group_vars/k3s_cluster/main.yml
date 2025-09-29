@@ -1,0 +1,23 @@
+---
+# K3s cluster configuration
+k3s_version: v1.33.4+k3s1
+token: "{{ k3s_token }}"
+
+# K3s server configuration
+server_config_yaml: |
+  cluster-cidr: 10.42.0.0/16,2001:db8:cafe:0::/96
+  service-cidr: 10.43.0.0/16,fd00:cafe:43::/112
+  tls-san:
+  - k8s.example.com
+  kube-controller-manager-arg: "node-cidr-mask-size-ipv6=112"
+  flannel-backend: none
+  disable-network-policy: true
+  disable-kube-proxy: false
+  node-taint:
+  - "CriticalAddonsOnly=true:NoSchedule"      
+  disable:
+  - servicelb
+  - traefik
+  kube-apiserver-arg:
+  - "anonymous-auth=true"
+  - "enable-aggregator-routing=true"

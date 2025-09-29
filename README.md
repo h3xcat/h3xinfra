@@ -28,8 +28,13 @@ This project provides Ansible playbooks and configurations to deploy and manage 
 ```
 ├── bin/                   # Helper scripts
 ├── docs/                  # Documentation
-├── inventory.yml          # Ansible inventory file
-├── inventory.example.yml  # Example inventory configuration
+├── inventory/             # Structured Ansible inventory
+│   ├── production/        # Production environment
+│   │   ├── hosts.yml      # Host definitions
+│   │   ├── group_vars/    # Group variables
+│   │   └── host_vars/     # Host variables
+│   └── README.md          # Inventory documentation
+├── inventory.example.yml  # Alternative single-file format
 ├── secrets/               # Encrypted password files
 ├── playbooks/             # Ansible playbooks
 │   ├── stack-standup.yml  # Master deployment playbook
@@ -57,8 +62,8 @@ See [Operations Guide](docs/operations.md) for detailed maintenance procedures.
 - SSH access to all nodes with user 'ansible'
 - Ansible installed on control node
 - kubectl and Helm for Kubernetes management
-- Properly configured `inventory.yml` file (see `inventory.example.yml`)
-- Cloudflare API token for DNS management
+- Properly configured inventory in `inventory/production/` (see `inventory/README.md`)
+- DNS provider API token (e.g., Cloudflare) for automated DNS management
 - Ansible Vault password file for encrypted secrets
 
 ## Development Environment
@@ -94,9 +99,9 @@ h3xinfra-generate-token   # Generate new K3s token
 
 ## Quick Start
 
-1. Copy `inventory.example.yml` to `inventory.yml` and customize with your environment
-2. Set up secrets in the `secrets/` directory
-3. Deploy the complete stack:
+1. **Configure Inventory**: Set up your inventory in `inventory/production/` (see `inventory/README.md` for structure details)
+2. **Set up secrets**: Configure encrypted variables in the `secrets/` directory  
+3. **Deploy the complete stack**:
    ```bash
    h3xinfra-deploy-stack
    ```

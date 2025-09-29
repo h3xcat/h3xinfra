@@ -1,0 +1,32 @@
+---
+longhorn:
+  namespace: "longhorn-system"
+  release_name_prefix: "h3xinfra-longhorn"
+  chart_version: "v1.9.1"
+  cifs_username: "longhorn"
+  cifs_password: "{{ longhorn_cifs_password }}"
+  # Replace with your actual NAS backup target
+  cifs_backup_target: "cifs://nas.example.com/longhorn-backup"
+  
+  ingress:
+    enabled: true
+    host: "longhorn.app.example.com"
+    annotations:
+      # OAuth authentication via Authentik (recommended)
+      nginx.ingress.kubernetes.io/auth-url: |-
+          http://ak-outpost-example.authentik.svc.cluster.local:9000/outpost.goauthentik.io/auth/nginx
+      # If you're using domain-level auth, use the authentication URL instead of the application URL
+      nginx.ingress.kubernetes.io/auth-signin: |-
+          https://auth.example.com/outpost.goauthentik.io/start?rd=$scheme://$http_host$escaped_request_uri
+      nginx.ingress.kubernetes.io/auth-response-headers: |-
+          Set-Cookie,X-authentik-username,X-authentik-groups,X-authentik-entitlements,X-authentik-email,X-authentik-name,X-authentik-uid
+      nginx.ingress.kubernetes.io/auth-snippet: |
+          proxy_set_header X-Forwarded-Host $http_host;
+      
+      # Alternative: Basic auth configuration (uncomment if not using OAuth)
+      # nginx.ingress.kubernetes.io/auth-type: basic
+      # nginx.ingress.kubernetes.io/auth-secret: longhorn-basic-auth-secret
+      # nginx.ingress.kubernetes.io/auth-realm: 'Authentication Required'
+  
+  # Generate your own basic auth secret: echo "username:$(openssl passwd -stdin -apr1 < password_file)"
+  basic_auth_secret: "admin:$apr1$example$hashedpasswordhere"

@@ -1,0 +1,28 @@
+---
+cilium:
+  namespace: "kube-system"
+  release_name_prefix: "h3xinfra-cilium"
+  chart_version: "1.18.2"
+  
+  # Cilium configuration
+  config:
+    k8sServiceHost: "192.168.1.10"  # API server IP
+    k8sServicePort: "6443"
+    
+    # IPv6 and dual-stack configuration
+    ipv6:
+      enabled: true
+    ipv4:
+      enabled: true
+    
+    # BGP and load balancing
+    bgp:
+      enabled: false
+    
+    # Hubble observability
+    hubble:
+      enabled: true
+      relay:
+        enabled: true
+      ui:
+        enabled: true

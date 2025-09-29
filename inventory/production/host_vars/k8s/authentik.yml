@@ -1,0 +1,8 @@
+---
+authentik:
+  release_name_prefix: "h3xinfra-authentik"
+  namespace: authentik
+
+  secret_key: "{{ authentik_secret_key }}"
+  
+  db_password: "{{ authentik_db_password }}"
