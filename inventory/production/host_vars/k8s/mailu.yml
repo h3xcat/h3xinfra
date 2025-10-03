@@ -26,3 +26,6 @@ mailu:
   public_addresses:
     ipv4: "203.0.113.10"  # Example public IPv4 (replace with actual)
     ipv6: "2001:db8:face::101"  # Same as load balancer IP for this service
+  
+  ingress_trusted_ips:
+  - "192.168.2.0/23"

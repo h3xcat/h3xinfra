@@ -92,6 +92,8 @@
           ingressClassName: "nginx"
           realIpFrom: "{{ ingressnginx.loadbalancer_pools.ipv4 }}"
           existingSecret: "{{ mailu.release_name_prefix }}-pre-certificate"
+          annotations:
+            nginx.ingress.kubernetes.io/whitelist-source-range: "{{ mailu.ingress_trusted_ips | join(',') }}"
 
         persistence:
           single_pvc: false
