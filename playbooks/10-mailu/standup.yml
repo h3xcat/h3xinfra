@@ -148,10 +148,12 @@
             storageClass: "longhorn"
           updateStrategy:
             type: "Recreate"
-          overrides:
-            dkim_signing.conf: |
-              sign_headers = (o)from:(x)sender:(o)reply-to:(o)subject:(o)to:(o)cc:(x)mime-version:(x)content-type:(x)content-transfer-encoding:resent-to:resent-cc:resent-from:resent-sender:resent-message-id:(x)in-reply-to:(x)references:list-id:list-help:list-owner:list-unsubscribe:list-unsubscribe-post:list-subscribe:list-post:(x)openpgp:(x)autocrypt
-
+          # overrides:
+          #   # dkim_signing.conf: |
+          #   #   sign_headers = (o)from:(x)sender:(o)reply-to:(o)subject:(o)to:(o)cc:(x)mime-version:(x)content-type:(x)content-transfer-encoding:resent-to:resent-cc:resent-from:resent-sender:resent-message-id:(x)in-reply-to:(x)references:list-id:list-help:list-owner:list-unsubscribe:list-unsubscribe-post:list-subscribe:list-post:(x)openpgp:(x)autocrypt
+          #   dkim_signing.conf: |
+          #     sign_headers = (o)from:(x)sender:(o)reply-to:(o)subject:(o)to:(o)cc:(x)mime-version:(x)content-type:(x)content-transfer-encoding:resent-to:resent-cc:resent-from:resent-sender:resent-message-id:(x)in-reply-to:(x)references:list-id:list-help:list-owner:list-unsubscribe:list-unsubscribe-post:list-subscribe:list-post:(x)openpgp:(x)autocrypt:
+          #   Message-ID, Date, Return-Path, Bounces-To.
         clamav:
           persistence:
             storageClass: "longhorn"
