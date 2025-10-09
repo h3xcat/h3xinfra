@@ -60,6 +60,7 @@
       chart_version: "{{ mailu.chart_version }}"
       namespace: "{{ mailu.namespace }}"
       create_namespace: false
+      # post_renderer: "{{ playbook_dir }}/post-renderer.py"
       
       values:
         global:
