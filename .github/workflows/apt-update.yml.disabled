@@ -21,7 +21,7 @@ jobs:
           python-version: '3.12'
           
       - name: Setup Runner Environment
-        run: bash ./bin/setup-runner.sh
+        run: bash ./scripts/setup-runner.sh
         env:
           WIREGUARD_CLIENT_IP: ${{ secrets.WIREGUARD_CLIENT_IP }}
           WIREGUARD_NETWORK_CIDR: ${{ secrets.WIREGUARD_NETWORK_CIDR }}

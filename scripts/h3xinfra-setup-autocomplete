@@ -1,0 +1,15 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+
+# Add kube-connect-completion.bash to bashrc if not already present
+BASHRC_FILE="$HOME/.bashrc"
+COMPLETION_SCRIPT_PATH="$H3XINFRA_FOLDER/scripts/kube-connect-completion.bash"
+COMPLETION_SOURCE_LINE="source \"$COMPLETION_SCRIPT_PATH\""
+if ! grep -Fxq "$COMPLETION_SOURCE_LINE" "$BASHRC_FILE"; then
+    echo "$COMPLETION_SOURCE_LINE" >> "$BASHRC_FILE"
+    echo "[h3xinfra-setup-autocomplete] Added kube-connect completion to $BASHRC_FILE"
+else
+    echo "[h3xinfra-setup-autocomplete] Kube-connect completion already present in $BASHRC_FILE; skipping."
+fi
