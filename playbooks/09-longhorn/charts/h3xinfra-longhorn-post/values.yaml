@@ -14,10 +14,18 @@ longhornIngress:
   #   - "192.168.1.0/24"
   #   - "10.0.0.0/8"
   
+  # TLS configuration
+  tls:
+    # Enable TLS/HTTPS
+    enabled: false
+    # cert-manager ClusterIssuer to use
+    issuer: ""
+  
   # Authentication configuration
   auth:
-    # Authentication method: "basic", "oauth", or "none"  
-    method: "none"
+    # Authentication method: "basic" or "oauth2_proxy"
+    # WARNING: You MUST set this to either "basic" or "oauth2_proxy"
+    method: "basic"
     
     # Basic authentication settings (used when method is "basic")
     basic:
@@ -27,14 +35,11 @@ longhornIngress:
       # Authentication realm message shown to users
       realm: "Authentication Required"
     
-    # OAuth authentication settings (used when method is "oauth")
-    oauth:
-      # OAuth provider authentication endpoint
-      auth_url: "https://auth.example.com/oauth2/auth"
-      # OAuth sign-in redirect URL
-      signin_url: "https://auth.example.com/oauth2/start?rd=$scheme://$host$request_uri"
-      # Headers to pass from OAuth response
-      response_headers: "x-auth-request-user, x-auth-request-email"
+    # OAuth2 Proxy authentication settings (used when method is "oauth2_proxy")
+    # This uses a dedicated OAuth2 Proxy deployment
+    oauth2_proxy:
+      # Name of the OAuth2 Proxy service (auto-generated from release name)
+      service_name: ""
   
   # Additional custom annotations for the ingress
   annotations: {}

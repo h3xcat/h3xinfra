@@ -1,3 +1,6 @@
+{{- if and (ne .Values.longhornIngress.auth.method "basic") (ne .Values.longhornIngress.auth.method "oauth2_proxy") }}
+{{- fail "ERROR: Longhorn authentication is not configured! You must set auth.method to either 'basic' or 'oauth2_proxy'" }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -7,15 +10,15 @@ metadata:
     nginx.ingress.kubernetes.io/auth-type: basic
     nginx.ingress.kubernetes.io/auth-secret: {{ include "h3xinfra-longhorn-post.fullname" . }}-basic-auth-secret
     nginx.ingress.kubernetes.io/auth-realm: {{ .Values.longhornIngress.auth.basic.realm | quote }}
-    {{- else if eq .Values.longhornIngress.auth.method "oauth" }}
-    nginx.ingress.kubernetes.io/auth-url: {{ .Values.longhornIngress.auth.oauth.auth_url | quote }}
-    nginx.ingress.kubernetes.io/auth-signin: {{ .Values.longhornIngress.auth.oauth.signin_url | quote }}
-    nginx.ingress.kubernetes.io/auth-response-headers: {{ .Values.longhornIngress.auth.oauth.response_headers | quote }}
-    nginx.ingress.kubernetes.io/auth-snippet: |
-      proxy_set_header X-Forwarded-Host $http_host;
+    {{- else if eq .Values.longhornIngress.auth.method "oauth2_proxy" }}
+    nginx.ingress.kubernetes.io/auth-url: "http://{{ .Values.longhornIngress.auth.oauth2_proxy.service_name }}.{{ .Release.Namespace }}.svc.cluster.local:4180/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://{{ .Values.longhornIngress.host }}/oauth2/start?rd=$scheme://$host$escaped_request_uri"
+    nginx.ingress.kubernetes.io/auth-response-headers: "x-auth-request-user, x-auth-request-email, x-auth-request-access-token"
     {{- end }}
 
-
+    {{- if .Values.longhornIngress.tls.enabled }}
+    cert-manager.io/cluster-issuer: {{ .Values.longhornIngress.tls.issuer | quote }}
+    {{- end }}
 
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     {{- if .Values.longhornIngress.trustedIPs }}
@@ -27,9 +30,11 @@ metadata:
     {{- end }}
 spec:
   ingressClassName: nginx
+  {{- if .Values.longhornIngress.tls.enabled }}
   tls:
   - hosts:
     - {{ .Values.longhornIngress.host }}
+  {{- end }}
   rules:
   - host: {{ .Values.longhornIngress.host }}
     http:
