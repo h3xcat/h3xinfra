@@ -136,9 +136,10 @@
             defaultDataLocality: best-effort
             replicaAutoBalance: least-effort
 
-            # Security and Stability
+            # High Availability and Resilience
             replicaSoftAntiAffinity: "false"
             allowVolumeCreationWithDegradedAvailability: "false"
+            rwxVolumeFastFailover: "true"
 
             # Instance Manager CPU (V1 Data Engine)
             guaranteedInstanceManagerCpu: 15
