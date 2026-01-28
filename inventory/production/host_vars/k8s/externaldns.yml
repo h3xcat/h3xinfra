@@ -2,7 +2,7 @@
 externaldns:
   namespace: "external-dns"
   release_name_prefix: "h3xinfra-externaldns"
-  chart_version: "1.19.0"
+  chart_version: "1.20.0"
   domain_filters:
   - "example.com"
   - "subdomain.example.com"

@@ -2,7 +2,7 @@
 mailu:
   namespace: "mailu"
   release_name_prefix: "h3xinfra-mailu"
-  chart_version: "2.4.0"
+  chart_version: "2.6.3"
   # Replace with your actual domain
   domain: "example.com"
   
