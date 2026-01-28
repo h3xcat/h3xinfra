@@ -231,7 +231,7 @@
         "/(^|/)playbooks/.+/standup.*\\.ya?ml$/"
       ],
       "matchStrings": [
-        "chart_ref:\\s*[\"']?oauth2-proxy/oauth2-proxy[\"']?\\s*\\n\\s*chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+        "chart_ref:\\s*[\"']?oauth2-proxy/oauth2-proxy[\"']?[\\s\\S]*?chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
       ],
       "depNameTemplate": "oauth2-proxy",
       "registryUrlTemplate": "https://oauth2-proxy.github.io/manifests",
@@ -244,11 +244,23 @@
         "/(^|/)playbooks/.+/standup.*\\.ya?ml$/"
       ],
       "matchStrings": [
-        "chart_ref:\\s*[\"']?goauthentik/authentik[\"']?\\s*\\n\\s*chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+        "chart_ref:\\s*[\"']?goauthentik/authentik[\"']?[\\s\\S]*?chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
       ],
       "depNameTemplate": "authentik",
       "registryUrlTemplate": "https://charts.goauthentik.io",
       "datasourceTemplate": "helm"
+    },
+    {
+      "customType": "regex",
+      "description": "Update Longhorn CLI version in standup files",
+      "managerFilePatterns": [
+        "/(^|/)playbooks/.+/standup.*\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "longhorn_cli_version:\\s*[\"']?(?<currentValue>v[^\\s\"'\\n]+)[\"']?"
+      ],
+      "depNameTemplate": "longhorn/cli",
+      "datasourceTemplate": "github-releases"
     },
     {
       "customType": "regex",
