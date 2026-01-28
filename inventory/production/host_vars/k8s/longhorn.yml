@@ -2,7 +2,7 @@
 longhorn:
   namespace: "longhorn-system"
   release_name_prefix: "h3xinfra-longhorn"
-  chart_version: "v1.9.1"
+  chart_version: "1.10.1"
   cifs_username: "longhorn"
   cifs_password: "{{ longhorn_cifs_password }}"
   # Replace with your actual NAS backup target
