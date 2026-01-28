@@ -55,4 +55,4 @@ cli_versions:
   # renovate: datasource=github-releases depName=kubernetes/kubernetes extractVersion=^v(?<version>.+)$
   kubectl: "1.32.2"
   # renovate: datasource=github-releases depName=helm/helm
-  helm: "v3.17.1"
+  helm: "v3.20.0"
