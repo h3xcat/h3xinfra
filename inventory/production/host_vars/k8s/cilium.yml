@@ -2,7 +2,7 @@
 cilium:
   namespace: "kube-system"
   release_name_prefix: "h3xinfra-cilium"
-  chart_version: "1.18.2"
+  chart_version: "1.18.6"
   
   # Cilium configuration
   config:
