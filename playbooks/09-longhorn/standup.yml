@@ -56,7 +56,7 @@
       kubernetes.core.helm:
         name: "{{ longhorn.release_name_prefix }}-oauth2"
         chart_ref: oauth2-proxy/oauth2-proxy
-        chart_version: "8.3.1"
+        chart_version: "10.1.1"
         release_namespace: "{{ longhorn.namespace }}"
         create_namespace: false
         values:
