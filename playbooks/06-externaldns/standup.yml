@@ -12,6 +12,7 @@
         repo_url: https://kubernetes-sigs.github.io/external-dns/
         state: present
         force_update: true
+      changed_when: false
 
     - name: Create ExternalDNS namespace
       kubernetes.core.k8s:

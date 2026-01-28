@@ -12,6 +12,7 @@
         repo_url: https://kubernetes.github.io/ingress-nginx
         state: present
         force_update: true
+      changed_when: false
 
     - name: Create Ingress-Nginx namespace
       kubernetes.core.k8s:

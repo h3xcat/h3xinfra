@@ -12,6 +12,7 @@
       repo_url: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
       state: present
       force_update: true
+    changed_when: false
 
   - name: Deploy SMB CSI Driver via Helm
     kubernetes.core.helm:

@@ -12,6 +12,7 @@
       repo_url: https://helm.cilium.io/
       state: present
       force_update: true
+    changed_when: false
 
   - name: Create Cilium namespace
     kubernetes.core.k8s:
