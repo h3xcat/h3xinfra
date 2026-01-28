@@ -1,15 +1,24 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":separateMajorReleases",
+    "docker:enableMajor",
+    "helpers:pinGitHubActionDigests"
   ],
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
   "timezone": "America/Los_Angeles",
   "labels": ["dependencies"],
   "commitMessagePrefix": "chore(deps):",
-  "separateMajorMinor": true,
   "rangeStrategy": "bump",
+  "minimumReleaseAge": "3 days",
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "automerge": true
+  },
   "packageRules": [
     {
       "description": "Group all Helm chart updates together",
@@ -24,127 +33,106 @@
       "schedule": ["before 10am on monday"]
     },
     {
-      "description": "Automerge patch updates",
-      "matchUpdateTypes": ["patch"],
-      "automerge": true
-    }
-  ],
-  "helm-values": {
-    "enabled": true,
-    "fileMatch": [
-      "(^|/)values\\.ya?ml$",
-      "(^|/).*-values\\.ya?ml$"
-    ]
-  },
-  "ansible": {
-    "enabled": true,
-    "fileMatch": [
-      "(^|/)inventory/.+\\.ya?ml$",
-      "(^|/)standup\\.ya?ml$"
-    ]
-  },
-  "docker": {
-    "enabled": true
-  },
-  "dockerfile": {
-    "enabled": true,
-    "fileMatch": [
-      "(^|/)Dockerfile$",
-      "(^|/)Dockerfile\\.[^/]*$"
-    ]
-  },
-  "regexManagers": [
-    {
-      "description": "Update Helm chart versions in Ansible inventory files",
-      "fileMatch": [
-        "(^|/)inventory/production/host_vars/k8s/.+\\.yml$"
-      ],
-      "matchStrings": [
-        "chart_version:\\s*[\"']?(?<currentValue>[^\"'\\n]+)[\"']?"
-      ],
-      "datasourceTemplate": "helm",
-      "depNameTemplate": "{{packageName}}",
-      "versioningTemplate": "helm"
+      "description": "Automerge patch updates for non-major dependencies",
+      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
     },
     {
-      "description": "Update Docker images in Helm values files",
+      "description": "Group Kubernetes-related updates",
+      "matchPackagePatterns": ["^kubernetes", "^k8s", "kubectl", "^k3s"],
+      "groupName": "Kubernetes",
+      "schedule": ["before 10am on monday"]
+    },
+    {
+      "description": "Group Cilium updates",
+      "matchPackagePatterns": ["^cilium"],
+      "groupName": "Cilium",
+      "schedule": ["before 10am on monday"]
+    },
+    {
+      "description": "Group Ansible collection updates",
+      "matchDatasources": ["galaxy-collection"],
+      "groupName": "Ansible collections",
+      "schedule": ["before 10am on monday"]
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update Docker images in Helm values files (image.repository + image.tag pattern)",
       "fileMatch": [
-        "(^|/)playbooks/.+/charts/.+/values\\.ya?ml$"
+        "(^|/)playbooks/.+/charts/.+/values\\.ya?ml$",
+        "(^|/).*-values\\.ya?ml$"
       ],
       "matchStrings": [
-        "repository:\\s*(?<depName>[^\\s]+)\\s+tag:\\s*[\"']?(?<currentValue>[^\"'\\n]+)[\"']?"
+        "repository:\\s*[\"']?(?<depName>[^\\s\"']+)[\"']?\\s+tag:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?"
       ],
       "datasourceTemplate": "docker"
     },
     {
-      "description": "Update kubectl version in Dockerfile",
+      "customType": "regex",
+      "description": "Update Docker images in Helm values files (image: format)",
       "fileMatch": [
-        "(^|/)\\.devcontainer/Dockerfile$"
+        "(^|/)playbooks/.+/charts/.+/values\\.ya?ml$",
+        "(^|/).*-values\\.ya?ml$"
       ],
       "matchStrings": [
-        "curl -LO \"https://dl\\.k8s\\.io/release/v?(?<currentValue>[^/]+)/bin/linux/amd64/kubectl\""
+        "image:\\s*[\"']?(?<depName>[^:\"'\\s]+):(?<currentValue>[^\\s\"']+)[\"']?"
       ],
-      "depNameTemplate": "kubernetes/kubectl",
-      "datasourceTemplate": "github-releases",
-      "extractVersionTemplate": "^v?(?<version>.+)$"
+      "datasourceTemplate": "docker"
     },
     {
-      "description": "Update Helm in Dockerfile",
-      "fileMatch": [
-        "(^|/)\\.devcontainer/Dockerfile$"
-      ],
+      "customType": "regex",
+      "description": "Update kubectl version in Dockerfile",
+      "fileMatch": ["(^|/)\\.devcontainer/Dockerfile$"],
       "matchStrings": [
-        "curl https://raw\\.githubusercontent\\.com/helm/helm/(?<currentValue>[^/]+)/scripts/get-helm-3"
+        "curl -LO \"https://dl\\.k8s\\.io/release/v(?<currentValue>[^/]+)/bin/linux/amd64/kubectl\""
+      ],
+      "depNameTemplate": "kubernetes/kubernetes",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Update Helm in Dockerfile",
+      "fileMatch": ["(^|/)\\.devcontainer/Dockerfile$"],
+      "matchStrings": [
+        "curl https://raw\\.githubusercontent\\.com/helm/helm/(?<currentValue>v[^/]+)/scripts/get-helm-3"
       ],
       "depNameTemplate": "helm/helm",
       "datasourceTemplate": "github-releases"
     },
     {
-      "description": "Update Python packages in setup scripts",
-      "fileMatch": [
-        "(^|/)scripts/h3xinfra-setup-dependencies$"
-      ],
-      "matchStrings": [
-        "pip3 install[^\\n]*\\s(?<depName>kubernetes|ruamel\\.yaml)(?:\\s|$)"
-      ],
-      "datasourceTemplate": "pypi"
-    },
-    {
-      "description": "Update Ansible collections in setup scripts",
-      "fileMatch": [
-        "(^|/)scripts/h3xinfra-setup-dependencies$"
-      ],
-      "matchStrings": [
-        "ansible-galaxy collection install\\s+(?<depName>[^\\s]+)"
-      ],
-      "datasourceTemplate": "galaxy-collection"
-    },
-    {
+      "customType": "regex",
       "description": "Update base devcontainer image",
-      "fileMatch": [
-        "(^|/)\\.devcontainer/Dockerfile$"
-      ],
+      "fileMatch": ["(^|/)\\.devcontainer/Dockerfile$"],
       "matchStrings": [
         "ARG BASE_IMAGE_NAME=(?<depName>[^\\n]+)\\nARG BASE_IMAGE_TAG=(?<currentValue>[^\\n]+)"
       ],
       "datasourceTemplate": "docker"
     },
     {
-      "description": "Update Helm chart repo URLs and versions in standup.yml files",
-      "fileMatch": [
-        "(^|/)playbooks/.+/standup\\.ya?ml$"
-      ],
+      "customType": "regex",
+      "description": "Update Helm chart versions in standup.yml (kubernetes.core.helm pattern)",
+      "fileMatch": ["(^|/)playbooks/.+/standup.*\\.ya?ml$"],
       "matchStrings": [
-        "name:\\s+(?<packageName>[^\\n]+)\\s+repo_url:\\s+(?<registryUrl>[^\\n]+)\\s+[\\s\\S]*?chart_ref:\\s+[\"']?(?:\\k<packageName>)/[^/\"'\\n]+[\"']?\\s+chart_version:\\s+[\"']?(?<currentValue>[^\"'\\n]+)[\"']?"
+        "chart_repo_url:\\s*[\"']?(?<registryUrl>https?://[^\\s\"']+)[\"']?[\\s\\S]*?chart_ref:\\s*[\"']?(?<depName>[^\\s\"'/]+)[\"']?[\\s\\S]*?chart_version:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?"
       ],
       "datasourceTemplate": "helm"
     }
   ],
   "hostRules": [
     {
-      "description": "Increase timeout for slow registries",
-      "matchHost": "https://helm.cilium.io/",
+      "description": "Increase timeout for slow Helm registries",
+      "matchHost": "helm.cilium.io",
       "timeout": 60000
+    },
+    {
+      "description": "Increase timeout for GitHub Container Registry",
+      "matchHost": "ghcr.io",
+      "timeout": 30000
     }
   ]
 }
