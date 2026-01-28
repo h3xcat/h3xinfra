@@ -29,20 +29,14 @@
       "matchDatasources": [
         "helm"
       ],
-      "groupName": "Helm charts",
-      "schedule": [
-        "before 10am on monday"
-      ]
+      "groupName": "Helm charts"
     },
     {
       "description": "Group all Docker image updates together",
       "matchDatasources": [
         "docker"
       ],
-      "groupName": "Docker images",
-      "schedule": [
-        "before 10am on monday"
-      ]
+      "groupName": "Docker images"
     },
     {
       "description": "Automerge patch updates for non-major dependencies",
@@ -69,22 +63,6 @@
       ]
     },
     {
-      "description": "Group *arr stack updates",
-      "groupName": "Media stack",
-      "schedule": [
-        "before 10am on saturday"
-      ],
-      "matchPackageNames": [
-        "/sonarr/",
-        "/radarr/",
-        "/prowlarr/",
-        "/recyclarr/",
-        "/sabnzbd/",
-        "/qbittorrent/",
-        "/plex/"
-      ]
-    },
-    {
       "description": "Group Cilium updates",
       "groupName": "Cilium",
       "schedule": [
@@ -92,13 +70,6 @@
       ],
       "matchPackageNames": [
         "/^cilium/"
-      ]
-    },
-    {
-      "description": "Group LinuxServer.io images",
-      "groupName": "LinuxServer.io images",
-      "matchPackageNames": [
-        "/^lscr\\.io/linuxserver//"
       ]
     }
   ],
