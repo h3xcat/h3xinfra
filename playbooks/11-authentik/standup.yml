@@ -68,6 +68,7 @@
             enabled: true
             auth:
               password: "{{ authentik.db_password }}"
+              postgresPassword: "{{ authentik.db_postgres_password }}"
               database: authentik
             persistence:
               enabled: true
