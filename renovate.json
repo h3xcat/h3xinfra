@@ -46,42 +46,199 @@
       "schedule": ["before 10am on monday"]
     },
     {
+      "description": "Group *arr stack updates",
+      "matchPackagePatterns": ["sonarr", "radarr", "prowlarr", "recyclarr", "sabnzbd", "qbittorrent", "plex"],
+      "groupName": "Media stack",
+      "schedule": ["before 10am on saturday"]
+    },
+    {
       "description": "Group Cilium updates",
       "matchPackagePatterns": ["^cilium"],
       "groupName": "Cilium",
       "schedule": ["before 10am on monday"]
     },
     {
-      "description": "Group Ansible collection updates",
-      "matchDatasources": ["galaxy-collection"],
-      "groupName": "Ansible collections",
-      "schedule": ["before 10am on monday"]
+      "description": "Group LinuxServer.io images",
+      "matchPackagePatterns": ["^lscr\\.io/linuxserver/"],
+      "groupName": "LinuxServer.io images"
     }
   ],
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Update Docker images in Helm values files (image.repository + image.tag pattern)",
+      "description": "Update Docker images in Helm values files (nested image.repository + image.tag)",
       "fileMatch": [
-        "(^|/)playbooks/.+/charts/.+/values\\.ya?ml$",
-        "(^|/).*-values\\.ya?ml$"
+        "(^|/)charts/.+/values\\.ya?ml$"
       ],
       "matchStrings": [
-        "repository:\\s*[\"']?(?<depName>[^\\s\"']+)[\"']?\\s+tag:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?"
+        "image:\\s*\\n\\s*repository:\\s*[\"']?(?<depName>[^\\s\"'\\n]+)[\"']?\\s*\\n\\s*tag:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
       ],
       "datasourceTemplate": "docker"
     },
     {
       "customType": "regex",
-      "description": "Update Docker images in Helm values files (image: format)",
+      "description": "Update Docker images in Helm values (images block with nested containers)",
       "fileMatch": [
-        "(^|/)playbooks/.+/charts/.+/values\\.ya?ml$",
-        "(^|/).*-values\\.ya?ml$"
+        "(^|/)charts/.+/values\\.ya?ml$"
       ],
       "matchStrings": [
-        "image:\\s*[\"']?(?<depName>[^:\"'\\s]+):(?<currentValue>[^\\s\"']+)[\"']?"
+        "repository:\\s*[\"']?(?<depName>(?:lscr\\.io|ghcr\\.io|docker\\.io|quay\\.io)[^\\s\"'\\n]+)[\"']?\\s*\\n\\s*tag:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
       ],
       "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Update Docker images (simple repo/tag pattern)",
+      "fileMatch": [
+        "(^|/)charts/.+/values\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "repository:\\s*[\"']?(?<depName>plexinc/[^\\s\"'\\n]+)[\"']?\\s*\\n\\s*tag:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Update Cilium chart version in inventory",
+      "fileMatch": [
+        "(^|/)inventory/.+/host_vars/.+/cilium\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+      ],
+      "depNameTemplate": "cilium",
+      "registryUrlTemplate": "https://helm.cilium.io",
+      "datasourceTemplate": "helm"
+    },
+    {
+      "customType": "regex",
+      "description": "Update MetalLB chart version in inventory",
+      "fileMatch": [
+        "(^|/)inventory/.+/host_vars/.+/metallb\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+      ],
+      "depNameTemplate": "metallb",
+      "registryUrlTemplate": "https://metallb.github.io/metallb",
+      "datasourceTemplate": "helm"
+    },
+    {
+      "customType": "regex",
+      "description": "Update cert-manager chart version in inventory",
+      "fileMatch": [
+        "(^|/)inventory/.+/host_vars/.+/certmanager\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+      ],
+      "depNameTemplate": "cert-manager",
+      "registryUrlTemplate": "https://charts.jetstack.io",
+      "datasourceTemplate": "helm"
+    },
+    {
+      "customType": "regex",
+      "description": "Update external-dns chart version in inventory",
+      "fileMatch": [
+        "(^|/)inventory/.+/host_vars/.+/externaldns\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+      ],
+      "depNameTemplate": "external-dns",
+      "registryUrlTemplate": "https://kubernetes-sigs.github.io/external-dns",
+      "datasourceTemplate": "helm"
+    },
+    {
+      "customType": "regex",
+      "description": "Update ingress-nginx chart version in inventory",
+      "fileMatch": [
+        "(^|/)inventory/.+/host_vars/.+/ingressnginx\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+      ],
+      "depNameTemplate": "ingress-nginx",
+      "registryUrlTemplate": "https://kubernetes.github.io/ingress-nginx",
+      "datasourceTemplate": "helm"
+    },
+    {
+      "customType": "regex",
+      "description": "Update Longhorn chart version in inventory",
+      "fileMatch": [
+        "(^|/)inventory/.+/host_vars/.+/longhorn\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+      ],
+      "depNameTemplate": "longhorn",
+      "registryUrlTemplate": "https://charts.longhorn.io",
+      "datasourceTemplate": "helm"
+    },
+    {
+      "customType": "regex",
+      "description": "Update csi-driver-smb chart version in inventory",
+      "fileMatch": [
+        "(^|/)inventory/.+/host_vars/.+/smb\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+      ],
+      "depNameTemplate": "csi-driver-smb",
+      "registryUrlTemplate": "https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts",
+      "datasourceTemplate": "helm"
+    },
+    {
+      "customType": "regex",
+      "description": "Update Mailu chart version in inventory",
+      "fileMatch": [
+        "(^|/)inventory/.+/host_vars/.+/mailu\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+      ],
+      "depNameTemplate": "mailu",
+      "registryUrlTemplate": "https://mailu.github.io/helm-charts",
+      "datasourceTemplate": "helm"
+    },
+    {
+      "customType": "regex",
+      "description": "Update Open WebUI chart version in inventory",
+      "fileMatch": [
+        "(^|/)inventory/.+/host_vars/.+/openwebui\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+      ],
+      "depNameTemplate": "open-webui",
+      "registryUrlTemplate": "https://helm.openwebui.com",
+      "datasourceTemplate": "helm"
+    },
+    {
+      "customType": "regex",
+      "description": "Update OAuth2-proxy chart version in standup files",
+      "fileMatch": [
+        "(^|/)playbooks/.+/standup.*\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "chart_ref:\\s*[\"']?oauth2-proxy/oauth2-proxy[\"']?\\s*\\n\\s*chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+      ],
+      "depNameTemplate": "oauth2-proxy",
+      "registryUrlTemplate": "https://oauth2-proxy.github.io/manifests",
+      "datasourceTemplate": "helm"
+    },
+    {
+      "customType": "regex",
+      "description": "Update Authentik chart version in standup files",
+      "fileMatch": [
+        "(^|/)playbooks/.+/standup.*\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "chart_ref:\\s*[\"']?goauthentik/authentik[\"']?\\s*\\n\\s*chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+      ],
+      "depNameTemplate": "authentik",
+      "registryUrlTemplate": "https://charts.goauthentik.io",
+      "datasourceTemplate": "helm"
     },
     {
       "customType": "regex",
@@ -112,15 +269,6 @@
         "ARG BASE_IMAGE_NAME=(?<depName>[^\\n]+)\\nARG BASE_IMAGE_TAG=(?<currentValue>[^\\n]+)"
       ],
       "datasourceTemplate": "docker"
-    },
-    {
-      "customType": "regex",
-      "description": "Update Helm chart versions in standup.yml (kubernetes.core.helm pattern)",
-      "fileMatch": ["(^|/)playbooks/.+/standup.*\\.ya?ml$"],
-      "matchStrings": [
-        "chart_repo_url:\\s*[\"']?(?<registryUrl>https?://[^\\s\"']+)[\"']?[\\s\\S]*?chart_ref:\\s*[\"']?(?<depName>[^\\s\"'/]+)[\"']?[\\s\\S]*?chart_version:\\s*[\"']?(?<currentValue>[^\\s\"']+)[\"']?"
-      ],
-      "datasourceTemplate": "helm"
     }
   ],
   "hostRules": [
