@@ -25,6 +25,12 @@
   },
   "packageRules": [
     {
+      "description": "Disable updates for devcontainer features (not standard Docker images)",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/devcontainers/features/**"],
+      "enabled": false
+    },
+    {
       "description": "Group all Helm chart updates together",
       "matchDatasources": ["helm"],
       "groupName": "Helm charts"
