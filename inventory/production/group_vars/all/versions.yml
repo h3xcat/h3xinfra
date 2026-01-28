@@ -55,4 +55,4 @@ mailu:
 # CLI Tools
 cli_versions:
   # renovate: datasource=github-releases depName=longhorn/cli
-  longhorn_cli: "v1.9.0"
+  longhorn_cli: "v1.10.1"
