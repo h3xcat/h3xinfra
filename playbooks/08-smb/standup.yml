@@ -17,7 +17,7 @@
     kubernetes.core.helm:
       name: "{{ smb.release_name_prefix }}-main"
       chart_ref: "csi-driver-smb/csi-driver-smb"
-      chart_version: "{{ smb.chart_version }}"
+      chart_version: "{{ chart_versions.csi_driver_smb }}"
       namespace: "{{ smb.namespace }}"
       create_namespace: false
       values:

@@ -25,7 +25,7 @@
       kubernetes.core.helm:
         name: "{{ certmanager.release_name_prefix }}-main"
         chart_ref: "cert-manager/cert-manager"
-        chart_version: "{{ certmanager.chart_version }}"
+        chart_version: "{{ chart_versions.cert_manager }}"
         namespace: "{{ certmanager.namespace }}"
         create_namespace: false
         values:

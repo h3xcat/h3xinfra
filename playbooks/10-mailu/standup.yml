@@ -58,7 +58,7 @@
     kubernetes.core.helm:
       name: "{{ mailu.release_name_prefix }}-main"
       chart_ref: "mailu/mailu"
-      chart_version: "{{ mailu.chart_version }}"
+      chart_version: "{{ chart_versions.mailu }}"
       namespace: "{{ mailu.namespace }}"
       create_namespace: false
       # post_renderer: "{{ playbook_dir }}/post-renderer.py"

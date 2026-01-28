@@ -49,7 +49,7 @@
       kubernetes.core.helm:
         name: "{{ ingressnginx.release_name_prefix }}-main"
         chart_ref: "ingress-nginx/ingress-nginx"
-        chart_version: "{{ ingressnginx.chart_version }}"
+        chart_version: "{{ chart_versions.ingress_nginx }}"
         namespace: "{{ ingressnginx.namespace }}"
         create_namespace: false
         values: 

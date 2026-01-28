@@ -41,7 +41,7 @@
       kubernetes.core.helm:
         name: "{{ authentik.release_name_prefix }}-main"
         chart_ref: goauthentik/authentik
-        chart_version: "{{ authentik.chart_version }}"
+        chart_version: "{{ chart_versions.authentik }}"
         release_namespace: "{{ authentik.namespace }}"
         create_namespace: false
         wait: true

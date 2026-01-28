@@ -39,7 +39,7 @@
       kubernetes.core.helm:
         name: "{{ externaldns.release_name_prefix }}-main"
         chart_ref: "external-dns/external-dns"
-        chart_version: "{{ externaldns.chart_version }}"
+        chart_version: "{{ chart_versions.external_dns }}"
         namespace: "{{ externaldns.namespace }}"
         create_namespace: false
         values: 
