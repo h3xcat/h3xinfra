@@ -2,7 +2,7 @@
 ingressnginx:
   namespace: "ingress-nginx"
   release_name_prefix: "h3xinfra-ingressnginx"
-  chart_version: "4.14.1"
+  chart_version: "4.14.2"
   loadbalancer_pools:
     ipv4: "192.168.101.100/32"  # Specific IP outside MetalLB pool
     ipv6: "2001:db8:face::100/128"  # Manual assignment in face:0:: subnet
