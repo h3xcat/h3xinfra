@@ -6,7 +6,7 @@
   gather_facts: true
   become: true
   vars:
-    longhorn_cli_version: "v1.9.0"
+    longhorn_cli_version: "{{ cli_versions.longhorn_cli }}"
     longhorn_cli_arch: "{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }}"
   serial: 1 
   tasks:
@@ -58,7 +58,7 @@
       kubernetes.core.helm:
         name: "{{ longhorn.release_name_prefix }}-oauth2"
         chart_ref: oauth2-proxy/oauth2-proxy
-        chart_version: "10.1.1"
+        chart_version: "{{ oauth2_proxy.chart_version }}"
         release_namespace: "{{ longhorn.namespace }}"
         create_namespace: false
         values:
