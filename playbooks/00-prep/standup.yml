@@ -192,3 +192,19 @@
         mode: '0755'
         owner: root
         group: root
+
+    - name: Configure PAM limits
+      community.general.pam_limits:
+        domain: "{{ item.domain }}"
+        limit_type: "{{ item.limit_type }}"
+        limit_item: "{{ item.limit_item }}"
+        value: "{{ item.value }}"
+      loop:
+        - { domain: '*', limit_type: 'soft', limit_item: 'nproc', value: '65536' }
+        - { domain: '*', limit_type: 'hard', limit_item: 'nproc', value: '131072' }
+        - { domain: '*', limit_type: 'soft', limit_item: 'nofile', value: '131072' }
+        - { domain: '*', limit_type: 'hard', limit_item: 'nofile', value: '1048576' }
+        - { domain: 'root', limit_type: 'soft', limit_item: 'nproc', value: '65536' }
+        - { domain: 'root', limit_type: 'hard', limit_item: 'nproc', value: '131072' }
+        - { domain: 'root', limit_type: 'soft', limit_item: 'nofile', value: '131072' }
+        - { domain: 'root', limit_type: 'hard', limit_item: 'nofile', value: '1048576' }
