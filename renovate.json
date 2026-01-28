@@ -11,64 +11,103 @@
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
   "timezone": "America/Los_Angeles",
-  "labels": ["dependencies"],
+  "labels": [
+    "dependencies"
+  ],
   "commitMessagePrefix": "chore(deps):",
   "rangeStrategy": "bump",
   "minimumReleaseAge": "3 days",
   "vulnerabilityAlerts": {
-    "labels": ["security"],
+    "labels": [
+      "security"
+    ],
     "automerge": true
   },
   "packageRules": [
     {
       "description": "Group all Helm chart updates together",
-      "matchDatasources": ["helm"],
+      "matchDatasources": [
+        "helm"
+      ],
       "groupName": "Helm charts",
-      "schedule": ["before 10am on monday"]
+      "schedule": [
+        "before 10am on monday"
+      ]
     },
     {
       "description": "Group all Docker image updates together",
-      "matchDatasources": ["docker"],
+      "matchDatasources": [
+        "docker"
+      ],
       "groupName": "Docker images",
-      "schedule": ["before 10am on monday"]
+      "schedule": [
+        "before 10am on monday"
+      ]
     },
     {
       "description": "Automerge patch updates for non-major dependencies",
-      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "matchUpdateTypes": [
+        "patch",
+        "pin",
+        "digest"
+      ],
       "automerge": true,
       "automergeType": "pr",
       "platformAutomerge": true
     },
     {
       "description": "Group Kubernetes-related updates",
-      "matchPackagePatterns": ["^kubernetes", "^k8s", "kubectl", "^k3s"],
       "groupName": "Kubernetes",
-      "schedule": ["before 10am on monday"]
+      "schedule": [
+        "before 10am on monday"
+      ],
+      "matchPackageNames": [
+        "/^kubernetes/",
+        "/^k8s/",
+        "/kubectl/",
+        "/^k3s/"
+      ]
     },
     {
       "description": "Group *arr stack updates",
-      "matchPackagePatterns": ["sonarr", "radarr", "prowlarr", "recyclarr", "sabnzbd", "qbittorrent", "plex"],
       "groupName": "Media stack",
-      "schedule": ["before 10am on saturday"]
+      "schedule": [
+        "before 10am on saturday"
+      ],
+      "matchPackageNames": [
+        "/sonarr/",
+        "/radarr/",
+        "/prowlarr/",
+        "/recyclarr/",
+        "/sabnzbd/",
+        "/qbittorrent/",
+        "/plex/"
+      ]
     },
     {
       "description": "Group Cilium updates",
-      "matchPackagePatterns": ["^cilium"],
       "groupName": "Cilium",
-      "schedule": ["before 10am on monday"]
+      "schedule": [
+        "before 10am on monday"
+      ],
+      "matchPackageNames": [
+        "/^cilium/"
+      ]
     },
     {
       "description": "Group LinuxServer.io images",
-      "matchPackagePatterns": ["^lscr\\.io/linuxserver/"],
-      "groupName": "LinuxServer.io images"
+      "groupName": "LinuxServer.io images",
+      "matchPackageNames": [
+        "/^lscr\\.io/linuxserver//"
+      ]
     }
   ],
   "customManagers": [
     {
       "customType": "regex",
       "description": "Update Docker images in Helm values files (nested image.repository + image.tag)",
-      "fileMatch": [
-        "(^|/)charts/.+/values\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)charts/.+/values\\.ya?ml$/"
       ],
       "matchStrings": [
         "image:\\s*\\n\\s*repository:\\s*[\"']?(?<depName>[^\\s\"'\\n]+)[\"']?\\s*\\n\\s*tag:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -78,8 +117,8 @@
     {
       "customType": "regex",
       "description": "Update Docker images in Helm values (images block with nested containers)",
-      "fileMatch": [
-        "(^|/)charts/.+/values\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)charts/.+/values\\.ya?ml$/"
       ],
       "matchStrings": [
         "repository:\\s*[\"']?(?<depName>(?:lscr\\.io|ghcr\\.io|docker\\.io|quay\\.io)[^\\s\"'\\n]+)[\"']?\\s*\\n\\s*tag:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -89,8 +128,8 @@
     {
       "customType": "regex",
       "description": "Update Docker images (simple repo/tag pattern)",
-      "fileMatch": [
-        "(^|/)charts/.+/values\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)charts/.+/values\\.ya?ml$/"
       ],
       "matchStrings": [
         "repository:\\s*[\"']?(?<depName>plexinc/[^\\s\"'\\n]+)[\"']?\\s*\\n\\s*tag:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -100,8 +139,8 @@
     {
       "customType": "regex",
       "description": "Update Cilium chart version in inventory",
-      "fileMatch": [
-        "(^|/)inventory/.+/host_vars/.+/cilium\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)inventory/.+/host_vars/.+/cilium\\.ya?ml$/"
       ],
       "matchStrings": [
         "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -113,8 +152,8 @@
     {
       "customType": "regex",
       "description": "Update MetalLB chart version in inventory",
-      "fileMatch": [
-        "(^|/)inventory/.+/host_vars/.+/metallb\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)inventory/.+/host_vars/.+/metallb\\.ya?ml$/"
       ],
       "matchStrings": [
         "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -126,8 +165,8 @@
     {
       "customType": "regex",
       "description": "Update cert-manager chart version in inventory",
-      "fileMatch": [
-        "(^|/)inventory/.+/host_vars/.+/certmanager\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)inventory/.+/host_vars/.+/certmanager\\.ya?ml$/"
       ],
       "matchStrings": [
         "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -139,8 +178,8 @@
     {
       "customType": "regex",
       "description": "Update external-dns chart version in inventory",
-      "fileMatch": [
-        "(^|/)inventory/.+/host_vars/.+/externaldns\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)inventory/.+/host_vars/.+/externaldns\\.ya?ml$/"
       ],
       "matchStrings": [
         "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -152,8 +191,8 @@
     {
       "customType": "regex",
       "description": "Update ingress-nginx chart version in inventory",
-      "fileMatch": [
-        "(^|/)inventory/.+/host_vars/.+/ingressnginx\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)inventory/.+/host_vars/.+/ingressnginx\\.ya?ml$/"
       ],
       "matchStrings": [
         "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -165,8 +204,8 @@
     {
       "customType": "regex",
       "description": "Update Longhorn chart version in inventory",
-      "fileMatch": [
-        "(^|/)inventory/.+/host_vars/.+/longhorn\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)inventory/.+/host_vars/.+/longhorn\\.ya?ml$/"
       ],
       "matchStrings": [
         "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -178,8 +217,8 @@
     {
       "customType": "regex",
       "description": "Update csi-driver-smb chart version in inventory",
-      "fileMatch": [
-        "(^|/)inventory/.+/host_vars/.+/smb\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)inventory/.+/host_vars/.+/smb\\.ya?ml$/"
       ],
       "matchStrings": [
         "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -191,8 +230,8 @@
     {
       "customType": "regex",
       "description": "Update Mailu chart version in inventory",
-      "fileMatch": [
-        "(^|/)inventory/.+/host_vars/.+/mailu\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)inventory/.+/host_vars/.+/mailu\\.ya?ml$/"
       ],
       "matchStrings": [
         "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -204,8 +243,8 @@
     {
       "customType": "regex",
       "description": "Update Open WebUI chart version in inventory",
-      "fileMatch": [
-        "(^|/)inventory/.+/host_vars/.+/openwebui\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)inventory/.+/host_vars/.+/openwebui\\.ya?ml$/"
       ],
       "matchStrings": [
         "chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -217,8 +256,8 @@
     {
       "customType": "regex",
       "description": "Update OAuth2-proxy chart version in standup files",
-      "fileMatch": [
-        "(^|/)playbooks/.+/standup.*\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)playbooks/.+/standup.*\\.ya?ml$/"
       ],
       "matchStrings": [
         "chart_ref:\\s*[\"']?oauth2-proxy/oauth2-proxy[\"']?\\s*\\n\\s*chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -230,8 +269,8 @@
     {
       "customType": "regex",
       "description": "Update Authentik chart version in standup files",
-      "fileMatch": [
-        "(^|/)playbooks/.+/standup.*\\.ya?ml$"
+      "managerFilePatterns": [
+        "/(^|/)playbooks/.+/standup.*\\.ya?ml$/"
       ],
       "matchStrings": [
         "chart_ref:\\s*[\"']?goauthentik/authentik[\"']?\\s*\\n\\s*chart_version:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
@@ -243,7 +282,9 @@
     {
       "customType": "regex",
       "description": "Update kubectl version in Dockerfile",
-      "fileMatch": ["(^|/)\\.devcontainer/Dockerfile$"],
+      "managerFilePatterns": [
+        "/(^|/)\\.devcontainer/Dockerfile$/"
+      ],
       "matchStrings": [
         "curl -LO \"https://dl\\.k8s\\.io/release/v(?<currentValue>[^/]+)/bin/linux/amd64/kubectl\""
       ],
@@ -254,7 +295,9 @@
     {
       "customType": "regex",
       "description": "Update Helm in Dockerfile",
-      "fileMatch": ["(^|/)\\.devcontainer/Dockerfile$"],
+      "managerFilePatterns": [
+        "/(^|/)\\.devcontainer/Dockerfile$/"
+      ],
       "matchStrings": [
         "curl https://raw\\.githubusercontent\\.com/helm/helm/(?<currentValue>v[^/]+)/scripts/get-helm-3"
       ],
@@ -264,7 +307,9 @@
     {
       "customType": "regex",
       "description": "Update base devcontainer image",
-      "fileMatch": ["(^|/)\\.devcontainer/Dockerfile$"],
+      "managerFilePatterns": [
+        "/(^|/)\\.devcontainer/Dockerfile$/"
+      ],
       "matchStrings": [
         "ARG BASE_IMAGE_NAME=(?<depName>[^\\n]+)\\nARG BASE_IMAGE_TAG=(?<currentValue>[^\\n]+)"
       ],
