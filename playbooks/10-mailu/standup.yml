@@ -10,6 +10,7 @@
       name: mailu
       repo_url: https://mailu.github.io/helm-charts
       state: present
+      force_update: true
 
   - name: Create Mailu namespace
     kubernetes.core.k8s:

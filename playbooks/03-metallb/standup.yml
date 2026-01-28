@@ -10,6 +10,7 @@
       name: metallb
       repo_url: https://metallb.github.io/metallb
       state: present
+      force_update: true
 
   - name: Create MetalLB namespace
     kubernetes.core.k8s:

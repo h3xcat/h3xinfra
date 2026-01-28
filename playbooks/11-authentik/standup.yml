@@ -11,6 +11,7 @@
         name: goauthentik
         repo_url: https://charts.goauthentik.io/
         state: present
+        force_update: true
 
     - name: Create Authentik namespace
       kubernetes.core.k8s:
