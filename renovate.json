@@ -71,16 +71,6 @@
     },
     {
       "customType": "regex",
-      "description": "Update Docker images in Helm values files",
-      "managerFilePatterns": ["/(^|/)charts/.+/values\\.ya?ml$/"],
-      "matchStrings": [
-        "image:\\s*\\n\\s*repository:\\s*[\"']?(?<depName>[^\\s\"'\\n]+)[\"']?\\s*\\n\\s*tag:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?",
-        "repository:\\s*[\"']?(?<depName>(?:lscr\\.io|ghcr\\.io|docker\\.io|quay\\.io|plexinc)[^\\s\"'\\n/]*(?:/[^\\s\"'\\n]+)?)[\"']?\\s*\\n\\s*tag:\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
-      ],
-      "datasourceTemplate": "docker"
-    },
-    {
-      "customType": "regex",
       "description": "Update kubectl version in Dockerfile",
       "managerFilePatterns": ["/(^|/)\\.devcontainer/Dockerfile$/"],
       "matchStrings": [
