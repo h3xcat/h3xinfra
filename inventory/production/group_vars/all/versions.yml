@@ -38,4 +38,4 @@ chart_versions:
 # CLI Tools
 cli_versions:
   # renovate: datasource=github-releases depName=longhorn/cli
-  longhorn_cli: "v1.10.2"
+  longhorn_cli: "v1.11.0"
