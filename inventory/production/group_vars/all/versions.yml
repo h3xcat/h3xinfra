@@ -27,7 +27,7 @@ chart_versions:
 
   # Infrastructure - Storage
   # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
-  longhorn: "1.10.2"
+  longhorn: "1.11.0"
   # renovate: datasource=helm depName=csi-driver-smb registryUrl=https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
   csi_driver_smb: "1.19.1"
 
