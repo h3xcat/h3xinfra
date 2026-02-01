@@ -78,6 +78,7 @@
             skip-provider-button: true
             set-xauthrequest: true
             reverse-proxy: true
+            insecure-oidc-allow-unverified-email: true
 
           service:
             type: ClusterIP
