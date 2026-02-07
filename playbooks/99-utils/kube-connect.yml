@@ -6,7 +6,7 @@
 
   vars:
     kubeconfig_path: "~/.kube/config"
-    expected_server_url: "https://k8s.home.arpa:6443"
+    expected_server_url: "https://k8s.home.arpa:443"
 
   tasks:
   - name: "kube-connect: Check if connection was already established in this session"

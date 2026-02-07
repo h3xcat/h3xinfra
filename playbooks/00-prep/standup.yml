@@ -85,6 +85,20 @@
         - { name: net.ipv6.conf.all.use_tempaddr, value: "0" }
         - { name: net.ipv6.conf.default.use_tempaddr, value: "0" }
 
+    - name: Enable DNSSEC in systemd-resolved
+      lineinfile:
+        path: /etc/systemd/resolved.conf
+        regexp: '^#?DNSSEC='
+        line: 'DNSSEC=yes'
+        backup: yes
+      register: resolved_conf_changed
+
+    - name: Restart systemd-resolved if configuration changed
+      service:
+        name: systemd-resolved
+        state: restarted
+      when: resolved_conf_changed.changed
+
     - name: Check current huge page allocation
       shell: cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
       register: hugepage_current
