@@ -47,5 +47,5 @@
 
       state: present
       wait: true
-      timeout: "120s"
+      timeout: "600s"
 
