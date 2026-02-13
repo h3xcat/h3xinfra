@@ -23,7 +23,7 @@ chart_versions:
   # renovate: datasource=helm depName=oauth2-proxy registryUrl=https://oauth2-proxy.github.io/manifests
   oauth2_proxy: "10.1.3"
   # renovate: datasource=helm depName=authentik registryUrl=https://charts.goauthentik.io
-  authentik: "2025.12.3"
+  authentik: "2025.12.4"
 
   # Infrastructure - Storage
   # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
