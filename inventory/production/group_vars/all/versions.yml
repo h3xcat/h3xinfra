@@ -9,7 +9,7 @@
 chart_versions:
   # Infrastructure - Networking
   # renovate: datasource=helm depName=cilium registryUrl=https://helm.cilium.io
-  cilium: "1.18.6"
+  cilium: "1.19.0"
   # renovate: datasource=helm depName=metallb registryUrl=https://metallb.github.io/metallb
   metallb: "0.15.3"
   # renovate: datasource=helm depName=ingress-nginx registryUrl=https://kubernetes.github.io/ingress-nginx
