@@ -2,4 +2,3 @@
 smb:
   namespace: "kube-system"
   release_name_prefix: "h3xinfra-smb"
-  chart_version: "1.19.1"

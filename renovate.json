@@ -98,6 +98,23 @@
         "ARG BASE_IMAGE_NAME=(?<depName>[^\\n]+)\\nARG BASE_IMAGE_TAG=(?<currentValue>[^\\n]+)"
       ],
       "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Update k3s version in Ansible inventory files",
+      "managerFilePatterns": ["/(^|/)inventory/.+\\.ya?ml$/", "/(^|/)inventory\\.example\\.ya?ml$/"],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+versioning=(?<versioning>[^\\s]+))?\\s*\\n\\s*k3s_version:\\s*(?<currentValue>[^\\s\"'\\n]+)"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "Update hardcoded container images in Helm chart templates",
+      "managerFilePatterns": ["/(^|/)charts/.+/templates/.+\\.ya?ml$/"],
+      "matchStrings": [
+        "image:\\s+(?<depName>[a-z][a-z0-9.\\/-]*):(?<currentValue>[0-9][^\\s\\\"'\\n}]*)"
+      ],
+      "datasourceTemplate": "docker"
     }
   ],
   "hostRules": [

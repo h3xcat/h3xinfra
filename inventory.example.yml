@@ -253,6 +253,7 @@ k3s_cluster:
   vars:
     ansible_port: 22
     ansible_user: ansible  # Replace with your actual ansible user
+    # renovate: datasource=github-releases depName=k3s-io/k3s versioning=regex:^v(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)\+k3s(?<build>\d+)$
     k3s_version: v1.33.0+k3s1
     # Generate your own cluster token with: openssl rand -hex 32
     token: !vault |
