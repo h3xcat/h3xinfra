@@ -13,13 +13,13 @@ chart_versions:
   # renovate: datasource=helm depName=metallb registryUrl=https://metallb.github.io/metallb
   metallb: "0.15.3"
   # renovate: datasource=helm depName=ingress-nginx registryUrl=https://kubernetes.github.io/ingress-nginx
-  ingress_nginx: "4.14.3"
+  ingress_nginx: "4.15.0"
   # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
   external_dns: "1.20.0"
 
   # Infrastructure - Security & Certs
   # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
-  cert_manager: "v1.19.4"
+  cert_manager: "v1.20.0"
   # renovate: datasource=helm depName=oauth2-proxy registryUrl=https://oauth2-proxy.github.io/manifests
   oauth2_proxy: "10.1.4"
   # renovate: datasource=helm depName=authentik registryUrl=https://charts.goauthentik.io
