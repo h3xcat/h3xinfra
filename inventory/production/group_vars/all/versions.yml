@@ -29,7 +29,7 @@ chart_versions:
   # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
   longhorn: "1.11.0"
   # renovate: datasource=helm depName=csi-driver-smb registryUrl=https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
-  csi_driver_smb: "1.20.0"
+  csi_driver_smb: "1.20.1"
 
   # Applications
   # renovate: datasource=helm depName=mailu registryUrl=https://mailu.github.io/helm-charts
