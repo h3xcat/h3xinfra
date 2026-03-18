@@ -45,7 +45,6 @@
         chart_version: "{{ chart_versions.authentik }}"
         release_namespace: "{{ authentik.namespace }}"
         create_namespace: false
-        wait: true
         values:
           authentik:
             secret_key: "{{ authentik.secret_key }}"
