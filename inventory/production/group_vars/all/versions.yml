@@ -33,7 +33,7 @@ chart_versions:
 
   # Applications
   # renovate: datasource=helm depName=mailu registryUrl=https://mailu.github.io/helm-charts
-  mailu: "2.6.3"
+  mailu: "2.7.0"
 
 # CLI Tools
 cli_versions:
