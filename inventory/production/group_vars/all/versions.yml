@@ -19,7 +19,7 @@ chart_versions:
 
   # Infrastructure - Security & Certs
   # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
-  cert_manager: "v1.20.1"
+  cert_manager: "v1.20.2"
   # renovate: datasource=helm depName=oauth2-proxy registryUrl=https://oauth2-proxy.github.io/manifests
   oauth2_proxy: "10.4.2"
   # renovate: datasource=helm depName=authentik registryUrl=https://charts.goauthentik.io
