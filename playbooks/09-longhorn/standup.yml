@@ -145,6 +145,9 @@
             replicaSoftAntiAffinity: "false"
             allowVolumeCreationWithDegradedAvailability: "false"
             rwxVolumeFastFailover: "true"
+            # Auto-failover stuck pods (StatefulSet/Deployment) when their node goes down,
+            # so RWO volumes can be reattached on a healthy node without manual intervention.
+            nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
 
             # Instance Manager CPU (V1 Data Engine)
             guaranteedInstanceManagerCpu: 15
