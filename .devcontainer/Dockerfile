@@ -25,7 +25,7 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
     && echo "$SNIPPET" >> "/home/${USERNAME}/.bashrc"
 
 # Install kubectl
-RUN curl -LO "https://dl.k8s.io/release/v1.35.4/bin/linux/amd64/kubectl" \
+RUN curl -LO "https://dl.k8s.io/release/v1.36.0/bin/linux/amd64/kubectl" \
     && chmod +x kubectl \
     && mv kubectl /usr/local/bin/kubectl
 
