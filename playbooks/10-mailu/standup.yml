@@ -92,11 +92,12 @@
           password: "{{ mailu.external_relay_password }}"
 
         ingress:
-          ingressClassName: "nginx"
-          realIpFrom: "{{ ingressnginx.loadbalancer_pools.ipv4 }}"
-          existingSecret: "{{ mailu.release_name_prefix }}-pre-certificate"
-          annotations:
-            nginx.ingress.kubernetes.io/whitelist-source-range: "{{ mailu.ingress_trusted_ips | join(',') }}"
+          # Mailu's front LB Service is the single entry point for SMTP/IMAP
+          # AND HTTP/HTTPS (admin/webmail). The chart's Ingress block was an
+          # optional shortcut for ingress-nginx; with Envoy Gateway gone for
+          # mail traffic, we rely on the front LB exclusively. IP allowlist
+          # for HTTP/HTTPS is enforced by Mailu itself.
+          enabled: false
 
         persistence:
           single_pvc: false
