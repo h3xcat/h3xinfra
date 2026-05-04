@@ -1,0 +1,66 @@
+nameOverride: ""
+fullnameOverride: ""
+
+# Wildcard certificate served by the shared Gateway HTTPS listener.
+wildcardCertificate:
+  annotations: {}
+  dnsNames: []
+  commonName: ""
+
+# cert-manager ClusterIssuer that signs the wildcard certificate.
+clusterIssuerName: cloudflare-clusterissuer
+
+# MetalLB pool dedicated to the Gateway's LoadBalancer Service.
+ipPool:
+  namespace: metallb-system
+  ipAddressPools:
+    annotations: {}
+    addresses:
+      ipv4: ""
+      ipv6: ""
+  l2Advertisement:
+    annotations: {}
+  autoAssign: false
+
+# GatewayClass + Gateway configuration.
+gateway:
+  # Name of the GatewayClass that points at the Envoy Gateway controller.
+  className: "h3xinfra-gateway"
+  # Controller name for the GatewayClass; matches the Envoy Gateway helm chart default.
+  controllerName: "gateway.envoyproxy.io/gatewayclass-controller"
+  # Listener configuration. Listeners are created in the Gateway resource.
+  listeners:
+    # HTTP listener that redirects everything to HTTPS.
+    http:
+      enabled: true
+      port: 80
+      hostname: "*.example.com"
+      # When true, an HTTPRouteRedirect-equivalent is configured via Envoy Gateway
+      # (handled at the per-app HTTPRoute layer; the listener simply accepts traffic).
+    # Primary HTTPS listener with the wildcard cert.
+    https:
+      enabled: true
+      port: 443
+      hostname: "*.example.com"
+    # Additional HTTPS listener for the *.app.example.com sub-zone.
+    httpsApp:
+      enabled: true
+      port: 443
+      hostname: "*.app.example.com"
+    # Apex domain (example.com) for non-wildcard hosts.
+    httpsApex:
+      enabled: true
+      port: 443
+      hostname: "example.com"
+  # Service annotations applied to the Envoy Gateway-managed LoadBalancer Service.
+  serviceAnnotations: {}
+  # Allowed namespaces that can attach HTTPRoutes to the Gateway.
+  # Use "All" to permit any namespace (relies on per-route hostnames for isolation).
+  allowedRoutesFrom: "All"
+
+# ReferenceGrants that let app namespaces attach HTTPRoutes referencing this Gateway
+# / the wildcard certificate. Populated from inventory.
+referenceGrants:
+  # List of namespaces whose HTTPRoutes are permitted to attach to the shared Gateway.
+  # When using allowedRoutesFrom=All, this is informational only and not required.
+  appNamespaces: []

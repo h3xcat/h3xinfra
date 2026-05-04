@@ -1,0 +1,38 @@
+---
+# EnvoyProxy customization: applied to Envoy Gateway-managed Service so that
+# MetalLB picks the right pool and the LB advertises both IPv4 and IPv6.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: {{ include "h3xinfra-gateway-pre.fullname" . }}-proxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-gateway-pre.labels" . | nindent 4 }}
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        annotations:
+          metallb.universe.tf/address-pool: {{ include "h3xinfra-gateway-pre.fullname" . }}-pool
+          {{- with .Values.gateway.serviceAnnotations }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+        externalTrafficPolicy: Local
+        # ipFamilies / ipFamilyPolicy aren't exposed in EnvoyProxy v1alpha1.
+        # Envoy Gateway honours the cluster default (PreferDualStack on this
+        # cluster), so the rendered Service ends up with both v4 + v6.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: {{ .Values.gateway.className | quote }}
+  labels:
+    {{- include "h3xinfra-gateway-pre.labels" . | nindent 4 }}
+spec:
+  controllerName: {{ .Values.gateway.controllerName | quote }}
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: {{ include "h3xinfra-gateway-pre.fullname" . }}-proxy
+    namespace: {{ .Release.Namespace }}
