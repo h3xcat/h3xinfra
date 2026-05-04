@@ -61,7 +61,7 @@ The deployment follows this sequence:
 - **MetalLB**: Load balancer for bare metal clusters (v0.13.10)
 - **Cert-Manager**: Automated TLS certificate management (v1.17.2)
 - **External-DNS**: Automated DNS record management (v1.16.1)
-- **Ingress-NGINX**: HTTP/HTTPS ingress controller (v4.12.2)
+- **Envoy Gateway**: Gateway API controller for HTTP routing, TLS termination, OIDC, and IP allowlisting (v1.4.2)
 - **Longhorn**: Distributed block storage (v1.9.0)
 
 ### Application Services

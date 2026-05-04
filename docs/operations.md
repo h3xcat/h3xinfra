@@ -180,8 +180,8 @@ ansible-playbook playbooks/06-externaldns/teardown.yml
 ### Ingress NGINX Deployment/Removal
 
 ```bash
-ansible-playbook playbooks/07-ingressnginx/standup.yml
-ansible-playbook playbooks/07-ingressnginx/teardown.yml
+ansible-playbook playbooks/07-gateway/standup.yml
+ansible-playbook playbooks/07-gateway/teardown.yml
 ```
 
 ### Longhorn Storage Deployment/Removal

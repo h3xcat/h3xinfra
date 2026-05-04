@@ -17,11 +17,10 @@ inventory/
     │       └── main.yml            # K3s cluster configuration
     └── host_vars/
         └── k8s/                    # Kubernetes service configurations
-            ├── authentik.yml       # Authentik identity provider
             ├── certmanager.yml     # Certificate management
             ├── cilium.yml          # CNI configuration  
             ├── externaldns.yml     # DNS management
-            ├── ingressnginx.yml    # Ingress controller
+            ├── gateway.yml         # Envoy Gateway controller + shared Gateway
             ├── longhorn.yml        # Storage configuration
             ├── mailu.yml           # Email server
             ├── metallb.yml         # Load balancer

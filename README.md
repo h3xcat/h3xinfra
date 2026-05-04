@@ -11,7 +11,7 @@ This project provides Ansible playbooks and configurations to deploy and manage 
 - MetalLB for load balancing
 - Cert-Manager for automated TLS certificates
 - External-DNS for automated DNS management
-- Ingress-NGINX for reverse proxy and ingress
+- Envoy Gateway (Gateway API) for HTTP routing, TLS termination, and OIDC
 - Longhorn for persistent storage with CIFS backup
 - Mailu for self-hosted email services
 - Keycloak for identity and access management
@@ -46,7 +46,7 @@ This project provides Ansible playbooks and configurations to deploy and manage 
 │   ├── 04-health/         # Health endpoint config
 │   ├── 05-certmanager/    # Certificate management
 │   ├── 06-externaldns/    # External DNS with Cloudflare
-│   ├── 07-ingressnginx/   # Nginx ingress controller
+│   ├── 07-gateway/        # Envoy Gateway (Gateway API) controller
 │   ├── 08-longhorn/       # Longhorn storage system
 │   └── 99-utils/          # Utility playbooks
 └── README.md              # This file

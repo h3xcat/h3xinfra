@@ -158,10 +158,9 @@ all:
       - "second-domain.com"
       - "third-domain.com"
 
-    ingressnginx:
-      namespace: "ingress-nginx"
-      release_name_prefix: "homeinfra-ingressnginx"
-      chart_version: "4.12.2"
+    gateway:
+      namespace: "envoy-gateway-system"
+      release_name_prefix: "homeinfra-gateway"
       loadbalancer_pools:
         ipv4: "192.168.101.100/32"  # Specific IP outside MetalLB pool
         ipv6: "2001:db8:face::100/128"  # Manual assignment in face:0:: subnet
@@ -173,61 +172,33 @@ all:
     longhorn:
       namespace: "longhorn-system"
       release_name_prefix: "homeinfra-longhorn"
-      chart_version: "v1.9.0"
       cifs_username: "longhorn"
       cifs_password: !vault |
         $ANSIBLE_VAULT;1.1;AES256
         changeme_please_encrypt_your_actual_cifs_password_with_ansible_vault
       # Replace with your actual NAS backup target
       cifs_backup_target: "cifs://nas.home.local/longhorn-backup"
-      # Generate your own basic auth secret: echo "username:$(openssl passwd -stdin -apr1 < password_file)"
-      
-      ingress:
-        enabled: true
-        annotations:
-          nginx.ingress.kubernetes.io/auth-url: |-
-              http://ak-outpost-example.authentik.svc.cluster.local:9000/outpost.goauthentik.io/auth/nginx
-          # If you're using domain-level auth, use the authentication URL instead of the application URL
-          nginx.ingress.kubernetes.io/auth-signin: |-
-              https://app.company/outpost.goauthentik.io/start?rd=$scheme://$http_host$escaped_request_uri
-          nginx.ingress.kubernetes.io/auth-response-headers: |-
-              Set-Cookie,X-authentik-username,X-authentik-groups,X-authentik-entitlements,X-authentik-email,X-authentik-name,X-authentik-uid
-          nginx.ingress.kubernetes.io/auth-snippet: |
-              proxy_set_header X-Forwarded-Host $http_host;
-          
-              nginx.ingress.kubernetes.io/auth-type: basic
-              nginx.ingress.kubernetes.io/auth-secret: {{ include "h3xinfra-longhorn-post.fullname" . }}-basic-auth-secret
-              nginx.ingress.kubernetes.io/auth-realm: 'Authentication Required'
-
-
-      auth:
-        method: "basic"  # Options: none, basic, oauth
-        htpasswd: "admin:$apr1$example$hashgoeshere/"
-        # url: "http://ak-outpost-example.authentik.svc.cluster.local:9000/outpost.goauthentik.io/auth/nginx"
-        # signin: "https://app.company/outpost.goauthentik.io/start?rd=$scheme://$http_host$escaped_request_uri
-        # response_headers: "Set-Cookie,X-authentik-username,X-authentik-groups,X-authentik-entitlements,X-authentik-email,X-authentik-name,X-authentik-uid"
-        # auth_snippet: "proxy_set_header X-Forwarded-Host $http_host;"
 
       ingress_host: "longhorn.app.example.com"
+
+      # Trusted client CIDRs (applied as Envoy Gateway SecurityPolicy IP allowlist).
       trusted_ips:
       - "192.168.50.0/24"
       - "2001:db8:aabb::/64"
 
-    
-    authentik:
-      release_name_prefix: "h3xinfra-authentik"
-      namespace: authentik
-
-      secret_key: !vault |
-        $ANSIBLE_VAULT;1.1;AES256
-        changeme
-      db_password: !vault |
-        $ANSIBLE_VAULT;1.1;AES256
-        changeme
-      redis_password: !vault |
-        $ANSIBLE_VAULT;1.1;AES256
-        changeme
-      ingress_hostname: "auth.app.example.com"
+      # Authentication. With Envoy Gateway, "oauth2_proxy" enables a
+      # SecurityPolicy.oidc filter on the HTTPRoute (no sidecar).
+      auth:
+        method: "oauth2_proxy"          # Options: none, basic, oauth2_proxy
+        basic:
+          secret: "admin:$apr1$example$hashgoeshere/"
+          realm: "Authentication Required - Longhorn"
+        oauth2_proxy:
+          oidc_issuer_url: "https://auth.app.example.com/realms/h3xinfra"
+          client_id: "longhorn"
+          client_secret: !vault |
+            $ANSIBLE_VAULT;1.1;AES256
+            changeme_please_encrypt_your_actual_oidc_client_secret_with_ansible_vault
 
 
 k3s_cluster:
