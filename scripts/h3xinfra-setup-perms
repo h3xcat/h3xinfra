@@ -35,13 +35,20 @@ fi
 secure_secrets_dir() {
     local dir="$1/secrets"
     if [ -L "$dir" ]; then
-        echo "[h3xinfra-setup-perms] $dir is a symlink to $(readlink -f "$dir") — skipping chmod (target FS may not honor POSIX modes)"
+        # readlink -f may fail (broken link, missing on some platforms);
+        # fall back to plain readlink, then to the literal path so the
+        # `set -e` shell can't abort here.
+        local target
+        target="$(readlink -f "$dir" 2>/dev/null || readlink "$dir" 2>/dev/null || echo "$dir")"
+        echo "[h3xinfra-setup-perms] $dir is a symlink to $target — skipping chmod (target FS may not honor POSIX modes)"
         return 0
     fi
     [ -d "$dir" ] || return 0
     chmod 700 "$dir"
+    # Lock down the entire tree, including nested directories.
+    find "$dir" -type d -exec chmod 700 {} \;
     find "$dir" -type f -exec chmod 600 {} \;
-    echo "[h3xinfra-setup-perms] Secured $dir (700 dir, 600 files)"
+    echo "[h3xinfra-setup-perms] Secured $dir (700 dirs, 600 files, recursive)"
 }
 secure_secrets_dir "$H3XINFRA_FOLDER"
 if [ "$WORKSPACE_FOLDER" != "$H3XINFRA_FOLDER" ]; then
