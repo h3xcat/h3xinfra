@@ -1,5 +1,5 @@
 ---
-- import_playbook: ../../h3xinfra/playbooks/99-utils/kube-connect.yml
+- import_playbook: ../99-utils/kube-connect.yml
 
 # -----------------------------------------------------------------------------
 # Phase 1: Destroy Terraform-managed realm configuration before removing
