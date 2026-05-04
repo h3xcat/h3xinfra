@@ -23,3 +23,27 @@ if [ -d "/commandhistory" ]; then
 else
     echo "[h3xinfra-setup-perms] Directory /commandhistory not found, skipping ownership change"
 fi
+
+# Tighten permissions on secrets/ in both H3XINFRA_FOLDER and WORKSPACE_FOLDER
+# (Ansible vault password files etc. must not be group/world-readable.)
+#
+# If `secrets/` is a symlink (e.g. to a NAS / CIFS mount that ignores POSIX
+# modes), skip the chmod — it would either fail or be silently no-op'd by
+# the underlying filesystem. The h3xinfra-vault-pass wrapper script under
+# `bin/` keeps the executable bit local so the secret files themselves
+# don't need to be executable.
+secure_secrets_dir() {
+    local dir="$1/secrets"
+    if [ -L "$dir" ]; then
+        echo "[h3xinfra-setup-perms] $dir is a symlink to $(readlink -f "$dir") — skipping chmod (target FS may not honor POSIX modes)"
+        return 0
+    fi
+    [ -d "$dir" ] || return 0
+    chmod 700 "$dir"
+    find "$dir" -type f -exec chmod 600 {} \;
+    echo "[h3xinfra-setup-perms] Secured $dir (700 dir, 600 files)"
+}
+secure_secrets_dir "$H3XINFRA_FOLDER"
+if [ "$WORKSPACE_FOLDER" != "$H3XINFRA_FOLDER" ]; then
+    secure_secrets_dir "$WORKSPACE_FOLDER"
+fi
