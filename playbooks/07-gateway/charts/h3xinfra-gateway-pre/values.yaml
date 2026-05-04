@@ -30,13 +30,14 @@ gateway:
   controllerName: "gateway.envoyproxy.io/gatewayclass-controller"
   # Listener configuration. Listeners are created in the Gateway resource.
   listeners:
-    # HTTP listener that redirects everything to HTTPS.
+    # HTTP listener that accepts plaintext traffic and is redirected to HTTPS
+    # by a global HTTPRoute (templates/gateway.yaml) attached to this listener.
+    # An apex `http-apex` listener for `example.com` is also created alongside this
+    # one so the redirect covers both wildcard and apex hosts.
     http:
       enabled: true
       port: 80
       hostname: "*.example.com"
-      # When true, an HTTPRouteRedirect-equivalent is configured via Envoy Gateway
-      # (handled at the per-app HTTPRoute layer; the listener simply accepts traffic).
     # Primary HTTPS listener with the wildcard cert.
     https:
       enabled: true
@@ -57,10 +58,3 @@ gateway:
   # Allowed namespaces that can attach HTTPRoutes to the Gateway.
   # Use "All" to permit any namespace (relies on per-route hostnames for isolation).
   allowedRoutesFrom: "All"
-
-# ReferenceGrants that let app namespaces attach HTTPRoutes referencing this Gateway
-# / the wildcard certificate. Populated from inventory.
-referenceGrants:
-  # List of namespaces whose HTTPRoutes are permitted to attach to the shared Gateway.
-  # When using allowedRoutesFrom=All, this is informational only and not required.
-  appNamespaces: []

@@ -30,3 +30,11 @@
         name: "{{ gateway.namespace }}"
         wait: true
         wait_timeout: 300
+
+    # NOTE: Gateway API and Envoy Gateway CRDs (cluster-scoped) are
+    # intentionally NOT removed here. They may be referenced by HTTPRoute /
+    # SecurityPolicy / Gateway resources in other namespaces, and removing
+    # the CRDs would cascade-delete every dependent resource on the cluster.
+    # Operators who genuinely want a clean slate should run, after this
+    # playbook completes:
+    #   kubectl delete -f <gateway-crds-bundle.yaml>

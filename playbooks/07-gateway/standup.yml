@@ -36,7 +36,15 @@
         cmd: kubectl apply --server-side --force-conflicts --field-manager h3xinfra-gateway-crds -f -
         stdin: "{{ gateway_crd_render.stdout }}"
       register: gateway_crd_apply
-      changed_when: "'unchanged' not in gateway_crd_apply.stdout"
+      # `kubectl apply` prints one line per resource; treat the run as changed if
+      # any resource was created/configured. Checking only for absence of
+      # 'unchanged' would mis-classify mixed runs (some unchanged, some applied)
+      # as no-op.
+      changed_when: >-
+        gateway_crd_apply.stdout_lines
+        | reject('search', ' unchanged$')
+        | select('search', ' (created|configured|serverside-applied)$')
+        | list | length > 0
 
     - name: Deploy Envoy Gateway controller via Helm (OCI)
       kubernetes.core.helm:
@@ -45,9 +53,10 @@
         chart_version: "{{ chart_versions.envoy_gateway }}"
         release_namespace: "{{ gateway.namespace }}"
         create_namespace: false
-        # CRDs (Gateway API + Envoy Gateway-specific) are owned by the
-        # dedicated `-crds` release above so the controller chart must not
-        # ship a duplicate set or a server-side apply conflict will occur.
+        # CRDs (Gateway API + Envoy Gateway-specific) are rendered above with
+        # `helm template` and applied directly via `kubectl apply --server-side`
+        # (no Helm release owns them); the controller chart must not ship a
+        # duplicate set or a server-side apply conflict will occur.
         skip_crds: true
         values:
           config:
