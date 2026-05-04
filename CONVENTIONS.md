@@ -43,11 +43,10 @@ h3xinfra/
 │   ├── 04-health/         # Health endpoint layer
 │   ├── 05-certmanager/    # Certificate management layer
 │   ├── 06-externaldns/    # DNS automation layer
-│   ├── 07-ingressnginx/   # Ingress controller layer
+│   ├── 07-gateway/        # Envoy Gateway (Gateway API) controller layer
 │   ├── 08-smb/            # SMB CSI driver layer
 │   ├── 09-longhorn/       # Storage system layer
 │   ├── 10-mailu/          # Email server layer
-│   ├── 11-authentik/      # Identity provider layer
 │   └── 99-utils/          # Utility playbooks
 ├── inventory/             # Example inventory structure
 │   ├── production/
@@ -83,13 +82,12 @@ Layers are numbered to enforce deployment order and dependency relationships:
 - **04-health**: Health check endpoints and monitoring
 - **05-certmanager**: Cert-manager for automated TLS certificates
 - **06-externaldns**: External-DNS for automated DNS management
-- **07-ingressnginx**: NGINX Ingress Controller with wildcard TLS
+- **07-gateway**: Envoy Gateway controller + shared Gateway with wildcard TLS
 - **08-smb**: SMB/CIFS CSI driver for network storage
 - **09-longhorn**: Longhorn distributed block storage
 
 #### Platform Services (10-19)
 - **10-mailu**: Self-hosted email server (Mailu)
-- **11-authentik**: Identity and access management (Authentik)
 
 #### Utilities (99)
 - **99-utils**: Shared utilities (kube-connect, apt updates, etc.)
@@ -110,7 +108,7 @@ Layers are numbered to enforce deployment order and dependency relationships:
   ↓
 06-externaldns (DNS automation ready)
   ↓
-07-ingressnginx (ingress ready)
+07-gateway (Gateway API ready)
   ↓
 08-smb (network storage ready)
   ↓
@@ -280,9 +278,8 @@ h3xinfra-{service}-{phase}
 h3xinfra-metallb-main
 h3xinfra-certmanager-post
 h3xinfra-certmanager-post-default-clusterissuer  (resource name)
-h3xinfra-ingressnginx-pre
+h3xinfra-gateway-pre
 h3xinfra-longhorn-post
-h3xinfra-authentik-pre
 ```
 
 ### Phase Definitions
@@ -293,7 +290,7 @@ h3xinfra-authentik-pre
 - Examples:
   - External-DNS: Cloudflare API token secret
   - Cert-Manager: Cloudflare DNS solver secret
-  - Ingress-NGINX: Wildcard certificate, MetalLB IP pool
+  - Envoy Gateway: shared wildcard `Certificate` + MetalLB `IPAddressPool` + `Gateway` listener (rendered by `h3xinfra-gateway-pre`)
   - Longhorn: RecurringJob CRDs, backup secrets
 
 #### `main` Phase
@@ -320,9 +317,8 @@ namespace: "longhorn-system"
 namespace: "{{ servicename.namespace }}"
 
 # Typical service namespace values
-namespace: "ingress-nginx"
+namespace: "envoy-gateway-system"
 namespace: "mailu"
-namespace: "authentik"
 ```
 
 ---
@@ -331,7 +327,7 @@ namespace: "authentik"
 
 ### Pattern 1: External Chart with Pre/Post Configuration
 
-**Used by:** cert-manager, external-dns, ingress-nginx, longhorn, mailu, authentik
+**Used by:** cert-manager, external-dns, gateway (Envoy Gateway), longhorn, mailu
 
 **Structure:**
 ```yaml
@@ -491,11 +487,10 @@ inventory/production/
         ├── certmanager.yml
         ├── cilium.yml
         ├── externaldns.yml
-        ├── ingressnginx.yml
+        ├── gateway.yml
         ├── longhorn.yml
         ├── mailu.yml
-        ├── metallb.yml
-        └── authentik.yml
+        └── metallb.yml
 ```
 
 ### Service Variable Structure
@@ -583,43 +578,60 @@ servicename:
 
 ### TLS/Certificate Strategy
 
-#### Public Services with Cert-Manager
-Services exposed to the internet use cert-manager for automated TLS:
+All HTTP routing is provided by a single shared **Envoy Gateway** Gateway
+(`{{ gateway.release_name_prefix }}-pre-shared` in namespace
+`{{ gateway.namespace }}`). The Gateway terminates TLS using one wildcard
+certificate that covers every internal/external hostname; per-app charts
+render Gateway-API resources rather than `Ingress` objects.
 
+#### Standard chart `ingress` schema
 ```yaml
 ingress:
   enabled: true
-  tls: true
-  annotations:
-    cert-manager.io/cluster-issuer: "h3xinfra-certmanager-post-default-clusterissuer"
-  extraLabels:
-    external-dns.alpha.kubernetes.io/publish: "true"
+  hostname: "service.app.example.com"
+  gateway:
+    name: "h3xinfra-gateway-pre-shared"
+    namespace: "envoy-gateway-system"
+  trustedIPs:                                  # rendered into SecurityPolicy.authorization
+  - "10.0.0.0/8"
+  - "192.168.0.0/16"
+  - "fd00::/8"
+  timeout: "300s"                              # HTTPRoute.timeouts.{request,backendRequest}
+  oidc:                                        # optional OIDC SecurityPolicy
+    enabled: true
+    issuerUrl: "https://idp.example.com/..."
+    clientId: "<from idp>"
+    clientSecret: "<from idp, vaulted>"
+    scopes: ["openid", "profile", "email"]
+    secretRef:
+      name: "{{ service.release_name_prefix }}-oidc"
 ```
 
-#### Internal Services with NGINX Wildcard
-Services accessible only internally avoid certificate transparency logs:
+#### Resource mapping
+| Concern             | CRD                                             |
+|---------------------|-------------------------------------------------|
+| Routing             | `gateway.networking.k8s.io/v1 HTTPRoute`        |
+| AuthN/AuthZ         | `gateway.envoyproxy.io/v1alpha1 SecurityPolicy` |
+| Upstream TLS verify | `gateway.networking.k8s.io/v1alpha3 BackendTLSPolicy` |
 
-```yaml
-ingress:
-  enabled: true
-  host: "service.internal.domain.com"
-  class: "nginx"
-  # NO tls config - uses NGINX Ingress Controller's wildcard cert
-  annotations:
-    nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
-  extraLabels: {}  # NO external-dns label
-```
+#### Public Services
+The shared wildcard certificate covers all hostnames; no per-app
+`Certificate` is provisioned. external-dns publishes a record pointing
+at the Gateway's MetalLB IP via labels on the Gateway service.
 
-#### Pre-Provisioned Certificates
-Services like Mailu with pre-created certificates:
+#### Internal Services
+Services restricted to internal networks combine `trustedIPs` with the
+`oidc.enabled: false` block. The chart renders a `SecurityPolicy` with
+`authorization.{defaultAction: Deny, rules:[{action: Allow,
+principal.clientCIDRs: <trustedIPs>}]}`. This replaces the previous
+`nginx.ingress.kubernetes.io/whitelist-source-range` annotation.
 
-```yaml
-ingress:
-  enabled: true
-  existingSecret: "{{ service.release_name_prefix }}-pre-certificate"
-  annotations:
-    nginx.ingress.kubernetes.io/whitelist-source-range: "{{ service.trusted_ips | join(',') }}"
-```
+#### Pre-Provisioned / Upstream HTTPS Backends
+Backends that themselves serve HTTPS (e.g. Home Assistant via
+nginxproxy) get a `BackendTLSPolicy` from the chart, targeting the
+backing `Service` with `validation.{caCertificateRefs |
+wellKnownCACertificates, hostname, subjectAltNames}`. Self-signed
+backends require a `ConfigMap` with key `ca.crt`.
 
 ### Network Policy Pattern
 
@@ -677,14 +689,12 @@ metallb:
     - "2001:db8:face:1::10-2001:db8:face:1::fa"
 ```
 
-**Dedicated pools per service:**
+**Dedicated pool for the shared Envoy Gateway:**
 ```yaml
-ingressnginx:
+gateway:
   loadbalancer_pools:
-    ipv4:
-    - "192.168.101.100/32"
-    ipv6:
-    - "2001:db8:face::100/128"
+    ipv4: "10.12.96.100/32"
+    ipv6: "2600:1700:7c20:a475:face::100/128"
 ```
 
 ### DNS Management
@@ -701,12 +711,13 @@ externaldns:
     external-dns.alpha.kubernetes.io/publish: "true"
 ```
 
-**Ingress-NGINX wildcard certificate:**
+**Shared Gateway wildcard certificate:**
 ```yaml
-ingressnginx:
+gateway:
   dns_names:
   - "*.app.example.com"
   - "*.example.com"
+  - "example.com"
 ```
 
 ---
