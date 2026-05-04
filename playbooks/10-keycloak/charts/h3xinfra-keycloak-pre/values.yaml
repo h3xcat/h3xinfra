@@ -18,7 +18,7 @@ postgres:
   enabled: true
   image:
     repository: "postgres"
-    tag: "17.4-alpine"
+    tag: "17.9-alpine"
     pullPolicy: IfNotPresent
   database: "keycloak"
   username: "keycloak"
