@@ -138,14 +138,16 @@ fi
 mkdir -p ~/.ssh/
 echo "${SSH_KNOWN_HOSTS}" >> ~/.ssh/known_hosts
 
-mkdir -p "${GITHUB_WORKSPACE}/secrets"
+# Set up SSH private key under ~/.ssh (no in-tree secrets/ dir).
+# ansible.cfg's private_key_file is overridden by ANSIBLE_PRIVATE_KEY_FILE.
+echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_ansible
+chmod 600 ~/.ssh/id_ansible
+echo "ANSIBLE_PRIVATE_KEY_FILE=$HOME/.ssh/id_ansible" >> "$GITHUB_ENV"
 
-# Set up SSH private key
-echo "${SSH_PRIVATE_KEY}" > "${GITHUB_WORKSPACE}/secrets/ansible_ssh_privatekey"
-chmod 600 "${GITHUB_WORKSPACE}/secrets/ansible_ssh_privatekey"
-
-# Setup Ansible Vault password
-echo "${ANSIBLE_VAULT_PASSWORD}" > "${GITHUB_WORKSPACE}/secrets/vault_pass.txt"
-chmod 600 "${GITHUB_WORKSPACE}/secrets/vault_pass.txt"
+# Vault password is read from $ANSIBLE_VAULT_PASSWORD by the
+# bin/h3xinfra-vault-pass wrapper that ansible.cfg points at — no file
+# write needed. The variable is already set above; just re-export it for
+# subsequent steps.
+echo "ANSIBLE_VAULT_PASSWORD=${ANSIBLE_VAULT_PASSWORD}" >> "$GITHUB_ENV"
 
 echo "Network setup completed successfully"
