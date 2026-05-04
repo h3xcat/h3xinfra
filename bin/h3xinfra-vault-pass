@@ -3,15 +3,15 @@
 #
 # Order of precedence:
 #   1. $ANSIBLE_VAULT_PASSWORD environment variable (used by CI / runners)
-#   2. $H3XINFRA_VAULT_FILE (override path)
-#   3. ./secrets/vault_pass.txt (in-tree symlink to NAS-backed file)
+#   2. $H3XINFRA_VAULT_FILE (explicit override path)
+#   3. ${H3XINFRA_SECRETS_DIR:-/h3xinfra/state/secrets}/vault_pass.txt
 #
 # This indirection exists because the vault password is stored on a CIFS
 # mount (/h3xinfra/state/secrets/) where mount options force file modes to
 # 0777 — Ansible would otherwise treat the password file itself as an
 # executable script and try to run it. By printing the file contents from
 # this wrapper, the executable bit lives on the wrapper (which is local
-# to the workspace) instead of on the secret.
+# to the repo) instead of on the secret.
 set -euo pipefail
 
 if [[ -n "${ANSIBLE_VAULT_PASSWORD:-}" ]]; then
@@ -19,14 +19,7 @@ if [[ -n "${ANSIBLE_VAULT_PASSWORD:-}" ]]; then
     exit 0
 fi
 
-vault_file="${H3XINFRA_VAULT_FILE:-}"
-if [[ -z "$vault_file" ]]; then
-    # Resolve symlinks so this script works correctly when invoked via a
-    # symlink (e.g. h3xinfra/bin/h3xinfra-vault-pass -> ../../bin/...).
-    real_self="$(readlink -f "${BASH_SOURCE[0]}")"
-    script_dir="$(cd "$(dirname "$real_self")" && pwd)"
-    vault_file="$script_dir/../secrets/vault_pass.txt"
-fi
+vault_file="${H3XINFRA_VAULT_FILE:-${H3XINFRA_SECRETS_DIR:-/h3xinfra/state/secrets}/vault_pass.txt}"
 
 if [[ ! -r "$vault_file" ]]; then
     echo "h3xinfra-vault-pass: cannot read vault password file: $vault_file" >&2
