@@ -1,0 +1,33 @@
+---
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: "quay.io/keycloak/keycloak"
+  tag: "26.6.1"
+  pullPolicy: IfNotPresent
+
+replicas: 1
+
+# Hostname Keycloak advertises (must match the public ingress in pre-chart)
+hostname: ""
+
+# Reference to the bootstrap secret (rendered by the pre-chart) holding:
+#   admin-user, admin-password, database-password
+bootstrapSecretName: ""
+
+# External Postgres connection (Service rendered by the pre-chart)
+database:
+  hostname: ""
+  port: 5432
+  database: "keycloak"
+  username: "keycloak"
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources: {}
+
+# Extra environment variables (raw Kubernetes env list)
+extraEnv: []

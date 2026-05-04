@@ -1,0 +1,179 @@
+---
+- import_playbook: ../../h3xinfra/playbooks/99-utils/kube-connect.yml
+
+- name: Deploy Keycloak via Helm
+  hosts: k8s
+  gather_facts: false
+
+  tasks:
+    - name: Create Keycloak namespace
+      kubernetes.core.k8s:
+        name: "{{ keycloak.namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+        wait: true
+
+    - name: Deploy Keycloak pre-configuration via Helm
+      kubernetes.core.helm:
+        name: "{{ keycloak.release_name_prefix }}-pre"
+        chart_ref: "{{ playbook_dir }}/charts/h3xinfra-keycloak-pre"
+        namespace: "{{ keycloak.namespace }}"
+        create_namespace: false
+        values:
+          fullnameOverride: "{{ keycloak.release_name_prefix }}-pre"
+          bootstrapSecret:
+            enabled: true
+            adminUsername: "{{ keycloak.admin.username }}"
+            adminPassword: "{{ keycloak.admin.password }}"
+            databasePassword: "{{ keycloak.db_password }}"
+          postgres:
+            enabled: true
+            image:
+              repository: "postgres"
+              tag: "{{ chart_versions.keycloak_postgres }}"
+            database: "{{ keycloak.postgresql.auth.database | default('keycloak') }}"
+            username: "{{ keycloak.postgresql.auth.username | default('keycloak') }}"
+            persistence:
+              storageClass: "{{ keycloak.postgresql.persistence.storageClass | default('longhorn') }}"
+              size: "{{ keycloak.postgresql.persistence.size | default('8Gi') }}"
+          ingress:
+            enabled: "{{ keycloak.ingress.enabled | default(true) }}"
+            host: "{{ keycloak.ingress.hostname }}"
+            gateway:
+              name: "{{ gateway.release_name_prefix }}-pre-shared"
+              namespace: "{{ gateway.namespace }}"
+            # Service rendered by the main chart (this playbook).
+            serviceName: "{{ keycloak.release_name_prefix }}-main"
+            servicePort: 80
+            trustedSetupIPs: "{{ keycloak.ingress.trusted_setup_ips | default([]) }}"
+        state: present
+        wait: true
+        timeout: "300s"
+
+    - name: Deploy Keycloak Helm chart
+      kubernetes.core.helm:
+        name: "{{ keycloak.release_name_prefix }}-main"
+        chart_ref: "{{ playbook_dir }}/charts/h3xinfra-keycloak-main"
+        release_namespace: "{{ keycloak.namespace }}"
+        create_namespace: false
+        values:
+          fullnameOverride: "{{ keycloak.release_name_prefix }}-main"
+
+          image:
+            repository: "quay.io/keycloak/keycloak"
+            tag: "{{ chart_versions.keycloak }}"
+
+          replicas: "{{ keycloak.replicas | default(1) }}"
+          resources: "{{ keycloak.resources | default({}) }}"
+
+          hostname: "{{ keycloak.ingress.hostname }}"
+          bootstrapSecretName: "{{ keycloak.release_name_prefix }}-pre-bootstrap"
+
+          database:
+            hostname: "{{ keycloak.release_name_prefix }}-pre-postgres"
+            port: 5432
+            database: "{{ keycloak.postgresql.auth.database | default('keycloak') }}"
+            username: "{{ keycloak.postgresql.auth.username | default('keycloak') }}"
+
+          service:
+            type: ClusterIP
+            port: 80
+        state: present
+        wait: true
+        timeout: "600s"
+
+    - name: Wait for Keycloak admin endpoint to answer
+      ansible.builtin.uri:
+        url: "{{ keycloak.issuer_url_base }}/realms/master/.well-known/openid-configuration"
+        method: GET
+        status_code: 200
+        return_content: false
+        validate_certs: true
+      register: keycloak_ready
+      retries: 30
+      delay: 10
+      until: keycloak_ready.status == 200
+
+    # -------------------------------------------------------------------------
+    # Promote bootstrap admin to a permanent account.
+    #
+    # `kc.sh bootstrap-admin user` (and the env-var bootstrap path) tags the
+    # created user with the `is_temporary_admin=true` attribute, which makes
+    # the admin console show a "temporary admin" warning banner. Keycloak's
+    # user profile PUT ignores writes to attributes outside the realm's
+    # user-profile schema, so we strip the marker straight from the DB.
+    # Idempotent — DELETE is a no-op if the row is already gone.
+    # -------------------------------------------------------------------------
+    - name: Strip is_temporary_admin marker from bootstrap admin
+      kubernetes.core.k8s_exec:
+        namespace: "{{ keycloak.namespace }}"
+        pod: "{{ keycloak.release_name_prefix }}-pre-postgres-0"
+        command: >-
+          psql -U {{ keycloak.postgresql.auth.username | default('keycloak') }}
+               -d {{ keycloak.postgresql.auth.database | default('keycloak') }}
+               -c "DELETE FROM user_attribute
+                    WHERE name='is_temporary_admin'
+                      AND user_id=(SELECT id FROM user_entity
+                                    WHERE username='{{ keycloak.admin.username }}'
+                                      AND realm_id=(SELECT id FROM realm WHERE name='master'));"
+      register: kc_strip_temp
+      changed_when: "'DELETE 1' in (kc_strip_temp.stdout | default(''))"
+
+# -----------------------------------------------------------------------------
+# Phase 2: Configure realm + clients via Terraform.
+#
+# The Terraform state is kept locally under the terraform/ directory and
+# committed as `terraform.tfstate.d/...` — see terraform/.gitignore. For a
+# shared/remote backend, drop a `backend.tf` under terraform/ and `terraform
+# init -reconfigure` will migrate automatically on the next run.
+# -----------------------------------------------------------------------------
+- name: Configure Keycloak realm via Terraform
+  hosts: k8s
+  gather_facts: false
+  vars:
+    terraform_dir: "{{ playbook_dir }}/terraform"
+    # State backend dir (matches backend.tf); kept on NAS so any controller
+    # clone shares the same state.
+    terraform_state_dir: "/h3xinfra/state/keycloak"
+
+  tasks:
+    - name: Ensure Terraform workspace directory exists
+      ansible.builtin.file:
+        path: "{{ terraform_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Ensure Terraform state directory exists on NAS
+      ansible.builtin.file:
+        path: "{{ terraform_state_dir }}"
+        state: directory
+
+    - name: Render Terraform variables file
+      ansible.builtin.copy:
+        dest: "{{ terraform_dir }}/terraform.tfvars.json"
+        mode: "0600"
+        content: "{{ {
+            'keycloak_url': keycloak.issuer_url_base,
+            'keycloak_admin_username': keycloak.admin.username,
+            'keycloak_admin_password': keycloak.admin.password,
+            'realm_name': keycloak.realm.name,
+            'realm_display_name': keycloak.realm.display_name,
+            'smtp': keycloak.realm.smtp,
+            'clients': keycloak.clients | default([])
+          } | to_nice_json }}"
+      no_log: true
+
+    - name: Apply Terraform configuration
+      community.general.terraform:
+        project_path: "{{ terraform_dir }}"
+        state: present
+        force_init: true
+        variables_files:
+        - "{{ terraform_dir }}/terraform.tfvars.json"
+      register: tf_apply
+
+    - name: Show Terraform outputs
+      ansible.builtin.debug:
+        var: tf_apply.outputs
+      when: tf_apply.outputs is defined
