@@ -64,6 +64,12 @@
               logging:
                 level:
                   default: info
+              # Required for `kind: Backend` (gateway.envoyproxy.io/v1alpha1),
+              # which downstream charts can use to route HTTPRoutes at
+              # off-cluster FQDN backends. ExternalName Services produce no
+              # Endpoints, so Envoy Gateway returns 503 without a Backend CR.
+              extensionApis:
+                enableBackend: true
         state: present
         wait: true
         timeout: "300s"

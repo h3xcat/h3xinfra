@@ -255,9 +255,7 @@ export PATH="${PATH}:${H3XINFRA_FOLDER}/bin"
 ### Accessing Cluster Nodes
 
 ```bash
-ssh ansible@10.12.0.15  # For h3xsrv01
-ssh ansible@10.12.0.16  # For h3xsrv02
-ssh ansible@10.12.0.17  # For h3xsrv03
+ssh ansible@<node-ip-or-hostname>   # e.g. ssh ansible@node01.example.com
 ```
 
 ### Checking Logs
