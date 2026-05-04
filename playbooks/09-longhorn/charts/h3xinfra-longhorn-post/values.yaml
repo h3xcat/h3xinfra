@@ -4,50 +4,26 @@
 fullnameOverride: ""
 
 longhornIngress:
-  # Hostname for the Longhorn UI ingress
+  # Hostname for the Longhorn UI route
   host: "longhorn.app"
-  
+
+  # Gateway parentRef
+  gateway:
+    name: ""
+    namespace: ""
+
   # List of trusted IP ranges that can access the Longhorn UI
   trustedIPs: []
-  # Example:
-  # trustedIPs:
-  #   - "192.168.1.0/24"
-  #   - "10.0.0.0/8"
-  
-  # TLS configuration
-  tls:
-    # Enable TLS/HTTPS
-    enabled: false
-    # cert-manager ClusterIssuer to use
-    issuer: ""
-  
-  # Authentication configuration
-  auth:
-    # Authentication method: "basic" or "oauth2_proxy"
-    # WARNING: You MUST set this to either "basic" or "oauth2_proxy"
-    method: "basic"
-    
-    # Basic authentication settings (used when method is "basic")
-    basic:
-      # HTTP basic auth string in format "username:password_hash"
-      # Generate with: echo "username:$(openssl passwd -stdin -apr1 <<< 'password')"
-      secret: ""
-      # Authentication realm message shown to users
-      realm: "Authentication Required"
-    
-    # OAuth2 Proxy authentication settings (used when method is "oauth2_proxy")
-    # This uses a dedicated OAuth2 Proxy deployment
-    oauth2_proxy:
-      # Name of the OAuth2 Proxy service (auto-generated from release name)
-      service_name: ""
-  
-  # Additional custom annotations for the ingress
-  annotations: {}
-  # Example:
-  # annotations:
-  #   nginx.ingress.kubernetes.io/proxy-body-size: "10m"
-  #   nginx.ingress.kubernetes.io/custom-annotation: "value"
 
-# Deprecated - kept for backward compatibility
-longhornBasicAuthSecret:
-  auth: "" # echo "h3xcat:$(openssl passwd -stdin -apr1 < "$H3XINFRA_FOLDER/secrets/longhorn_pass.txt")"
+  # OIDC SecurityPolicy configuration (handled by Envoy Gateway, replaces oauth2-proxy)
+  oidc:
+    enabled: false
+    issuerUrl: ""
+    clientId: ""
+    clientSecret: ""
+    scopes:
+      - openid
+      - email
+      - profile
+    secretRef:
+      name: ""

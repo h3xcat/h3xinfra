@@ -1,0 +1,53 @@
+{{- if and .Values.longhornIngress.host (or .Values.longhornIngress.oidc.enabled .Values.longhornIngress.trustedIPs) }}
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: {{ include "h3xinfra-longhorn-post.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-longhorn-post.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ include "h3xinfra-longhorn-post.fullname" . }}
+  {{- if .Values.longhornIngress.trustedIPs }}
+  authorization:
+    defaultAction: Deny
+    rules:
+      - action: Allow
+        principal:
+          clientCIDRs:
+            {{- range .Values.longhornIngress.trustedIPs }}
+            - {{ . | quote }}
+            {{- end }}
+  {{- end }}
+  {{- if .Values.longhornIngress.oidc.enabled }}
+  oidc:
+    provider:
+      issuer: {{ .Values.longhornIngress.oidc.issuerUrl | quote }}
+    clientID: {{ .Values.longhornIngress.oidc.clientId | quote }}
+    clientSecret:
+      name: {{ .Values.longhornIngress.oidc.secretRef.name }}
+    redirectURL: {{ printf "https://%s/oauth2/callback" .Values.longhornIngress.host | quote }}
+    logoutPath: "/oauth2/sign_out"
+    scopes:
+      {{- range .Values.longhornIngress.oidc.scopes | default (list "openid" "email" "profile") }}
+      - {{ . | quote }}
+      {{- end }}
+  {{- end }}
+{{- end }}
+---
+{{- if and .Values.longhornIngress.host .Values.longhornIngress.oidc.enabled .Values.longhornIngress.oidc.clientSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.longhornIngress.oidc.secretRef.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-longhorn-post.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  client-secret: {{ .Values.longhornIngress.oidc.clientSecret | quote }}
+{{- end }}
