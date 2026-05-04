@@ -84,6 +84,9 @@
         - { name: net.ipv6.conf.default.accept_ra_defrtr, value: "0" }
         - { name: net.ipv6.conf.all.use_tempaddr, value: "0" }
         - { name: net.ipv6.conf.default.use_tempaddr, value: "0" }
+        # Required by WireGuard (wg-quick fwmark routing) for the qBittorrent stack
+        # so the workload no longer needs a privileged sysctl init container. See SECURITY_AUDIT.md F5.
+        - { name: net.ipv4.conf.all.src_valid_mark, value: "1" }
 
     - name: Enable DNSSEC in systemd-resolved
       lineinfile:
