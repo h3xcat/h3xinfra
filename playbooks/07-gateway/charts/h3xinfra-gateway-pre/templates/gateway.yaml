@@ -29,7 +29,7 @@ spec:
     - name: http-apex
       protocol: HTTP
       port: {{ .Values.gateway.listeners.http.port }}
-      hostname: "example.com"
+      hostname: {{ .Values.gateway.listeners.httpsApex.hostname | quote }}
       allowedRoutes:
         namespaces:
           from: {{ .Values.gateway.allowedRoutesFrom | quote }}

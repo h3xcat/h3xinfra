@@ -88,6 +88,15 @@
           gateway:
             className: "{{ gateway.release_name_prefix }}"
             allowedRoutesFrom: "All"
+            listeners:
+              http:
+                hostname: "{{ gateway.listeners.http.hostname }}"
+              https:
+                hostname: "{{ gateway.listeners.https.hostname }}"
+              httpsApp:
+                hostname: "{{ gateway.listeners.httpsApp.hostname }}"
+              httpsApex:
+                hostname: "{{ gateway.listeners.httpsApex.hostname }}"
         set_values:
           - value: "wildcardCertificate.dnsNames={{ gateway.dns_names | to_json }}"
             value_type: json
