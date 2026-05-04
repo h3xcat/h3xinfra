@@ -694,7 +694,7 @@ metallb:
 gateway:
   loadbalancer_pools:
     ipv4: "10.12.96.100/32"
-    ipv6: "2600:1700:7c20:a475:face::100/128"
+    ipv6: "2001:db8:7c20:a475:face::100/128"
 ```
 
 ### DNS Management
