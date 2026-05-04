@@ -140,14 +140,23 @@ echo "${SSH_KNOWN_HOSTS}" >> ~/.ssh/known_hosts
 
 # Set up SSH private key under ~/.ssh (no in-tree secrets/ dir).
 # ansible.cfg's private_key_file is overridden by ANSIBLE_PRIVATE_KEY_FILE.
-echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_ansible
+# Use printf and strip CRs so multiline keys (with possible Windows line
+# endings from the secret store) are written byte-exact.
+printf '%s\n' "${SSH_PRIVATE_KEY}" | tr -d '\r' > ~/.ssh/id_ansible
 chmod 600 ~/.ssh/id_ansible
 echo "ANSIBLE_PRIVATE_KEY_FILE=$HOME/.ssh/id_ansible" >> "$GITHUB_ENV"
 
 # Vault password is read from $ANSIBLE_VAULT_PASSWORD by the
 # bin/h3xinfra-vault-pass wrapper that ansible.cfg points at — no file
-# write needed. The variable is already set above; just re-export it for
-# subsequent steps.
-echo "ANSIBLE_VAULT_PASSWORD=${ANSIBLE_VAULT_PASSWORD}" >> "$GITHUB_ENV"
+# write needed. Use the multiline env-file syntax with a unique delimiter
+# so passwords containing newlines or special characters are written
+# safely (and to prevent env-file injection).
+_vault_delim="EOF_$(openssl rand -hex 16)"
+{
+  printf 'ANSIBLE_VAULT_PASSWORD<<%s\n' "$_vault_delim"
+  printf '%s\n' "${ANSIBLE_VAULT_PASSWORD}"
+  printf '%s\n' "$_vault_delim"
+} >> "$GITHUB_ENV"
+unset _vault_delim
 
 echo "Network setup completed successfully"
