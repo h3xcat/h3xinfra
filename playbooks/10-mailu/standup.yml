@@ -191,4 +191,5 @@
       state: present
       wait: true
       timeout: "900s"
+    no_log: true
 

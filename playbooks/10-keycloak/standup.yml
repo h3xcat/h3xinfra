@@ -50,6 +50,7 @@
         state: present
         wait: true
         timeout: "300s"
+      no_log: true
 
     - name: Deploy Keycloak Helm chart
       kubernetes.core.helm:

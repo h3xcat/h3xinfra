@@ -62,6 +62,7 @@
         state: present
         wait: true
         timeout: "120s"
+      no_log: true
 
     - name: Deploy Longhorn via Helm
       kubernetes.core.helm:
@@ -141,3 +142,4 @@
         state: present
         wait: true
         timeout: "120s"
+      no_log: true

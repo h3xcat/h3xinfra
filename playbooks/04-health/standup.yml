@@ -19,9 +19,14 @@
 
       
     - name: Test anonymous access to livez endpoint
+      # The k3s API server is reached by node IP (not by a name in the
+      # serving cert SANs) and is signed by k3s's internal CA which we do
+      # not import on the controller. This check is a liveness probe, not
+      # a TLS posture assertion, so cert validation is intentionally off.
+      # Do NOT copy this pattern to checks against application endpoints.
       ansible.builtin.uri:
         url: "https://{{ hostvars[groups['server'][0]]['ansible_host'] }}:6443/livez"
         method: GET
-        validate_certs: no
+        validate_certs: no  # noqa: risky-shell-pipe see comment above
         status_code: 200
       
