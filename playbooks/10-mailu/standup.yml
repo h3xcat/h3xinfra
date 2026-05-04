@@ -98,6 +98,12 @@
           # mail traffic, we rely on the front LB exclusively. IP allowlist
           # for HTTP/HTTPS is enforced by Mailu itself.
           enabled: false
+          # The chart's `front` Deployment still mounts /certs from a TLS
+          # Secret regardless of whether an Ingress is rendered. Point it
+          # at the cert-manager Secret created by the pre-chart so we
+          # don't end up looking for a `<release>-certificates` Secret
+          # that the chart never creates when ingress is disabled.
+          existingSecret: "{{ mailu.release_name_prefix }}-pre-certificate"
 
         persistence:
           single_pvc: false
