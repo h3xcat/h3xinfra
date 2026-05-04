@@ -104,6 +104,18 @@
         wait: true
         timeout: "120s"
 
+    - name: Validate Longhorn OIDC configuration
+      ansible.builtin.assert:
+        that:
+          - longhorn.auth.oauth2_proxy.oidc_issuer_url | default('') | length > 0
+          - longhorn.auth.oauth2_proxy.client_id     | default('') | length > 0
+          - longhorn.auth.oauth2_proxy.client_secret | default('') | length > 0
+        fail_msg: >-
+          longhorn.auth.method == 'oauth2_proxy' requires
+          longhorn.auth.oauth2_proxy.{oidc_issuer_url,client_id,client_secret}
+          to all be set.
+      when: (longhorn.auth.method | default('none')) == 'oauth2_proxy'
+
     - name: Deploy Longhorn configuration via Helm
       kubernetes.core.helm:
         name: "{{ longhorn.release_name_prefix }}-post"

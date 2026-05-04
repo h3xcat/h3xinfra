@@ -1,4 +1,10 @@
 {{- if and .Values.longhornIngress.host (or .Values.longhornIngress.oidc.enabled .Values.longhornIngress.trustedIPs) }}
+{{- if .Values.longhornIngress.oidc.enabled -}}
+{{- $_ := required "longhornIngress.oidc.issuerUrl is required when oidc.enabled" .Values.longhornIngress.oidc.issuerUrl -}}
+{{- $_ := required "longhornIngress.oidc.clientId is required when oidc.enabled" .Values.longhornIngress.oidc.clientId -}}
+{{- $_ := required "longhornIngress.oidc.clientSecret is required when oidc.enabled" .Values.longhornIngress.oidc.clientSecret -}}
+{{- $_ := required "longhornIngress.oidc.secretRef.name is required when oidc.enabled" .Values.longhornIngress.oidc.secretRef.name -}}
+{{- end }}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: SecurityPolicy
@@ -29,7 +35,7 @@ spec:
       issuer: {{ .Values.longhornIngress.oidc.issuerUrl | quote }}
     clientID: {{ .Values.longhornIngress.oidc.clientId | quote }}
     clientSecret:
-      name: {{ .Values.longhornIngress.oidc.secretRef.name }}
+      name: {{ .Values.longhornIngress.oidc.secretRef.name | quote }}
     redirectURL: {{ printf "https://%s/oauth2/callback" .Values.longhornIngress.host | quote }}
     logoutPath: "/oauth2/sign_out"
     scopes:
@@ -37,17 +43,17 @@ spec:
       - {{ . | quote }}
       {{- end }}
   {{- end }}
-{{- end }}
+{{- if and .Values.longhornIngress.oidc.enabled .Values.longhornIngress.oidc.clientSecret .Values.longhornIngress.oidc.secretRef.name }}
 ---
-{{- if and .Values.longhornIngress.host .Values.longhornIngress.oidc.enabled .Values.longhornIngress.oidc.clientSecret }}
 apiVersion: v1
 kind: Secret
 metadata:
-  name: {{ .Values.longhornIngress.oidc.secretRef.name }}
+  name: {{ .Values.longhornIngress.oidc.secretRef.name | quote }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "h3xinfra-longhorn-post.labels" . | nindent 4 }}
 type: Opaque
 stringData:
   client-secret: {{ .Values.longhornIngress.oidc.clientSecret | quote }}
+{{- end }}
 {{- end }}

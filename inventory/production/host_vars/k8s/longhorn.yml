@@ -15,13 +15,12 @@ longhorn:
     - "2001:db8:7c20:a470::/60"
 
   # Authentication. With Envoy Gateway, "oauth2_proxy" enables a
-  # SecurityPolicy.oidc filter on the HTTPRoute (no oauth2-proxy sidecar).
+  # SecurityPolicy.oidc filter on the HTTPRoute (no oauth2-proxy sidecar);
+  # "none" disables auth (relies on `trusted_ips` only). Basic auth is no
+  # longer supported by the Gateway API setup.
   # The "oauth2_proxy" key is preserved for backwards compat with vault entries.
   auth:
-    method: "oauth2_proxy"          # Options: none, basic, oauth2_proxy
-    basic:
-      secret: "admin:$apr1$example$hashedpasswordhere"
-      realm: "Authentication Required - Longhorn"
+    method: "oauth2_proxy"          # Options: none, oauth2_proxy
     oauth2_proxy:
       oidc_issuer_url: "https://auth.app.example.com/realms/h3xinfra"
       client_id: "longhorn"

@@ -1,4 +1,10 @@
 {{- if .Values.longhornIngress.host }}
+{{- /* Fail fast if access controls are not configured: an HTTPRoute without
+       a SecurityPolicy would publish the Longhorn UI unauthenticated. */ -}}
+{{- if not (or .Values.longhornIngress.trustedIPs .Values.longhornIngress.oidc.enabled) -}}
+{{- fail "longhornIngress: at least one of `trustedIPs` or `oidc.enabled` must be set; refusing to render an unauthenticated HTTPRoute." -}}
+{{- end -}}
+{{- $gwName := required "longhornIngress.gateway.name is required" .Values.longhornIngress.gateway.name -}}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -9,8 +15,10 @@ metadata:
     {{- include "h3xinfra-longhorn-post.labels" . | nindent 4 }}
 spec:
   parentRefs:
-    - name: {{ .Values.longhornIngress.gateway.name }}
-      namespace: {{ .Values.longhornIngress.gateway.namespace }}
+    - name: {{ $gwName | quote }}
+      {{- with .Values.longhornIngress.gateway.namespace }}
+      namespace: {{ . | quote }}
+      {{- end }}
   hostnames:
     - {{ .Values.longhornIngress.host | quote }}
   rules:

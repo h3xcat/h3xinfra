@@ -4,8 +4,9 @@
 fullnameOverride: ""
 
 longhornIngress:
-  # Hostname for the Longhorn UI route
-  host: "longhorn.app"
+  # Hostname for the Longhorn UI route. Required; no default to avoid
+  # accidentally publishing an unauthenticated route.
+  host: ""
 
   # Gateway parentRef
   gateway:
@@ -15,7 +16,9 @@ longhornIngress:
   # List of trusted IP ranges that can access the Longhorn UI
   trustedIPs: []
 
-  # OIDC SecurityPolicy configuration (handled by Envoy Gateway, replaces oauth2-proxy)
+  # OIDC SecurityPolicy configuration (handled by Envoy Gateway, replaces oauth2-proxy).
+  # When `enabled: true`, all of `issuerUrl`, `clientId`, `clientSecret`, and
+  # `secretRef.name` are required (validated by the templates).
   oidc:
     enabled: false
     issuerUrl: ""
