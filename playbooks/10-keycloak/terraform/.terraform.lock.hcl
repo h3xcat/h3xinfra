@@ -3,9 +3,25 @@
 
 provider "registry.terraform.io/keycloak/keycloak" {
   version     = "5.7.0"
-  constraints = "~> 5.0"
+  constraints = "~> 5.7"
   hashes = [
+    "h1:3DuKdVeOxwULh7l6bvJKWZvsgSZo92rtnrdvyp+X2Lc=",
+    "h1:4IUCLyZHJBD4i+mPl+W0vDl1Z/PrVS+wAEPCBIyuJmA=",
+    "h1:Cj+CR5tvyVca0MxUHM2pdQiD5/3AvkpvBgzO1gjPYh4=",
+    "h1:FLBpBqAgNMV6zEMh6zAE892HGh9QpPijno8FHl6GzRw=",
+    "h1:G+TCagsh8qcruJAFqZtHDSrUPbBel+bj3sTTeS39p3g=",
+    "h1:NirXBuj9KGkWA/QUtWPMWUPZE0lbkpvnGRa7guuRo6Q=",
+    "h1:RHSD5FL4xm+/lBjCpb905URXLranpij/AarY2vC6C+g=",
     "h1:VSlrHkPQm4mczl+5ttuj6jAh2eVvupaoeymEn9Qi5vo=",
+    "h1:Yq9ynN3Vz79d+kHyl1roZ3EtaLgCQTQci3evL7ie9nY=",
+    "h1:ZbKjAwbEUWFA/wS37Qy1+Xyz9+LjghbohdGSKmpO66g=",
+    "h1:eafang5WWJo8KLBG/Vp17sfTAtKM0cMDVODNCseI8fY=",
+    "h1:h59UMl6Z9SJfV/WDRgBiJ+M/il7Ngz0nRdnSccS7bDk=",
+    "h1:pWPFj50cBoLMalwBWUs9RPgRhpkYHvGYMOIiVUYy49U=",
+    "h1:rP0FTW2lbLmGyF/fCMQgs5J5lP+/FOJWqYq9NbiIsb0=",
+    "h1:reFEBcuBZf2SVqDa1YIaNLuIW72uEVsOu5hHhQgfHi0=",
+    "h1:sevbStJCHHAmPNfr2Xgv28GALiqUG8Y156WZtgSL2Oo=",
+    "h1:tLXLjpVJWK5MvCT/rtn0t/yCirsYTX0PKnTfgXBZp8g=",
     "zh:19be4505b17e4818db121a82917cb6723019cf379cfb82b720eaa2886f15bede",
     "zh:2bd1565ed22db6a9fb50d60626e22c277f3b034a71f65e6c0011e42f56cad2bb",
     "zh:34a9e2dfb06331dc6146491c4a0721001195c6a769cdc2d4546edb2acf2b39bd",
