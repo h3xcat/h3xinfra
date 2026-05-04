@@ -40,14 +40,6 @@
         force_update: true
       changed_when: false
 
-    - name: Add OAuth2 Proxy Helm repository
-      kubernetes.core.helm_repository:
-        name: oauth2-proxy
-        repo_url: https://oauth2-proxy.github.io/manifests
-        state: present
-        force_update: true
-      changed_when: false
-
     - name: Create Longhorn namespace
       kubernetes.core.k8s:
         api_version: v1
@@ -55,56 +47,6 @@
         name: "{{ longhorn.namespace }}"
         state: present
         wait: true
-
-    - name: Deploy OAuth2 Proxy Helm chart
-      kubernetes.core.helm:
-        name: "{{ longhorn.release_name_prefix }}-oauth2"
-        chart_ref: oauth2-proxy/oauth2-proxy
-        chart_version: "{{ chart_versions.oauth2_proxy }}"
-        release_namespace: "{{ longhorn.namespace }}"
-        create_namespace: false
-        values:
-          config:
-            clientID: "{{ longhorn.auth.oauth2_proxy.client_id }}"
-            clientSecret: "{{ longhorn.auth.oauth2_proxy.client_secret }}"
-            cookieSecret: "{{ longhorn.auth.oauth2_proxy.cookie_secret }}"
-            cookieName: "_oauth2_proxy_{{ longhorn.release_name_prefix }}"
-
-          extraArgs:
-            provider: "oidc"
-            oidc-issuer-url: "{{ longhorn.auth.oauth2_proxy.oidc_issuer_url }}"
-            cookie-domain: "{{ longhorn.ingress_host }}"
-            whitelist-domain: "{{ longhorn.ingress_host }}"
-            skip-provider-button: true
-            set-xauthrequest: true
-            reverse-proxy: true
-            insecure-oidc-allow-unverified-email: true
-
-          service:
-            type: ClusterIP
-            portNumber: 4180
-          
-          ingress:
-            enabled: true
-            className: nginx
-            path: /oauth2
-            pathType: Prefix
-            hosts:
-              - "{{ longhorn.ingress_host }}"
-            tls: "{{ [{'hosts': [longhorn.ingress_host]}] if longhorn.ingress.tls.enabled | default(false) else [] }}"
-          
-          resources:
-            limits:
-              cpu: 100m
-              memory: 128Mi
-            requests:
-              cpu: 50m
-              memory: 64Mi
-
-        state: present
-        wait: true
-        timeout: "300s"
-      when: longhorn.auth.method == "oauth2_proxy"
 
     - name: Deploy Longhorn pre-configuration via Helm
       kubernetes.core.helm:
@@ -162,6 +104,18 @@
         wait: true
         timeout: "120s"
 
+    - name: Validate Longhorn OIDC configuration
+      ansible.builtin.assert:
+        that:
+          - longhorn.auth.oauth2_proxy.oidc_issuer_url | default('') | length > 0
+          - longhorn.auth.oauth2_proxy.client_id     | default('') | length > 0
+          - longhorn.auth.oauth2_proxy.client_secret | default('') | length > 0
+        fail_msg: >-
+          longhorn.auth.method == 'oauth2_proxy' requires
+          longhorn.auth.oauth2_proxy.{oidc_issuer_url,client_id,client_secret}
+          to all be set.
+      when: (longhorn.auth.method | default('none')) == 'oauth2_proxy'
+
     - name: Deploy Longhorn configuration via Helm
       kubernetes.core.helm:
         name: "{{ longhorn.release_name_prefix }}-post"
@@ -172,17 +126,17 @@
           fullnameOverride: "{{ longhorn.release_name_prefix }}-post"
           longhornIngress:
             host: "{{ longhorn.ingress_host }}"
+            gateway:
+              name: "{{ gateway.release_name_prefix }}-pre-shared"
+              namespace: "{{ gateway.namespace }}"
             trustedIPs: "{{ longhorn.trusted_ips }}"
-            tls:
-              enabled: "{{ longhorn.ingress.tls.enabled | default(false) }}"
-              issuer: "{{ longhorn.ingress.tls.issuer | default('') }}"
-            auth:
-              method: "{{ longhorn.auth.method | default('none') }}"
-              basic:
-                secret: "{{ longhorn.auth.basic.secret | default('') }}"
-                realm: "{{ longhorn.auth.basic.realm | default('Authentication Required') }}"
-              oauth2_proxy:
-                service_name: "{{ longhorn.release_name_prefix }}-oauth2-oauth2-proxy"
+            oidc:
+              enabled: "{{ (longhorn.auth.method | default('none')) == 'oauth2_proxy' }}"
+              issuerUrl: "{{ longhorn.auth.oauth2_proxy.oidc_issuer_url | default('') }}"
+              clientId: "{{ longhorn.auth.oauth2_proxy.client_id | default('') }}"
+              clientSecret: "{{ longhorn.auth.oauth2_proxy.client_secret | default('') }}"
+              secretRef:
+                name: "{{ longhorn.release_name_prefix }}-oidc"
                 
         state: present
         wait: true
