@@ -16,7 +16,7 @@ chart_versions:
   envoy_gateway: "v1.4.2"
   # Upstream Gateway API CRDs (standard channel).
   # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
-  gateway_api: "v1.2.1"
+  gateway_api: "v1.5.1"
   # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
   external_dns: "1.20.0"
 
