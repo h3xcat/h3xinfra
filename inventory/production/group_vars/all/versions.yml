@@ -3,7 +3,6 @@
 # =============================================================================
 # This file provides default chart versions for all services.
 # Uses a separate 'chart_versions' namespace to avoid conflicts with host_vars.
-# Playbooks should use: {{ chart_versions.authentik | default('x.x.x') }}
 # =============================================================================
 
 chart_versions:
@@ -12,18 +11,18 @@ chart_versions:
   cilium: "1.19.3"
   # renovate: datasource=helm depName=metallb registryUrl=https://metallb.github.io/metallb
   metallb: "0.15.3"
-  # renovate: datasource=helm depName=ingress-nginx registryUrl=https://kubernetes.github.io/ingress-nginx
-  ingress_nginx: "4.15.1"
+  # Envoy Gateway controller (replaces ingress-nginx).
+  # renovate: datasource=docker depName=envoyproxy/gateway-helm registryUrl=https://docker.io versioning=helm
+  envoy_gateway: "v1.4.2"
+  # Upstream Gateway API CRDs (standard channel).
+  # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
+  gateway_api: "v1.2.1"
   # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
   external_dns: "1.20.0"
 
   # Infrastructure - Security & Certs
   # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
   cert_manager: "v1.20.2"
-  # renovate: datasource=helm depName=oauth2-proxy registryUrl=https://oauth2-proxy.github.io/manifests
-  oauth2_proxy: "10.4.3"
-  # renovate: datasource=helm depName=authentik registryUrl=https://charts.goauthentik.io
-  authentik: "2026.2.2"
 
   # Infrastructure - Storage
   # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
