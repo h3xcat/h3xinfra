@@ -1,0 +1,7 @@
+apiVersion: v2
+name: h3xinfra-keycloak-main
+description: Keycloak (Quarkus) StatefulSet using the official quay.io/keycloak/keycloak image
+type: application
+version: 0.1.0
+appVersion: "26.6.1"
+dependencies: []

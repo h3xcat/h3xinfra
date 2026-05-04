@@ -1,0 +1,89 @@
+---
+- import_playbook: ../../h3xinfra/playbooks/99-utils/kube-connect.yml
+
+# -----------------------------------------------------------------------------
+# Phase 1: Destroy Terraform-managed realm configuration before removing
+# Keycloak itself, so the provider can still reach the admin API.
+# -----------------------------------------------------------------------------
+- name: Destroy Keycloak Terraform configuration
+  hosts: k8s
+  gather_facts: false
+  vars:
+    terraform_dir: "{{ playbook_dir }}/terraform"
+
+  tasks:
+    - name: Check for existing Terraform state
+      ansible.builtin.stat:
+        path: "{{ terraform_dir }}/terraform.tfstate"
+      register: tfstate_file
+
+    - name: Render Terraform variables file (for destroy)
+      ansible.builtin.copy:
+        dest: "{{ terraform_dir }}/terraform.tfvars.json"
+        mode: "0600"
+        content: "{{ {
+            'keycloak_url': keycloak.issuer_url_base,
+            'keycloak_admin_username': keycloak.admin.username,
+            'keycloak_admin_password': keycloak.admin.password,
+            'realm_name': keycloak.realm.name,
+            'realm_display_name': keycloak.realm.display_name,
+            'smtp': keycloak.realm.smtp,
+            'clients': keycloak.clients | default([])
+          } | to_nice_json }}"
+      when: tfstate_file.stat.exists
+      no_log: true
+
+    - name: Destroy Terraform-managed realm resources
+      community.general.terraform:
+        project_path: "{{ terraform_dir }}"
+        state: absent
+        force_init: true
+        variables_files:
+        - "{{ terraform_dir }}/terraform.tfvars.json"
+      when: tfstate_file.stat.exists
+      failed_when: false
+
+# -----------------------------------------------------------------------------
+# Phase 2: Remove the Helm releases and namespace.
+# -----------------------------------------------------------------------------
+- name: Remove Keycloak via Helm
+  hosts: k8s
+  gather_facts: false
+
+  tasks:
+    - name: Uninstall Keycloak main Helm release
+      kubernetes.core.helm:
+        name: "{{ keycloak.release_name_prefix }}-main"
+        release_namespace: "{{ keycloak.namespace }}"
+        state: absent
+        wait: true
+        timeout: "300s"
+
+    - name: Uninstall Keycloak pre-configuration Helm release
+      kubernetes.core.helm:
+        name: "{{ keycloak.release_name_prefix }}-pre"
+        release_namespace: "{{ keycloak.namespace }}"
+        state: absent
+        wait: true
+        timeout: "120s"
+
+    - name: Delete leftover PVCs (StatefulSet PVCs are not GC'd with the release)
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: PersistentVolumeClaim
+        namespace: "{{ keycloak.namespace }}"
+        name: "{{ item }}"
+        state: absent
+        wait: true
+        wait_timeout: 120
+      loop:
+      - "data-{{ keycloak.release_name_prefix }}-pre-postgres-0"
+
+    - name: Remove Keycloak namespace
+      kubernetes.core.k8s:
+        name: "{{ keycloak.namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: absent
+        wait: true
+        wait_timeout: 300

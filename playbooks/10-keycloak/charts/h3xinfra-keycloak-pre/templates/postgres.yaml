@@ -1,0 +1,104 @@
+{{- if .Values.postgres.enabled }}
+---
+# Headless service is not strictly required for a 1-replica StatefulSet,
+# but keeps the StatefulSet definition complete and ready for scaling.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "h3xinfra-keycloak-pre.postgresName" . }}-headless
+  labels:
+    {{- include "h3xinfra-keycloak-pre.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  clusterIP: None
+  selector:
+    {{- include "h3xinfra-keycloak-pre.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "h3xinfra-keycloak-pre.postgresName" . }}
+  labels:
+    {{- include "h3xinfra-keycloak-pre.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "h3xinfra-keycloak-pre.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "h3xinfra-keycloak-pre.postgresName" . }}
+  labels:
+    {{- include "h3xinfra-keycloak-pre.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: {{ include "h3xinfra-keycloak-pre.postgresName" . }}-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "h3xinfra-keycloak-pre.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        {{- include "h3xinfra-keycloak-pre.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+      - name: postgres
+        image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+        imagePullPolicy: {{ .Values.postgres.image.pullPolicy | default "IfNotPresent" }}
+        ports:
+        - name: postgres
+          containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: {{ .Values.postgres.database | quote }}
+        - name: POSTGRES_USER
+          value: {{ .Values.postgres.username | quote }}
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "h3xinfra-keycloak-pre.bootstrapSecretName" . }}
+              key: database-password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "{{ .Values.postgres.username }}", "-d", "{{ .Values.postgres.database }}"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "{{ .Values.postgres.username }}", "-d", "{{ .Values.postgres.database }}"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.postgres.resources | nindent 10 }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: {{ .Values.postgres.persistence.storageClass | quote }}
+      resources:
+        requests:
+          storage: {{ .Values.postgres.persistence.size | quote }}
+{{- end }}

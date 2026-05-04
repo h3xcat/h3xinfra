@@ -1,0 +1,49 @@
+{{- /*
+TEMPORARILY DISABLED.
+
+The previous design used two HTTPRoutes on the same hostname
+(`auth.app.example.com`) so this SecurityPolicy could target only the admin
+HTTPRoute. That layout caused Envoy Gateway to emit duplicate vhost
+entries for the hostname and Envoy rejected the entire xDS snapshot
+(`Only unique values for domains are permitted`), which 500'd every
+service sharing the gateway.
+
+The HTTPRoute has been merged into a single resource with named rules
+(`public`, `admin`). Envoy Gateway 1.5 does NOT yet support
+`targetRefs[].sectionName` on SecurityPolicy
+(`this policy does not yet support the sectionName field`), so we
+cannot scope this allowlist to just the `admin` rule. Re-enabling it
+on the whole route would block public OIDC discovery endpoints from
+the internet and break SSO for every protected app.
+
+Re-enable once EG supports SecurityPolicy.targetRefs.sectionName
+(tracked upstream), or split admin onto a dedicated hostname
+(e.g. `kc-admin.app.example.com`).
+*/ -}}
+{{- if false }}
+{{- if and .Values.ingress.enabled .Values.ingress.trustedSetupIPs }}
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: {{ include "h3xinfra-keycloak-pre.fullname" . }}-admin
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-keycloak-pre.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ include "h3xinfra-keycloak-pre.fullname" . }}
+      sectionName: admin
+  authorization:
+    defaultAction: Deny
+    rules:
+      - action: Allow
+        principal:
+          clientCIDRs:
+            {{- range .Values.ingress.trustedSetupIPs }}
+            - {{ . | quote }}
+            {{- end }}
+{{- end }}
+{{- end }}

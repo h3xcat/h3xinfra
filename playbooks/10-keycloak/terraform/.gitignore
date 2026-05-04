@@ -1,0 +1,14 @@
+# Terraform working dir + state files
+# Note: .terraform.lock.hcl IS committed (Terraform best practice — pins
+# provider versions and hashes for reproducible runs).
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfstate.d/
+crash.log
+crash.*.log
+
+# Rendered by the Ansible playbook at runtime; contains secrets.
+terraform.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json

@@ -1,0 +1,49 @@
+---
+# Full name override is set by the playbook.
+nameOverride: ""
+fullnameOverride: ""
+
+# Secret holding bootstrap admin + DB credentials. Consumed by the
+# codecentric/keycloakx chart (admin via env, DB via existingSecret) and
+# the bundled standalone Postgres StatefulSet below.
+bootstrapSecret:
+  enabled: true
+  adminUsername: "admin"
+  adminPassword: ""
+  databasePassword: ""
+
+# Standalone PostgreSQL using the official `postgres` image. Replaces the
+# Bitnami subchart so we don't depend on any Bitnami / bitnamilegacy images.
+postgres:
+  enabled: true
+  image:
+    repository: "postgres"
+    tag: "17.4-alpine"
+    pullPolicy: IfNotPresent
+  database: "keycloak"
+  username: "keycloak"
+  persistence:
+    storageClass: "longhorn"
+    size: "8Gi"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+
+# Gateway API HTTPRoutes rendered separately so we can IP-restrict the admin
+# console while keeping the realm login paths publicly reachable.
+ingress:
+  enabled: true
+  host: "auth.app"
+  gateway:
+    name: ""
+    namespace: ""
+  # Name of the Kubernetes service for Keycloak (usually <fullname>).
+  serviceName: "keycloak"
+  servicePort: 80
+
+  # CIDR list applied to the admin console HTTPRoute only.
+  trustedSetupIPs: []
