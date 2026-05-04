@@ -1,0 +1,103 @@
+{{- $secretName := include "h3xinfra-gateway-pre.wildcardSecretName" . -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ include "h3xinfra-gateway-pre.gatewayName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-gateway-pre.labels" . | nindent 4 }}
+spec:
+  gatewayClassName: {{ .Values.gateway.className | quote }}
+  listeners:
+    {{- if .Values.gateway.listeners.http.enabled }}
+    - name: http
+      protocol: HTTP
+      port: {{ .Values.gateway.listeners.http.port }}
+      hostname: {{ .Values.gateway.listeners.http.hostname | quote }}
+      allowedRoutes:
+        namespaces:
+          from: {{ .Values.gateway.allowedRoutesFrom | quote }}
+    # NOTE: do NOT add a separate `http-app` listener for `*.app.example.com`.
+    # Its hostname overlaps with the broader `*.example.com` `http` listener
+    # above, and on port 80 Envoy Gateway merges both into a single Envoy
+    # route config. Every HTTPRoute with a `*.app.example.com` hostname then
+    # attaches to both listeners and emits duplicate vhost entries, which
+    # makes Envoy reject the entire xDS snapshot
+    # (`Only unique values for domains are permitted`) and 500s every
+    # service sharing the gateway. The `*.example.com` wildcard already
+    # matches multi-label subdomains like `qb.app.example.com`.
+    - name: http-apex
+      protocol: HTTP
+      port: {{ .Values.gateway.listeners.http.port }}
+      hostname: "example.com"
+      allowedRoutes:
+        namespaces:
+          from: {{ .Values.gateway.allowedRoutesFrom | quote }}
+    {{- end }}
+    {{- if .Values.gateway.listeners.https.enabled }}
+    - name: https
+      protocol: HTTPS
+      port: {{ .Values.gateway.listeners.https.port }}
+      hostname: {{ .Values.gateway.listeners.https.hostname | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: {{ $secretName }}
+      allowedRoutes:
+        namespaces:
+          from: {{ .Values.gateway.allowedRoutesFrom | quote }}
+    {{- end }}
+    {{- if .Values.gateway.listeners.httpsApp.enabled }}
+    - name: https-app
+      protocol: HTTPS
+      port: {{ .Values.gateway.listeners.httpsApp.port }}
+      hostname: {{ .Values.gateway.listeners.httpsApp.hostname | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: {{ $secretName }}
+      allowedRoutes:
+        namespaces:
+          from: {{ .Values.gateway.allowedRoutesFrom | quote }}
+    {{- end }}
+    {{- if .Values.gateway.listeners.httpsApex.enabled }}
+    - name: https-apex
+      protocol: HTTPS
+      port: {{ .Values.gateway.listeners.httpsApex.port }}
+      hostname: {{ .Values.gateway.listeners.httpsApex.hostname | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: {{ $secretName }}
+      allowedRoutes:
+        namespaces:
+          from: {{ .Values.gateway.allowedRoutesFrom | quote }}
+    {{- end }}
+{{- if .Values.gateway.listeners.http.enabled }}
+---
+# Global HTTP -> HTTPS redirect for every host accepted by the HTTP listeners.
+# Only rendered when the HTTP listeners exist; otherwise the parentRefs would
+# point at non-existent listener sections and the route would fail to attach.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "h3xinfra-gateway-pre.fullname" . }}-http-to-https
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-gateway-pre.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ include "h3xinfra-gateway-pre.gatewayName" . }}
+      sectionName: http
+    - name: {{ include "h3xinfra-gateway-pre.gatewayName" . }}
+      sectionName: http-apex
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+{{- end }}

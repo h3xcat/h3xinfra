@@ -1,0 +1,111 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Deploy Envoy Gateway and shared Gateway resource
+  hosts: k8s
+  gather_facts: false
+
+  tasks:
+    - name: Create Gateway namespace
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ gateway.namespace }}"
+        state: present
+        wait: true
+
+    # The CRD bundle (Gateway API experimental + Envoy Gateway CRDs) exceeds
+    # Helm's 1 MiB release secret limit, so we render it and apply it via
+    # server-side kubectl rather than as a Helm release. The chart is still
+    # version-pinned via chart_versions.envoy_gateway.
+    - name: Render Envoy Gateway CRD bundle
+      ansible.builtin.command:
+        cmd: >-
+          helm template h3xinfra-gateway-crds
+          oci://docker.io/envoyproxy/gateway-crds-helm
+          --version {{ chart_versions.envoy_gateway }}
+          --namespace {{ gateway.namespace }}
+          --set crds.gatewayAPI.enabled=true
+          --set crds.gatewayAPI.channel=experimental
+          --set crds.envoyGateway.enabled=true
+      register: gateway_crd_render
+      changed_when: false
+
+    - name: Apply Envoy Gateway CRD bundle (server-side)
+      ansible.builtin.command:
+        cmd: kubectl apply --server-side --force-conflicts --field-manager h3xinfra-gateway-crds -f -
+        stdin: "{{ gateway_crd_render.stdout }}"
+      register: gateway_crd_apply
+      # `kubectl apply` prints one line per resource; treat the run as changed if
+      # any resource was created/configured. Checking only for absence of
+      # 'unchanged' would mis-classify mixed runs (some unchanged, some applied)
+      # as no-op.
+      changed_when: >-
+        gateway_crd_apply.stdout_lines
+        | reject('search', ' unchanged$')
+        | select('search', ' (created|configured|serverside-applied)$')
+        | list | length > 0
+
+    - name: Deploy Envoy Gateway controller via Helm (OCI)
+      kubernetes.core.helm:
+        name: "{{ gateway.release_name_prefix }}-controller"
+        chart_ref: "oci://docker.io/envoyproxy/gateway-helm"
+        chart_version: "{{ chart_versions.envoy_gateway }}"
+        release_namespace: "{{ gateway.namespace }}"
+        create_namespace: false
+        # CRDs (Gateway API + Envoy Gateway-specific) are rendered above with
+        # `helm template` and applied directly via `kubectl apply --server-side`
+        # (no Helm release owns them); the controller chart must not ship a
+        # duplicate set or a server-side apply conflict will occur.
+        skip_crds: true
+        values:
+          config:
+            envoyGateway:
+              logging:
+                level:
+                  default: info
+        state: present
+        wait: true
+        timeout: "300s"
+
+    - name: Deploy Gateway pre-configuration via Helm
+      kubernetes.core.helm:
+        name: "{{ gateway.release_name_prefix }}-pre"
+        chart_ref: "{{ playbook_dir }}/charts/h3xinfra-gateway-pre"
+        namespace: "{{ gateway.namespace }}"
+        create_namespace: false
+        values:
+          fullnameOverride: "{{ gateway.release_name_prefix }}-pre"
+          wildcardCertificate:
+            commonName: "{{ gateway.dns_names | first }}"
+          clusterIssuerName: "{{ certmanager.release_name_prefix }}-post-default-clusterissuer"
+          ipPool:
+            namespace: "{{ metallb.namespace }}"
+            ipAddressPools:
+              addresses:
+                ipv4: "{{ gateway.loadbalancer_pools.ipv4 }}"
+                ipv6: "{{ gateway.loadbalancer_pools.ipv6 }}"
+          gateway:
+            className: "{{ gateway.release_name_prefix }}"
+            allowedRoutesFrom: "All"
+        set_values:
+          - value: "wildcardCertificate.dnsNames={{ gateway.dns_names | to_json }}"
+            value_type: json
+        state: present
+        wait: true
+        timeout: "300s"
+
+    - name: Wait for the shared Gateway to become Programmed
+      kubernetes.core.k8s_info:
+        api_version: gateway.networking.k8s.io/v1
+        kind: Gateway
+        namespace: "{{ gateway.namespace }}"
+        name: "{{ gateway.release_name_prefix }}-pre-shared"
+      register: gw_status
+      retries: 30
+      delay: 10
+      until: >-
+        gw_status.resources | length > 0
+        and (gw_status.resources[0].status.conditions | default([])
+             | selectattr('type', 'equalto', 'Programmed')
+             | selectattr('status', 'equalto', 'True') | list | length) > 0

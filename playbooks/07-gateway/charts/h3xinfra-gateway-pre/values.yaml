@@ -1,0 +1,60 @@
+nameOverride: ""
+fullnameOverride: ""
+
+# Wildcard certificate served by the shared Gateway HTTPS listener.
+wildcardCertificate:
+  annotations: {}
+  dnsNames: []
+  commonName: ""
+
+# cert-manager ClusterIssuer that signs the wildcard certificate.
+clusterIssuerName: cloudflare-clusterissuer
+
+# MetalLB pool dedicated to the Gateway's LoadBalancer Service.
+ipPool:
+  namespace: metallb-system
+  ipAddressPools:
+    annotations: {}
+    addresses:
+      ipv4: ""
+      ipv6: ""
+  l2Advertisement:
+    annotations: {}
+  autoAssign: false
+
+# GatewayClass + Gateway configuration.
+gateway:
+  # Name of the GatewayClass that points at the Envoy Gateway controller.
+  className: "h3xinfra-gateway"
+  # Controller name for the GatewayClass; matches the Envoy Gateway helm chart default.
+  controllerName: "gateway.envoyproxy.io/gatewayclass-controller"
+  # Listener configuration. Listeners are created in the Gateway resource.
+  listeners:
+    # HTTP listener that accepts plaintext traffic and is redirected to HTTPS
+    # by a global HTTPRoute (templates/gateway.yaml) attached to this listener.
+    # An apex `http-apex` listener for `example.com` is also created alongside this
+    # one so the redirect covers both wildcard and apex hosts.
+    http:
+      enabled: true
+      port: 80
+      hostname: "*.example.com"
+    # Primary HTTPS listener with the wildcard cert.
+    https:
+      enabled: true
+      port: 443
+      hostname: "*.example.com"
+    # Additional HTTPS listener for the *.app.example.com sub-zone.
+    httpsApp:
+      enabled: true
+      port: 443
+      hostname: "*.app.example.com"
+    # Apex domain (example.com) for non-wildcard hosts.
+    httpsApex:
+      enabled: true
+      port: 443
+      hostname: "example.com"
+  # Service annotations applied to the Envoy Gateway-managed LoadBalancer Service.
+  serviceAnnotations: {}
+  # Allowed namespaces that can attach HTTPRoutes to the Gateway.
+  # Use "All" to permit any namespace (relies on per-route hostnames for isolation).
+  allowedRoutesFrom: "All"
