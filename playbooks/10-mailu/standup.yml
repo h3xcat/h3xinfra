@@ -48,6 +48,16 @@
         networkPolicy:
           enabled: "{{ mailu.network_policy.enabled }}"
           allowedIPv6Networks: "{{ mailu.network_policy.allowed_ipv6_networks }}"
+
+        gatewayRoute:
+          enabled: true
+          gateway:
+            name: "{{ gateway.release_name_prefix }}-pre-shared"
+            namespace: "{{ gateway.namespace }}"
+          frontService:
+            name: "{{ mailu.release_name_prefix }}-main-front"
+            port: 443
+          tlsHostname: "{{ mailu.dns_names | first }}"
       set_values:
       - value: "certificate.dnsNames={{ mailu.dns_names | to_json }}"
         value_type: json

@@ -42,6 +42,22 @@ certificate:
     # cert-manager.io/duration: "2160h"
     # cert-manager.io/renew-before: "360h"
 
+# HTTPRoute / BackendTLSPolicy that publishes Mailu's web UI through
+# the shared Envoy Gateway. Disabled by default so chart consumers must
+# opt in and supply their gateway and front-service references.
+gatewayRoute:
+  enabled: false
+  gateway:
+    name: ""
+    namespace: ""
+  frontService:
+    # Name of the Mailu chart's front Service (terminates TLS on 443).
+    name: ""
+    port: 443
+  # SNI/hostname used when validating the upstream TLS connection.
+  # Defaults to certificate.commonName when unset.
+  tlsHostname: ""
+
 # Network Policy configuration
 networkPolicy:
   # Enable Cilium Network Policy to restrict email service access

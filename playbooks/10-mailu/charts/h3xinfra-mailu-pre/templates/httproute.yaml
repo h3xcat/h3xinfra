@@ -1,0 +1,50 @@
+{{- if .Values.gatewayRoute.enabled }}
+---
+# HTTPRoute that exposes Mailu's web admin/webmail through the shared
+# Envoy Gateway. The Mailu front pod's nginx only listens on 443 (TLS),
+# so requests are forwarded to the front Service on port 443 and TLS is
+# re-originated using the BackendTLSPolicy below.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "h3xinfra-mailu-pre.fullname" . }}-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-mailu-pre.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ .Values.gatewayRoute.gateway.name }}
+      namespace: {{ .Values.gatewayRoute.gateway.namespace }}
+  hostnames:
+    {{- range .Values.certificate.dnsNames }}
+    - {{ . | quote }}
+    {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ .Values.gatewayRoute.frontService.name }}
+          port: {{ .Values.gatewayRoute.frontService.port }}
+---
+# Re-originate TLS to the Mailu front pod. The front nginx serves the
+# cert-manager-issued Let's Encrypt cert from the pre-chart Certificate,
+# whose SANs cover the Mailu hostnames, so we validate against the
+# system trust store using the canonical hostname.
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: {{ include "h3xinfra-mailu-pre.fullname" . }}-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-mailu-pre.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: {{ .Values.gatewayRoute.frontService.name }}
+  validation:
+    wellKnownCACertificates: System
+    hostname: {{ .Values.gatewayRoute.tlsHostname | default (.Values.certificate.commonName) | quote }}
+{{- end }}
