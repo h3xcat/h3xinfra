@@ -11,7 +11,9 @@ sudo apt-get autoremove -y
 sudo apt-get clean
 
 ansible-galaxy collection install git+https://github.com/k3s-io/k3s-ansible.git
-ansible-galaxy collection install kubernetes.core
+# kubernetes.core <6.0.0 still passes `--all` to `helm list`, which Helm v4
+# removed. Pin to a Helm-v4-compatible release.
+ansible-galaxy collection install 'kubernetes.core:>=6.0.0'
 ansible-galaxy collection install community.general
 
 # Install python dependencies
