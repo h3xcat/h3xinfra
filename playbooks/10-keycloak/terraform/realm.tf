@@ -14,6 +14,15 @@ resource "keycloak_realm" "main" {
 
   password_policy = "upperCase(1) and length(12) and forceExpiredPasswordChange(365) and notUsername"
 
+  # Session lifetimes — extended from Keycloak defaults (30m idle / 10h max)
+  # so users aren't logged out frequently on this self-hosted deployment.
+  sso_session_idle_timeout              = "12h"
+  sso_session_max_lifespan              = "168h"  # 7d
+  sso_session_idle_timeout_remember_me  = "720h"  # 30d
+  sso_session_max_lifespan_remember_me  = "720h"  # 30d
+  offline_session_idle_timeout          = "720h"  # 30d
+  offline_session_max_lifespan          = "1440h" # 60d
+
   dynamic "smtp_server" {
     for_each = var.smtp.enabled ? [var.smtp] : []
     content {
