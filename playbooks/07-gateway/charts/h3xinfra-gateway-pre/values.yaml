@@ -58,3 +58,44 @@ gateway:
   # Allowed namespaces that can attach HTTPRoutes to the Gateway.
   # Use "All" to permit any namespace (relies on per-route hostnames for isolation).
   allowedRoutesFrom: "All"
+  # Telemetry plumbed into the EnvoyProxy resource referenced by the
+  # GatewayClass. Prometheus is enabled by default in Envoy Gateway; `matches`
+  # can be used to opt-in additional histograms / per-endpoint stats. Leave
+  # empty for the default stat set (cluster, listener, http_conn_manager).
+  telemetry:
+    metrics:
+      matches: []
+    # JSON access log emitted to the Envoy proxy stdout. Picked up by
+    # Grafana Alloy in the 25-logging layer, parsed, and shipped to Loki
+    # with GeoIP enrichment on `client_ip`. Field names below intentionally
+    # match the keys the Alloy pipeline expects — change in lockstep.
+    accessLog:
+      enabled: true
+      json:
+        timestamp: "%START_TIME%"
+        method: "%REQ(:METHOD)%"
+        scheme: "%REQ(X-FORWARDED-PROTO)%"
+        authority: "%REQ(:AUTHORITY)%"
+        path: "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+        protocol: "%PROTOCOL%"
+        response_code: "%RESPONSE_CODE%"
+        response_flags: "%RESPONSE_FLAGS%"
+        response_code_details: "%RESPONSE_CODE_DETAILS%"
+        connection_termination_details: "%CONNECTION_TERMINATION_DETAILS%"
+        bytes_received: "%BYTES_RECEIVED%"
+        bytes_sent: "%BYTES_SENT%"
+        duration: "%DURATION%"
+        upstream_service_time: "%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%"
+        x_forwarded_for: "%REQ(X-FORWARDED-FOR)%"
+        user_agent: "%REQ(USER-AGENT)%"
+        request_id: "%REQ(X-REQUEST-ID)%"
+        upstream_host: "%UPSTREAM_HOST%"
+        upstream_cluster: "%UPSTREAM_CLUSTER%"
+        upstream_local_address: "%UPSTREAM_LOCAL_ADDRESS%"
+        downstream_local_address: "%DOWNSTREAM_LOCAL_ADDRESS%"
+        # client_ip is the original peer address (preserved by DSR mode +
+        # externalTrafficPolicy: Local). Alloy uses this field as the GeoIP
+        # lookup source.
+        client_ip: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
+        requested_server_name: "%REQUESTED_SERVER_NAME%"
+        route_name: "%ROUTE_NAME%"
