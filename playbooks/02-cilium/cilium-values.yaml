@@ -37,6 +37,7 @@ routingMode: "native"
 
 # Uncommented as needed for native routing mode
 ipv4NativeRoutingCIDR: "10.42.0.0/16"
+ipv6NativeRoutingCIDR: "2001:db8:cafe::/96"
 autoDirectNodeRoutes : true
 
 extraConfig:
@@ -52,5 +53,54 @@ hubble:
       schedule: "0 0 1 */4 *"
   relay:
     enabled: true
+    # Expose hubble-relay's own /metrics so Prometheus can scrape relay health.
+    prometheus:
+      enabled: true
+      serviceMonitor:
+        enabled: true
   ui:
     enabled: true
+  # Per-flow metrics emitted by every cilium-agent on :9965/metrics.
+  # Powers the Hubble Grafana dashboards (HTTP, DNS, TCP, drops, ...).
+  metrics:
+    enabled:
+      - dns:query;ignoreAAAA
+      - drop
+      - tcp
+      - flow
+      - port-distribution
+      - icmp
+      - "httpV2:exemplars=true;labelsContext=source_ip,source_namespace,source_workload,destination_ip,destination_namespace,destination_workload,traffic_direction"
+    serviceMonitor:
+      enabled: true
+    # Built-in Grafana dashboards shipped by the Cilium chart, surfaced to the
+    # Grafana sidecar via ConfigMaps with the `grafana_dashboard: "1"` label.
+    dashboards:
+      enabled: true
+      namespace: monitoring
+      annotations:
+        grafana_folder: "Cilium"
+
+# cilium-agent metrics on :9962/metrics — required for Cilium dashboards.
+prometheus:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    trustCRDsExist: true
+  metricsService: true
+dashboards:
+  enabled: true
+  namespace: monitoring
+  annotations:
+    grafana_folder: "Cilium"
+
+operator:
+  prometheus:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+  dashboards:
+    enabled: true
+    namespace: monitoring
+    annotations:
+      grafana_folder: "Cilium"
