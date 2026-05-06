@@ -42,6 +42,8 @@
         value_type: raw
       - value: "ipv4NativeRoutingCIDR={{ cluster_cidr.ipv4 }}"
         value_type: string
+      - value: "ipv6NativeRoutingCIDR={{ cluster_cidr.ipv6 }}"
+        value_type: string
       - value: "extraConfig.ipv6-mcast-device={{ primary_network_interface }}"
         value_type: string
 
