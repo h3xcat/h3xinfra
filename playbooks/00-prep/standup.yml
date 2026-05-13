@@ -185,11 +185,20 @@
         path: /etc/default/grub
       register: grub_exists
 
-    - name: Make huge pages persistent across reboots (GRUB systems)
+    # Kernel cmdline (GRUB systems, i.e. x86 nodes):
+    #   hugepages=1024              - pre-allocate 1024 * 2 MiB pages.
+    #   intel_idle.max_cstate=1     - cap intel_idle to C1.
+    #   processor.max_cstate=1      - same cap via the ACPI path, in case the
+    #                                 intel_idle driver is not engaged.
+    # The C-state caps mitigate silent kernel freezes seen on some Intel
+    # consumer SoCs (e.g. Alder Lake-N mini-PCs) where the CPU never
+    # successfully wakes from a deep idle state. Cost: marginal extra power
+    # draw at idle; on AMD or non-Intel x86 the intel_idle param is ignored.
+    - name: Set kernel cmdline (GRUB systems)
       lineinfile:
         path: /etc/default/grub
         regexp: '^GRUB_CMDLINE_LINUX='
-        line: 'GRUB_CMDLINE_LINUX="hugepages=1024"'
+        line: 'GRUB_CMDLINE_LINUX="hugepages=1024 intel_idle.max_cstate=1 processor.max_cstate=1"'
         backup: yes
       register: grub_updated
       when: grub_exists.stat.exists
