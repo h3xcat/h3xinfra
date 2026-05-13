@@ -59,6 +59,12 @@
         # duplicate set or a server-side apply conflict will occur.
         skip_crds: true
         values:
+          # HA: 2 controller replicas so a single-node loss does not
+          # take Gateway-API reconciliation offline. The data plane
+          # (Envoy proxy pods rendered per Gateway) is sized separately
+          # via EnvoyProxy CRs.
+          deployment:
+            replicas: 2
           config:
             envoyGateway:
               logging:

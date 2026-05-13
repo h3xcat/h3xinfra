@@ -32,6 +32,22 @@
         values:
           crds:
             enabled: true
+          # HA: 2 replicas per component + PDB so a single-node loss
+          # cannot drop the cert-manager control plane.
+          replicaCount: 2
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+          webhook:
+            replicaCount: 2
+            podDisruptionBudget:
+              enabled: true
+              minAvailable: 1
+          cainjector:
+            replicaCount: 2
+            podDisruptionBudget:
+              enabled: true
+              minAvailable: 1
         state: present
         wait: true
         timeout: "120s"
