@@ -1,0 +1,19 @@
+{{- if gt (int .Values.instances) 1 }}
+---
+# Keep at least one Keycloak pod available during voluntary disruptions
+# (drain, etc.). The Keycloak Operator does not render a PDB itself, so
+# we add one matching the labels it puts on each pod.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "h3xinfra-keycloak-main.fullname" . }}
+  labels:
+    {{- include "h3xinfra-keycloak-main.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: keycloak
+      app.kubernetes.io/instance: {{ include "h3xinfra-keycloak-main.fullname" . }}
+      app.kubernetes.io/managed-by: keycloak-operator
+{{- end }}

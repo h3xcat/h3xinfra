@@ -14,7 +14,7 @@
   tasks:
     - name: Check for existing Terraform state
       ansible.builtin.stat:
-        path: "{{ terraform_dir }}/terraform.tfstate"
+        path: /h3xinfra/state/keycloak/terraform.tfstate
       register: tfstate_file
 
     - name: Render Terraform variables file (for destroy)
@@ -44,7 +44,8 @@
       failed_when: false
 
 # -----------------------------------------------------------------------------
-# Phase 2: Remove the Helm releases and namespace.
+# Phase 2: Remove the Helm releases (Keycloak CR + CNPG Cluster), the
+# Keycloak Operator, and the namespace.
 # -----------------------------------------------------------------------------
 - name: Remove Keycloak via Helm
   hosts: k8s
@@ -65,9 +66,13 @@
         release_namespace: "{{ keycloak.namespace }}"
         state: absent
         wait: true
-        timeout: "120s"
+        timeout: "300s"
 
-    - name: Delete leftover PVCs (StatefulSet PVCs are not GC'd with the release)
+    # CNPG provisions one PVC per instance and does not delete them when
+    # the Cluster CR goes away (data-protection default). The Helm
+    # uninstall above removes the Cluster CR; we follow with an explicit
+    # PVC sweep before namespace deletion.
+    - name: Delete leftover CNPG PVCs
       kubernetes.core.k8s:
         api_version: v1
         kind: PersistentVolumeClaim
@@ -76,8 +81,21 @@
         state: absent
         wait: true
         wait_timeout: 120
+      loop: "{{ range(1, (keycloak.postgresql.instances | default(2)) + 1) | map('regex_replace', '^(.+)$', keycloak.release_name_prefix + '-pre-postgres-\\1') | list }}"
+      failed_when: false
+
+    - name: Remove Keycloak Operator manifests
+      ansible.builtin.command:
+        cmd: >-
+          kubectl delete -n {{ keycloak.namespace }} --ignore-not-found
+          -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/{{ chart_versions.keycloak }}/kubernetes/{{ item }}
+      register: kc_operator_delete
+      changed_when: kc_operator_delete.stdout_lines | select('search', ' deleted$') | list | length > 0
       loop:
-      - "data-{{ keycloak.release_name_prefix }}-pre-postgres-0"
+      # Reverse order from standup: operator deployment first, then CRDs.
+      - kubernetes.yml
+      - keycloakrealmimports.k8s.keycloak.org-v1.yml
+      - keycloaks.k8s.keycloak.org-v1.yml
 
     - name: Remove Keycloak namespace
       kubernetes.core.k8s:

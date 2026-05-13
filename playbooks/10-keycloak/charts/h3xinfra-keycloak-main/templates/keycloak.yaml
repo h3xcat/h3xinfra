@@ -1,0 +1,49 @@
+---
+# Keycloak instance managed by the Keycloak Operator
+# (k8s.keycloak.org/v2alpha1). The operator owns the StatefulSet, the
+# Service, anti-affinity, the PDB, JGroups KUBE_PING discovery for
+# multi-replica Infinispan cache, rolling upgrades, etc.
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: {{ include "h3xinfra-keycloak-main.fullname" . }}
+  labels:
+    {{- include "h3xinfra-keycloak-main.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.instances | default 2 }}
+  image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
+  startOptimized: false
+  hostname:
+    # Public hostname Keycloak advertises. TLS is terminated at the
+    # Envoy Gateway, so Keycloak speaks plain HTTP internally and the
+    # CR points at the public https URL only for issuer / redirect URI
+    # building.
+    hostname: {{ required "hostname is required" .Values.hostname | quote }}
+    strict: false
+  http:
+    httpEnabled: true
+  proxy:
+    # Honor X-Forwarded-* set by the Envoy Gateway listener.
+    headers: xforwarded
+  bootstrapAdmin:
+    user:
+      secret: {{ required "bootstrapAdminSecretName is required" .Values.bootstrapAdminSecretName | quote }}
+  db:
+    vendor: postgres
+    host: {{ required "database.host is required" .Values.database.host | quote }}
+    port: {{ .Values.database.port | default 5432 }}
+    database: {{ .Values.database.database | quote }}
+    usernameSecret:
+      name: {{ required "database.credentialsSecretName is required" .Values.database.credentialsSecretName | quote }}
+      key: username
+    passwordSecret:
+      name: {{ .Values.database.credentialsSecretName | quote }}
+      key: password
+  {{- with .Values.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.additionalOptions }}
+  additionalOptions:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}

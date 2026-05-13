@@ -1,0 +1,34 @@
+{{- if .Values.postgres.enabled }}
+---
+# CloudNativePG-managed Postgres cluster backing Keycloak.
+# Replaces the previous single-pod StatefulSet so a node failure does
+# not take the auth database offline.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "h3xinfra-keycloak-pre.postgresName" . }}
+  labels:
+    {{- include "h3xinfra-keycloak-pre.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  instances: {{ .Values.postgres.instances | default 2 }}
+  imageName: {{ printf "ghcr.io/cloudnative-pg/postgresql:%s" .Values.postgres.imageTag | quote }}
+  # Spread replicas across nodes. `preferred` so the cluster can still
+  # schedule when distinct-node placement is not possible (e.g. drain).
+  affinity:
+    podAntiAffinityType: preferred
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: {{ .Values.postgres.database | quote }}
+      owner: {{ .Values.postgres.username | quote }}
+      secret:
+        name: {{ include "h3xinfra-keycloak-pre.postgresCredentialsSecretName" . }}
+  storage:
+    storageClass: {{ .Values.postgres.persistence.storageClass | quote }}
+    size: {{ .Values.postgres.persistence.size | quote }}
+  {{- with .Values.postgres.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

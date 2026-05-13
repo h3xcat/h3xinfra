@@ -3,25 +3,23 @@
 nameOverride: ""
 fullnameOverride: ""
 
-# Secret holding bootstrap admin + DB credentials. Consumed by the
-# codecentric/keycloakx chart (admin via env, DB via existingSecret) and
-# the bundled standalone Postgres StatefulSet below.
+# Bootstrap admin for Keycloak's master realm. The Keycloak Operator only
+# uses this on first start (no admin row in DB) -- subsequent management
+# goes through Terraform / the admin console.
 bootstrapSecret:
   enabled: true
   adminUsername: "admin"
   adminPassword: ""
-  databasePassword: ""
 
-# Standalone PostgreSQL using the official `postgres` image. Replaces the
-# Bitnami subchart so we don't depend on any Bitnami / bitnamilegacy images.
+# CloudNativePG-managed Postgres cluster backing Keycloak.
 postgres:
   enabled: true
-  image:
-    repository: "postgres"
-    tag: "18.3-alpine"
-    pullPolicy: IfNotPresent
+  # Used as image: ghcr.io/cloudnative-pg/postgresql:<imageTag>
+  imageTag: "18.3"
+  instances: 2
   database: "keycloak"
   username: "keycloak"
+  password: ""
   persistence:
     storageClass: "longhorn"
     size: "8Gi"
@@ -33,17 +31,16 @@ postgres:
       cpu: "1"
       memory: "1Gi"
 
-# Gateway API HTTPRoutes rendered separately so we can IP-restrict the admin
-# console while keeping the realm login paths publicly reachable.
+# Gateway API HTTPRoute. Backend is the Service the Keycloak Operator
+# renders for the Keycloak CR -- by default that is `<keycloak-cr>-service`
+# on port 8080 (we terminate TLS at Envoy Gateway, so http is enabled in
+# the CR).
 ingress:
   enabled: true
   host: "auth.app"
   gateway:
     name: ""
     namespace: ""
-  # Name of the Kubernetes service for Keycloak (usually <fullname>).
   serviceName: "keycloak"
-  servicePort: 80
-
-  # CIDR list applied to the admin console HTTPRoute only.
+  servicePort: 8080
   trustedSetupIPs: []

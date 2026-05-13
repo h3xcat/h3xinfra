@@ -5,29 +5,30 @@ fullnameOverride: ""
 image:
   repository: "quay.io/keycloak/keycloak"
   tag: "26.6.1"
-  pullPolicy: IfNotPresent
 
-replicas: 1
+# Replica count for the Keycloak StatefulSet the operator renders.
+# 2+ enables Infinispan distributed cache for session replication
+# across nodes (the operator wires JGroups KUBE_PING automatically).
+instances: 2
 
-# Hostname Keycloak advertises (must match the public ingress in pre-chart)
+# Public hostname Keycloak advertises (must match the HTTPRoute hostname
+# in the pre-chart).
 hostname: ""
 
-# Reference to the bootstrap secret (rendered by the pre-chart) holding:
-#   admin-user, admin-password, database-password
-bootstrapSecretName: ""
+# Secret rendered by the pre-chart holding `username` / `password` for
+# the master-realm bootstrap admin.
+bootstrapAdminSecretName: ""
 
-# External Postgres connection (Service rendered by the pre-chart)
+# External Postgres connection -- typically the `<cluster>-rw` Service
+# of the CNPG Cluster created in the pre-chart.
 database:
-  hostname: ""
+  host: ""
   port: 5432
   database: "keycloak"
-  username: "keycloak"
-
-service:
-  type: ClusterIP
-  port: 80
+  credentialsSecretName: ""
 
 resources: {}
 
-# Extra environment variables (raw Kubernetes env list)
-extraEnv: []
+# Extra Keycloak --<option>=<value> args. List of {name, value} or
+# {name, secret: {name, key}} dicts; passed verbatim into the CR.
+additionalOptions: []

@@ -49,14 +49,24 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Name of the bootstrap secret (referenced by the main Keycloak chart).
+Name of the Keycloak bootstrap admin secret (Keycloak CR
+spec.bootstrapAdmin.user.secret).
 */}}
-{{- define "h3xinfra-keycloak-pre.bootstrapSecretName" -}}
-{{- printf "%s-bootstrap" (include "h3xinfra-keycloak-pre.fullname" .) }}
+{{- define "h3xinfra-keycloak-pre.bootstrapAdminSecretName" -}}
+{{- printf "%s-bootstrap-admin" (include "h3xinfra-keycloak-pre.fullname" .) }}
 {{- end }}
 
 {{/*
-Name of the Postgres service / StatefulSet (used as DB hostname by Keycloak).
+Name of the Postgres credentials secret (CNPG initdb.secret + Keycloak CR
+db.usernameSecret / db.passwordSecret).
+*/}}
+{{- define "h3xinfra-keycloak-pre.postgresCredentialsSecretName" -}}
+{{- printf "%s-postgres-credentials" (include "h3xinfra-keycloak-pre.fullname" .) }}
+{{- end }}
+
+{{/*
+Name of the CNPG Cluster. The read/write service is `<name>-rw` and the
+read-only service is `<name>-ro`.
 */}}
 {{- define "h3xinfra-keycloak-pre.postgresName" -}}
 {{- printf "%s-postgres" (include "h3xinfra-keycloak-pre.fullname" .) }}

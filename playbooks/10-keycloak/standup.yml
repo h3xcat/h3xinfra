@@ -1,7 +1,14 @@
 ---
 - import_playbook: ../99-utils/kube-connect.yml
 
-- name: Deploy Keycloak via Helm
+# -----------------------------------------------------------------------------
+# Phase 1: Install the Keycloak Operator + deploy a CNPG-backed Keycloak.
+#
+# The operator owns the StatefulSet, the Service, anti-affinity, the PDB and
+# JGroups KUBE_PING discovery for multi-instance Infinispan cache. Postgres
+# is a CloudNativePG `Cluster` so a node failure does not take auth down.
+# -----------------------------------------------------------------------------
+- name: Deploy Keycloak (Operator + CNPG)
   hosts: k8s
   gather_facts: false
 
@@ -14,6 +21,44 @@
         state: present
         wait: true
 
+    # The Keycloak Operator is distributed as raw kubernetes manifests
+    # (no upstream Helm chart). Pin to chart_versions.keycloak so the
+    # operator and the keycloak image stay in lockstep.
+    - name: Apply Keycloak Operator manifests
+      ansible.builtin.command:
+        cmd: >-
+          kubectl apply -n {{ keycloak.namespace }}
+          -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/{{ chart_versions.keycloak }}/kubernetes/{{ item }}
+      register: kc_operator_apply
+      changed_when: >-
+        kc_operator_apply.stdout_lines
+        | reject('search', ' unchanged$')
+        | select('search', ' (created|configured|serverside-applied)$')
+        | list | length > 0
+      loop:
+      - keycloaks.k8s.keycloak.org-v1.yml
+      - keycloakrealmimports.k8s.keycloak.org-v1.yml
+      - kubernetes.yml
+
+    - name: Wait for Keycloak Operator deployment to be Available
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        namespace: "{{ keycloak.namespace }}"
+        name: keycloak-operator
+      register: kc_operator_deploy
+      until: >-
+        kc_operator_deploy.resources | length > 0
+        and (kc_operator_deploy.resources[0].status.availableReplicas | default(0)) >= 1
+      retries: 30
+      delay: 5
+
+    # -------------------------------------------------------------------------
+    # pre-chart: bootstrap secrets, CNPG Postgres Cluster, HTTPRoute,
+    # SecurityPolicy. Rendered before the Keycloak CR so the secrets the
+    # CR references (admin + db credentials) and the database itself
+    # exist by the time the operator starts reconciling.
+    # -------------------------------------------------------------------------
     - name: Deploy Keycloak pre-configuration via Helm
       kubernetes.core.helm:
         name: "{{ keycloak.release_name_prefix }}-pre"
@@ -26,14 +71,13 @@
             enabled: true
             adminUsername: "{{ keycloak.admin.username }}"
             adminPassword: "{{ keycloak.admin.password }}"
-            databasePassword: "{{ keycloak.db_password }}"
           postgres:
             enabled: true
-            image:
-              repository: "postgres"
-              tag: "{{ chart_versions.keycloak_postgres }}"
+            imageTag: "{{ image_versions.postgresql }}"
+            instances: "{{ keycloak.postgresql.instances | default(2) }}"
             database: "{{ keycloak.postgresql.auth.database | default('keycloak') }}"
             username: "{{ keycloak.postgresql.auth.username | default('keycloak') }}"
+            password: "{{ keycloak.db_password }}"
             persistence:
               storageClass: "{{ keycloak.postgresql.persistence.storageClass | default('longhorn') }}"
               size: "{{ keycloak.postgresql.persistence.size | default('8Gi') }}"
@@ -43,16 +87,34 @@
             gateway:
               name: "{{ gateway.release_name_prefix }}-pre-shared"
               namespace: "{{ gateway.namespace }}"
-            # Service rendered by the main chart (this playbook).
-            serviceName: "{{ keycloak.release_name_prefix }}-main"
-            servicePort: 80
+            # Service rendered by the Keycloak Operator from the Keycloak CR.
+            # Naming convention: `<keycloak-cr-name>-service`.
+            serviceName: "{{ keycloak.release_name_prefix }}-main-service"
+            servicePort: 8080
             trustedSetupIPs: "{{ keycloak.ingress.trusted_setup_ips | default([]) }}"
         state: present
         wait: true
         timeout: "300s"
       no_log: true
 
-    - name: Deploy Keycloak Helm chart
+    - name: Wait for Keycloak Postgres CNPG Cluster to be healthy
+      kubernetes.core.k8s_info:
+        api_version: postgresql.cnpg.io/v1
+        kind: Cluster
+        namespace: "{{ keycloak.namespace }}"
+        name: "{{ keycloak.release_name_prefix }}-pre-postgres"
+      register: kc_pg_cluster
+      until: >-
+        kc_pg_cluster.resources | length > 0
+        and (kc_pg_cluster.resources[0].status.phase | default('')) == 'Cluster in healthy state'
+      retries: 120
+      delay: 5
+
+    # -------------------------------------------------------------------------
+    # main-chart: the Keycloak CR. The operator reconciles it into a
+    # StatefulSet, Service, PDB, and JGroups-clustered Infinispan cache.
+    # -------------------------------------------------------------------------
+    - name: Deploy Keycloak CR via Helm
       kubernetes.core.helm:
         name: "{{ keycloak.release_name_prefix }}-main"
         chart_ref: "{{ playbook_dir }}/charts/h3xinfra-keycloak-main"
@@ -60,29 +122,36 @@
         create_namespace: false
         values:
           fullnameOverride: "{{ keycloak.release_name_prefix }}-main"
-
           image:
             repository: "quay.io/keycloak/keycloak"
             tag: "{{ chart_versions.keycloak }}"
-
-          replicas: "{{ keycloak.replicas | default(1) }}"
-          resources: "{{ keycloak.resources | default({}) }}"
-
+          instances: "{{ keycloak.replicas | default(2) }}"
           hostname: "{{ keycloak.ingress.hostname }}"
-          bootstrapSecretName: "{{ keycloak.release_name_prefix }}-pre-bootstrap"
-
+          bootstrapAdminSecretName: "{{ keycloak.release_name_prefix }}-pre-bootstrap-admin"
           database:
-            hostname: "{{ keycloak.release_name_prefix }}-pre-postgres"
+            host: "{{ keycloak.release_name_prefix }}-pre-postgres-rw"
             port: 5432
             database: "{{ keycloak.postgresql.auth.database | default('keycloak') }}"
-            username: "{{ keycloak.postgresql.auth.username | default('keycloak') }}"
-
-          service:
-            type: ClusterIP
-            port: 80
+            credentialsSecretName: "{{ keycloak.release_name_prefix }}-pre-postgres-credentials"
+          resources: "{{ keycloak.resources | default({}) }}"
         state: present
         wait: true
-        timeout: "600s"
+        timeout: "300s"
+
+    - name: Wait for Keycloak instance to reach Ready condition
+      kubernetes.core.k8s_info:
+        api_version: k8s.keycloak.org/v2alpha1
+        kind: Keycloak
+        namespace: "{{ keycloak.namespace }}"
+        name: "{{ keycloak.release_name_prefix }}-main"
+      register: kc_instance
+      until: >-
+        kc_instance.resources | length > 0
+        and (kc_instance.resources[0].status.conditions | default([])
+             | selectattr('type', 'eq', 'Ready')
+             | selectattr('status', 'eq', 'True') | list | length) > 0
+      retries: 90
+      delay: 10
 
     - name: Wait for Keycloak admin endpoint to answer
       ansible.builtin.uri:
@@ -96,36 +165,11 @@
       delay: 10
       until: keycloak_ready.status == 200
 
-    # -------------------------------------------------------------------------
-    # Promote bootstrap admin to a permanent account.
-    #
-    # `kc.sh bootstrap-admin user` (and the env-var bootstrap path) tags the
-    # created user with the `is_temporary_admin=true` attribute, which makes
-    # the admin console show a "temporary admin" warning banner. Keycloak's
-    # user profile PUT ignores writes to attributes outside the realm's
-    # user-profile schema, so we strip the marker straight from the DB.
-    # Idempotent — DELETE is a no-op if the row is already gone.
-    # -------------------------------------------------------------------------
-    - name: Strip is_temporary_admin marker from bootstrap admin
-      kubernetes.core.k8s_exec:
-        namespace: "{{ keycloak.namespace }}"
-        pod: "{{ keycloak.release_name_prefix }}-pre-postgres-0"
-        command: >-
-          psql -U {{ keycloak.postgresql.auth.username | default('keycloak') }}
-               -d {{ keycloak.postgresql.auth.database | default('keycloak') }}
-               -c "DELETE FROM user_attribute
-                    WHERE name='is_temporary_admin'
-                      AND user_id=(SELECT id FROM user_entity
-                                    WHERE username='{{ keycloak.admin.username }}'
-                                      AND realm_id=(SELECT id FROM realm WHERE name='master'));"
-      register: kc_strip_temp
-      changed_when: "'DELETE 1' in (kc_strip_temp.stdout | default(''))"
-
 # -----------------------------------------------------------------------------
 # Phase 2: Configure realm + clients via Terraform.
 #
 # The Terraform state is kept locally under the terraform/ directory and
-# committed as `terraform.tfstate.d/...` — see terraform/.gitignore. For a
+# committed as `terraform.tfstate.d/...` -- see terraform/.gitignore. For a
 # shared/remote backend, drop a `backend.tf` under terraform/ and `terraform
 # init -reconfigure` will migrate automatically on the next run.
 # -----------------------------------------------------------------------------
