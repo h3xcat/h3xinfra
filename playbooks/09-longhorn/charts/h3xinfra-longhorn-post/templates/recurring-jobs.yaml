@@ -1,0 +1,32 @@
+{{- if .Values.recurringJobs.enabled }}
+{{- range .Values.recurringJobs.jobs }}
+---
+# Longhorn RecurringJob: scheduled snapshot or backup task.
+#
+# Volumes opt in by carrying the label
+#   `recurring-job-group.longhorn.io/<group>=enabled`
+# (the upstream longhorn chart applies `recurring-job-group.longhorn.io/default=enabled`
+# to every PVC it provisions via the `longhorn` StorageClass, so jobs
+# targeting the `default` group attach automatically to all such PVCs).
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: {{ required "recurringJobs.jobs[].name is required" .name | quote }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-longhorn-post.labels" $ | nindent 4 }}
+spec:
+  task: {{ required "recurringJobs.jobs[].task is required (snapshot|backup|filesystem-trim|...)" .task | quote }}
+  cron: {{ required "recurringJobs.jobs[].cron is required" .cron | quote }}
+  retain: {{ required "recurringJobs.jobs[].retain is required" .retain }}
+  concurrency: {{ .concurrency | default 1 }}
+  {{- with .groups }}
+  groups:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}

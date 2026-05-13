@@ -30,3 +30,28 @@ longhornIngress:
       - profile
     secretRef:
       name: ""
+
+# Longhorn RecurringJob CRs (scheduled snapshots / backups). Set
+# `enabled: true` and provide one or more `jobs` to render.
+#
+# Volumes opt in via the `recurring-job-group.longhorn.io/<group>=enabled`
+# label; the upstream longhorn chart applies the `default` group label
+# to every PVC provisioned by the `longhorn` StorageClass, so jobs
+# targeting `groups: ["default"]` apply to the whole fleet automatically.
+recurringJobs:
+  enabled: false
+  jobs: []
+  # Example:
+  # jobs:
+  #   - name: daily-snapshot
+  #     task: snapshot              # snapshot|backup|filesystem-trim|...
+  #     cron: "0 3 * * *"           # 3am daily
+  #     retain: 14
+  #     concurrency: 2
+  #     groups: ["default"]
+  #   - name: weekly-backup
+  #     task: backup
+  #     cron: "0 4 * * 0"           # 4am Sundays
+  #     retain: 8
+  #     concurrency: 1
+  #     groups: ["default"]
