@@ -78,13 +78,56 @@
     # exists for systemd to pet. Combined with kernel.{soft,hard}lockup_panic
     # and the systemd RuntimeWatchdogSec configured below, a wedged kernel or
     # frozen PID 1 will trigger a hard reset rather than an indefinite hang.
+    #
+    # iTCO_wdt is blacklisted by Ubuntu in /lib/modprobe.d/blacklist_linux_<ver>.conf
+    # (shipped by linux-modules-<ver>), so systemd-modules-load refuses to
+    # touch it. We load it now via the Ansible modprobe module (which calls
+    # the `modprobe` binary -- by exact module name it ignores the blacklist)
+    # and install a small systemd oneshot unit so the same `modprobe` call
+    # re-runs on every boot, bypassing the blacklist at startup too.
     - name: Load hardware watchdog driver (Intel chipsets, x86)
       modprobe:
         name: iTCO_wdt
         state: present
-        persistent: present
       when: ansible_architecture == "x86_64"
       failed_when: false
+
+    - name: Remove stale modules-load.d entry for iTCO_wdt (blacklist makes it a no-op)
+      file:
+        path: /etc/modules-load.d/iTCO_wdt.conf
+        state: absent
+      when: ansible_architecture == "x86_64"
+
+    - name: Install systemd unit to force-load iTCO_wdt at boot (x86)
+      copy:
+        dest: /etc/systemd/system/load-itco-wdt.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Load iTCO hardware watchdog (bypass Ubuntu kernel blacklist)
+          DefaultDependencies=no
+          After=systemd-modules-load.service
+          Before=sysinit.target
+          ConditionPathExists=!/dev/watchdog0
+
+          [Service]
+          Type=oneshot
+          ExecStart=/sbin/modprobe iTCO_wdt
+          RemainAfterExit=yes
+
+          [Install]
+          WantedBy=sysinit.target
+      register: load_itco_unit
+      when: ansible_architecture == "x86_64"
+
+    - name: Enable iTCO_wdt loader systemd unit (x86)
+      systemd:
+        name: load-itco-wdt.service
+        enabled: true
+        daemon_reload: "{{ load_itco_unit.changed | default(false) }}"
+      when: ansible_architecture == "x86_64"
 
     - name: Load hardware watchdog driver (Raspberry Pi, ARM)
       modprobe:
