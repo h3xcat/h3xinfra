@@ -13,7 +13,7 @@ chart_versions:
   metallb: "0.15.3"
   # Envoy Gateway controller (replaces ingress-nginx).
   # renovate: datasource=docker depName=envoyproxy/gateway-helm registryUrl=https://docker.io versioning=helm
-  envoy_gateway: "1.7.3"
+  envoy_gateway: "1.8.0"
   # Upstream Gateway API CRDs (standard channel).
   # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
   gateway_api: "v1.5.1"
