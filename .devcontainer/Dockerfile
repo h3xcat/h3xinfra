@@ -30,7 +30,7 @@ RUN curl -LO "https://dl.k8s.io/release/v1.36.0/bin/linux/amd64/kubectl" \
     && mv kubectl /usr/local/bin/kubectl
 
 # Install helm
-RUN curl https://raw.githubusercontent.com/helm/helm/v4.1.4/scripts/get-helm-3 | bash
+RUN curl https://raw.githubusercontent.com/helm/helm/v4.2.0/scripts/get-helm-3 | bash
 
 
 USER ${USERNAME}
