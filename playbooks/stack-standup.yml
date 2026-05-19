@@ -29,6 +29,11 @@
 
 - import_playbook: 09-longhorn/standup.yml
 
+# Rolling reboot orchestration. Deploys kured (Kubernetes Reboot Daemon)
+# which watches /var/run/reboot-required and drains+reboots one node at a
+# time when set. Depends on Longhorn's nodeDrainPolicy from 09-longhorn.
+- import_playbook: 10-kured/standup.yml
+
 - import_playbook: 10-mailu/standup.yml
 
 # Display cluster status

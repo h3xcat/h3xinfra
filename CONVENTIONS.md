@@ -47,6 +47,7 @@ h3xinfra/
 │   ├── 07-gateway/        # Envoy Gateway (Gateway API) controller layer
 │   ├── 08-smb/            # SMB CSI driver layer
 │   ├── 09-longhorn/       # Storage system layer
+│   ├── 10-kured/          # Rolling reboot daemon (kured)
 │   ├── 10-mailu/          # Email server layer
 │   ├── 10-keycloak/       # Identity provider layer (Operator + CNPG)
 │   └── 99-utils/          # Utility playbooks
@@ -90,6 +91,7 @@ Layers are numbered to enforce deployment order and dependency relationships:
 - **09-longhorn**: Longhorn distributed block storage
 
 #### Platform Services (10-19)
+- **10-kured**: Kubernetes Reboot Daemon — rolling node reboots when `/var/run/reboot-required` is set (unattended-upgrades kernel updates, etc.)
 - **10-mailu**: Self-hosted email server (Mailu)
 - **10-keycloak**: Identity provider (Keycloak Operator + CloudNativePG, Terraform-managed realm/clients)
 

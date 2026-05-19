@@ -1,0 +1,101 @@
+---
+# Kubernetes Reboot Daemon (kured) — orchestrates rolling reboots when a
+# node signals it needs one via /var/run/reboot-required (set by Ubuntu's
+# unattended-upgrades after a kernel/security update). Uses a cluster-wide
+# lock to ensure only one node reboots at a time.
+#
+# Drain compatibility with Longhorn relies on the `nodeDrainPolicy` setting
+# applied in 09-longhorn (block-if-contains-last-replica). With 3-replica
+# volumes, Longhorn dynamically lifts the instance-manager PDB so kured's
+# drain succeeds.
+#
+# CNPG primaries auto-failover when their node is cordoned, so the
+# CNPG primary PDBs do not block drain in practice — the primary moves
+# off the cordoned node, becomes the replica, and the new primary's PDB
+# now blocks future drains of *its* node instead.
+#
+# Single-replica apps (Plex, *arr stack, qbittorrent, sabnzbd, etc.) see
+# brief downtime per node cycle. priorityClassName on background apps
+# (h3xinfra-app-background) ensures they evict first under pressure.
+
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Deploy kured via Helm
+  hosts: k8s
+  gather_facts: false
+
+  tasks:
+    - name: Add kured Helm repository
+      kubernetes.core.helm_repository:
+        name: kured
+        repo_url: https://kubereboot.github.io/charts
+        state: present
+        force_update: true
+      changed_when: false
+
+    - name: Create kured namespace
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ kured.namespace }}"
+        state: present
+        wait: true
+
+    - name: Deploy kured via Helm
+      kubernetes.core.helm:
+        name: "{{ kured.release_name_prefix }}-main"
+        chart_ref: "kured/kured"
+        chart_version: "{{ chart_versions.kured }}"
+        namespace: "{{ kured.namespace }}"
+        create_namespace: false
+        values:
+          fullnameOverride: "{{ kured.release_name_prefix }}-main"
+          image:
+            pullPolicy: IfNotPresent
+          # kured itself is platform-critical: if it can't run, no automatic
+          # reboots happen for security updates. Pin to the higher priority
+          # tier so it doesn't get evicted by random app pressure.
+          priorityClassName: h3xinfra-platform-critical
+          configuration:
+            # Default Ubuntu/Debian sentinel. unattended-upgrades creates it
+            # after a kernel/security update; kured drains+reboots and the
+            # post-reboot apt cleanup removes it.
+            rebootSentinel: "/var/run/reboot-required"
+            useRebootSentinelHostPath: true
+            # One node at a time — never reboot two nodes simultaneously.
+            concurrency: 1
+            # Check for sentinel hourly.
+            period: "{{ kured.period | default('1h') }}"
+            # 3 min for pods to terminate cleanly. *arr / Plex / qbittorrent
+            # have shutdown grace periods well under this.
+            drainGracePeriod: "{{ kured.drain_grace_period | default('180') }}"
+            # 1 min wait between drain success and reboot command — lets
+            # Longhorn observe the cordon + replica migration finish.
+            rebootDelay: "{{ kured.reboot_delay | default('60s') }}"
+            # If a reboot stalls (e.g. node never comes back Ready), release
+            # the lock after 30 min so subsequent nodes can still be rebooted.
+            lockTtl: "{{ kured.lock_ttl | default('30m') }}"
+            # Annotate nodes with reboot status — useful for monitoring.
+            annotateNodes: true
+            # If drain fails or times out, do NOT force the reboot. Better
+            # for a stuck node to stay drained-but-up than to risk data loss
+            # by killing pods mid-Longhorn-rebuild.
+            forceReboot: false
+            # Optional: limit reboot times to a maintenance window. Empty
+            # values disable the window (24/7 eligible).
+            startTime: "{{ kured.start_time | default('') }}"
+            endTime: "{{ kured.end_time | default('') }}"
+            timeZone: "{{ kured.time_zone | default('') }}"
+          # Resource footprint: kured does nothing 99% of the time.
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          # Optional Slack/webhook notification (configured via inventory).
+          extraEnvVars: "{{ kured.extra_env_vars | default([]) }}"
+        state: present
+        wait: true
+        timeout: "180s"

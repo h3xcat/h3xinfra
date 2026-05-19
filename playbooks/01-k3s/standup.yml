@@ -25,5 +25,38 @@
         owner: root
         group: root
 
+    # Reserve resources for the OS + kubelet so a runaway pod can't starve
+    # the node into NotReady. Reservations are subtracted from Allocatable,
+    # leaving the kubelet itself with guaranteed headroom. The evictionHard
+    # thresholds give the kubelet a margin to start evicting pods before
+    # the OOM killer wakes up.
+    #
+    # Sizing rationale (8 worker-capable nodes, mix of 8–16 GiB):
+    #   - 512Mi kube-reserved + 512Mi system-reserved = 1 GiB total reserved
+    #   - On 8 GiB nodes this is ~12.5% — large enough for the kubelet,
+    #     containerd, journald, and a buffer for log shippers.
+    #   - On 16 GiB nodes the impact is ~6%, negligible.
+    - name: Create kubelet configuration file for resource reservations
+      ansible.builtin.copy:
+        content: |
+          apiVersion: kubelet.config.k8s.io/v1beta1
+          kind: KubeletConfiguration
+          kubeReserved:
+            cpu: "100m"
+            memory: "512Mi"
+            ephemeral-storage: "1Gi"
+          systemReserved:
+            cpu: "100m"
+            memory: "512Mi"
+            ephemeral-storage: "1Gi"
+          evictionHard:
+            memory.available: "200Mi"
+            nodefs.available: "10%"
+            imagefs.available: "10%"
+        dest: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-resource-reservations.yaml
+        mode: '0644'
+        owner: root
+        group: root
+
 # Import the main k3s orchestration playbook
 - import_playbook: k3s.orchestration.site

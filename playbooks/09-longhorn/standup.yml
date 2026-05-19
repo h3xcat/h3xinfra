@@ -95,6 +95,13 @@
             # Auto-failover stuck pods (StatefulSet/Deployment) when their node goes down,
             # so RWO volumes can be reattached on a healthy node without manual intervention.
             nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
+            # Drain compatibility for kured + manual kubectl drain. With 3-replica
+            # volumes the policy only blocks drain if this node holds the LAST
+            # healthy replica of any volume — which never happens during normal
+            # rolling reboots because replicas live across at least 2 other nodes.
+            # When safe, Longhorn dynamically lifts the instance-manager PDB so
+            # eviction proceeds.
+            nodeDrainPolicy: block-if-contains-last-replica
 
             # Instance Manager CPU (V1 Data Engine)
             guaranteedInstanceManagerCpu: 15

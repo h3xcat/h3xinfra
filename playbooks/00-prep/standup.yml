@@ -61,6 +61,39 @@
         regexp: '^([^#].*\bswap\b.*)'
         replace: '# \1 # commented by Ansible'
 
+    # snapd burns ~50–100 MB resident plus periodic CPU/IO for auto-refresh
+    # checks. Nothing in the h3xinfra stack uses snaps; disabling it recovers
+    # memory on the 8 GiB Pi nodes and removes a class of background noise
+    # that complicates kernel-freeze investigations.
+    - name: Disable snapd
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - snapd.socket
+        - snapd.service
+      failed_when: false
+
+    # Cap journald disk usage so journals don't slowly fill the rootfs over
+    # months. 500 MiB is plenty for ~weeks of logs at typical homelab
+    # verbosity; rotation handles the rest.
+    - name: Cap journald disk usage
+      community.general.ini_file:
+        path: /etc/systemd/journald.conf
+        section: Journal
+        option: SystemMaxUse
+        value: 500M
+        backup: yes
+        no_extra_spaces: yes
+      register: journald_conf_changed
+
+    - name: Restart journald if config changed
+      service:
+        name: systemd-journald
+        state: restarted
+      when: journald_conf_changed.changed
+
     - name: Configure modprobe modules
       modprobe:
         name: "{{ item }}"
@@ -73,6 +106,9 @@
         - vfio_pci
         - uio_pci_generic
         - nvme-tcp
+        # Loaded ahead of the BBR sysctl so net.ipv4.tcp_congestion_control=bbr
+        # below applies on first run without a reboot.
+        - tcp_bbr
 
     # Hardware watchdog: load the right driver per arch so /dev/watchdog0
     # exists for systemd to pet. Combined with kernel.{soft,hard}lockup_panic
@@ -171,6 +207,21 @@
         - { name: kernel.hardlockup_panic, value: "1" }
         - { name: kernel.panic, value: "10" }
         - { name: kernel.panic_on_oops, value: "1" }
+        # Memory + scheduling tuning for k8s nodes. Swap is off, but
+        # vm.swappiness still governs how aggressively the kernel reclaims
+        # anonymous pages to file-backed cache; vm.overcommit_memory=1 is
+        # the k8s convention (avoids fork() failure under legitimate overcommit).
+        - { name: vm.swappiness, value: "10" }
+        - { name: vm.overcommit_memory, value: "1" }
+        # BBR congestion control + larger TCP buffers for sustained
+        # throughput on long-fat-network paths (NNTP via sabnzbd, BitTorrent
+        # peering, Plex remote streaming). tcp_bbr is loaded above.
+        - { name: net.ipv4.tcp_congestion_control, value: "bbr" }
+        - { name: net.core.somaxconn, value: "65535" }
+        - { name: net.ipv4.tcp_max_syn_backlog, value: "8192" }
+        - { name: net.core.netdev_max_backlog, value: "16384" }
+        - { name: net.core.rmem_max, value: "16777216" }
+        - { name: net.core.wmem_max, value: "16777216" }
 
     - name: Enable DNSSEC in systemd-resolved
       lineinfile:
@@ -207,18 +258,24 @@
       command: systemctl daemon-reexec
       when: systemd_watchdog_changed.changed
 
+    # Hugepages: previously pre-allocated 1024 * 2 MiB = 2 GiB per node, but
+    # nothing in the stack requests `hugepages-2Mi` resources, so the memory
+    # was effectively dead-weight (~2 GiB/node, ~16 GiB cluster-wide). We
+    # zero the runtime allocation here and strip `hugepages=N` from the
+    # kernel cmdline below so the change survives reboots. Reintroduce if
+    # a workload (e.g. CNPG with large shared_buffers, DPDK) ever needs them.
     - name: Check current huge page allocation
       shell: cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
       register: hugepage_current
       changed_when: false
 
-    - name: Configure huge pages (2 GiB of 2 MiB pages)
-      shell: echo 1024 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+    - name: Release huge page allocation (runtime)
+      shell: echo 0 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
       register: hugepage_result
       changed_when: true
-      when: hugepage_current.stdout != "1024"
+      when: hugepage_current.stdout != "0"
 
-    - name: Verify huge page allocation
+    - name: Verify huge page allocation is zero
       shell: cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
       register: hugepage_check
       changed_when: false
@@ -229,7 +286,6 @@
       register: grub_exists
 
     # Kernel cmdline (GRUB systems, i.e. x86 nodes):
-    #   hugepages=1024              - pre-allocate 1024 * 2 MiB pages.
     #   intel_idle.max_cstate=1     - cap intel_idle to C1.
     #   processor.max_cstate=1      - same cap via the ACPI path, in case the
     #                                 intel_idle driver is not engaged.
@@ -241,7 +297,7 @@
       lineinfile:
         path: /etc/default/grub
         regexp: '^GRUB_CMDLINE_LINUX='
-        line: 'GRUB_CMDLINE_LINUX="hugepages=1024 intel_idle.max_cstate=1 processor.max_cstate=1"'
+        line: 'GRUB_CMDLINE_LINUX="intel_idle.max_cstate=1 processor.max_cstate=1"'
         backup: yes
       register: grub_updated
       when: grub_exists.stat.exists
@@ -250,25 +306,21 @@
       command: update-grub
       when: grub_updated.changed and grub_exists.stat.exists
 
-    - name: Configure hugepages for Raspberry Pi (boot config)
-      lineinfile:
-        path: /boot/firmware/cmdline.txt
-        regexp: '^((?!.*hugepages=).*)'
-        line: '\1 hugepages=1024'
+    # Strip any legacy `hugepages=N` argument from the Pi kernel cmdline.
+    # cmdline.txt is a single space-separated line; the replace below removes
+    # the token plus any preceding whitespace, leaving the rest intact.
+    - name: Remove hugepages from Raspberry Pi cmdline.txt
+      replace:
+        path: "{{ item }}"
+        regexp: '\s*hugepages=\d+'
+        replace: ''
         backup: no
-        backrefs: yes
+      loop:
+        - /boot/firmware/cmdline.txt
+        - /boot/cmdline.txt
       register: rpi_cmdline_updated
+      failed_when: false
       when: not grub_exists.stat.exists
-
-    - name: Alternative Raspberry Pi hugepages configuration (if cmdline.txt doesn't exist)
-      lineinfile:
-        path: /boot/cmdline.txt
-        regexp: '^((?!.*hugepages=).*)'
-        line: '\1 hugepages=1024'
-        backup: no
-        backrefs: yes
-      register: rpi_cmdline_alt_updated
-      when: not grub_exists.stat.exists and rpi_cmdline_updated is failed
 
     - name: Check if ubuntu-vg volume group exists
       shell: vgs ubuntu-vg --noheadings 2>/dev/null

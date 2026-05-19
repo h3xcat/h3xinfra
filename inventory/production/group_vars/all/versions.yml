@@ -30,6 +30,12 @@ chart_versions:
   # renovate: datasource=helm depName=csi-driver-smb registryUrl=https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
   csi_driver_smb: "1.20.1"
 
+  # Infrastructure - Lifecycle
+  # Kubernetes Reboot Daemon — orchestrates rolling node reboots when
+  # /var/run/reboot-required is set (e.g. after kernel updates).
+  # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
+  kured: "5.11.0"
+
   # Applications
   # renovate: datasource=helm depName=mailu registryUrl=https://mailu.github.io/helm-charts
   mailu: "2.7.1"
