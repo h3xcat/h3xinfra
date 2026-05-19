@@ -177,25 +177,32 @@ ansible-playbook playbooks/06-externaldns/standup.yml
 ansible-playbook playbooks/06-externaldns/teardown.yml
 ```
 
-### Ingress NGINX Deployment/Removal
+### Envoy Gateway Deployment/Removal
 
 ```bash
 ansible-playbook playbooks/07-gateway/standup.yml
 ansible-playbook playbooks/07-gateway/teardown.yml
 ```
 
+### SMB/CIFS CSI Driver Deployment/Removal
+
+```bash
+ansible-playbook playbooks/08-smb/standup.yml
+ansible-playbook playbooks/08-smb/teardown.yml
+```
+
 ### Longhorn Storage Deployment/Removal
 
 ```bash
-ansible-playbook playbooks/08-longhorn/standup.yml
-ansible-playbook playbooks/08-longhorn/teardown.yml
+ansible-playbook playbooks/09-longhorn/standup.yml
+ansible-playbook playbooks/09-longhorn/teardown.yml
 ```
 
 ### Mailu Email Server Deployment/Removal
 
 ```bash
-ansible-playbook playbooks/09-mailu/standup.yml
-ansible-playbook playbooks/09-mailu/teardown.yml
+ansible-playbook playbooks/10-mailu/standup.yml
+ansible-playbook playbooks/10-mailu/teardown.yml
 ```
 
 ### Keycloak Identity Management Deployment/Removal

@@ -47,6 +47,7 @@ h3xinfra/
 │   ├── 08-smb/            # SMB CSI driver layer
 │   ├── 09-longhorn/       # Storage system layer
 │   ├── 10-mailu/          # Email server layer
+│   ├── 10-keycloak/       # Identity provider layer (Operator + CNPG)
 │   └── 99-utils/          # Utility playbooks
 ├── inventory/             # Example inventory structure
 │   ├── production/
@@ -88,6 +89,7 @@ Layers are numbered to enforce deployment order and dependency relationships:
 
 #### Platform Services (10-19)
 - **10-mailu**: Self-hosted email server (Mailu)
+- **10-keycloak**: Identity provider (Keycloak Operator + CloudNativePG, Terraform-managed realm/clients)
 
 #### Utilities (99)
 - **99-utils**: Shared utilities (kube-connect, apt updates, etc.)
@@ -114,7 +116,9 @@ Layers are numbered to enforce deployment order and dependency relationships:
   ↓
 09-longhorn (persistent storage ready)
   ↓
-10+ (applications deploy)
+10-mailu / 10-keycloak (platform services — independent, deploy in any order)
+  ↓
+11+ (downstream applications deploy)
 ```
 
 ---
@@ -616,8 +620,13 @@ ingress:
 
 #### Public Services
 The shared wildcard certificate covers all hostnames; no per-app
-`Certificate` is provisioned. external-dns publishes a record pointing
-at the Gateway's MetalLB IP via labels on the Gateway service.
+`Certificate` is provisioned. This is a deliberate privacy choice — a
+per-host certificate is published to public **Certificate Transparency
+logs**, making the existence of every service trivially discoverable
+through CT search engines (crt.sh, etc.). A wildcard (`*.app.example.com`)
+only exposes the wildcard label itself; the specific subdomains behind
+it never appear in CT. external-dns publishes a record pointing at the
+Gateway's MetalLB IP via labels on the Gateway service.
 
 #### Internal Services
 Services restricted to internal networks combine `trustedIPs` with the

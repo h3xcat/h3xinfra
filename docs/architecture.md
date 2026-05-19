@@ -11,8 +11,8 @@ The cluster is organized as a layered deployment with the following components:
 3. **Network Layer** - Cilium CNI with dual-stack support
 4. **Service Layer** - MetalLB for load balancing
 5. **Security Layer** - Health endpoints, Certificate Manager, External DNS
-6. **Ingress Layer** - Ingress NGINX for reverse proxy and TLS termination
-7. **Storage Layer** - Longhorn for persistent storage with CIFS backup
+6. **Ingress Layer** - Envoy Gateway (Gateway API) for HTTP routing, TLS termination, OIDC, and IP allowlisting
+7. **Storage Layer** - SMB/CIFS CSI driver and Longhorn for persistent storage
 8. **Application Layer** - Mailu email server and Keycloak identity management
 
 ## Deployment Flow
@@ -25,10 +25,11 @@ The deployment follows this sequence:
 5. Health endpoints configuration
 6. Certificate Manager deployment
 7. External DNS setup
-8. Ingress NGINX controller deployment
-9. Longhorn storage system deployment
-10. Mailu email server deployment
-11. Keycloak identity management deployment
+8. Envoy Gateway controller deployment + shared Gateway with wildcard TLS
+9. SMB/CIFS CSI driver deployment
+10. Longhorn storage system deployment
+11. Mailu email server deployment
+12. Keycloak identity management deployment (Operator + CloudNativePG)
 
 ## Network Architecture
 
@@ -45,8 +46,8 @@ The deployment follows this sequence:
 - **IPv6**: 2001:db8:face:1::/96 (MetalLB dynamic allocation)
 
 ### Manual Service IP Allocations
-- **Ingress NGINX IPv4**: 192.168.101.100/32
-- **Ingress NGINX IPv6**: 2001:db8:face::100/128
+- **Envoy Gateway (shared) IPv4**: 192.168.101.100/32
+- **Envoy Gateway (shared) IPv6**: 2001:db8:face::100/128
 - **Mailu IPv4**: 192.168.101.101/32
 - **Mailu IPv6**: 2001:db8:face::101/128
 
@@ -71,7 +72,8 @@ The deployment follows this sequence:
   - External SMTP relay via smtp2go.com
 - **Keycloak**: Identity and access management
   - Hostname: identity.app.example.com
-  - PostgreSQL backend
+  - Deployed via the Keycloak Operator (`k8s.keycloak.org/v2alpha1` CR)
+  - PostgreSQL backend managed by CloudNativePG (`postgresql.cnpg.io/v1` Cluster)
 
 ### DNS Management
 - **Managed Domains**: example.com, *.example.com, example.org, *.example.org, example.net

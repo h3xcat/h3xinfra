@@ -47,7 +47,10 @@ This project provides Ansible playbooks and configurations to deploy and manage 
 │   ├── 05-certmanager/    # Certificate management
 │   ├── 06-externaldns/    # External DNS with Cloudflare
 │   ├── 07-gateway/        # Envoy Gateway (Gateway API) controller
-│   ├── 08-longhorn/       # Longhorn storage system
+│   ├── 08-smb/            # SMB/CIFS CSI driver
+│   ├── 09-longhorn/       # Longhorn storage system
+│   ├── 10-mailu/          # Self-hosted email server
+│   ├── 10-keycloak/       # Keycloak identity provider (Operator + CNPG)
 │   └── 99-utils/          # Utility playbooks
 └── README.md              # This file
 ```

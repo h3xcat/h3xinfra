@@ -1,6 +1,8 @@
 # 10-keycloak
 
-Keycloak identity provider for H3X Infra. Realm and client configuration is
+Keycloak identity provider for H3X Infra. Deployed via the upstream
+**Keycloak Operator** (`k8s.keycloak.org/v2alpha1`) backed by a
+**CloudNativePG** Postgres `Cluster`. Realm and client configuration is
 managed declaratively via Terraform so OIDC clients stay in sync with
 inventory.
 
@@ -8,10 +10,11 @@ inventory.
 
 ```
 10-keycloak/
-├── standup.yml                       # Deploys Keycloak + runs terraform apply
+├── standup.yml                       # Installs Operator, deploys CRs, runs terraform apply
 ├── teardown.yml                      # Runs terraform destroy + removes Helm releases
 ├── charts/
-│   └── h3xinfra-keycloak-pre/        # Bootstrap secret + split ingress
+│   ├── h3xinfra-keycloak-pre/        # Bootstrap admin Secret, CNPG Cluster, split HTTPRoutes
+│   └── h3xinfra-keycloak-main/       # Renders the Keycloak CR (+ PDB) consumed by the Operator
 └── terraform/
     ├── providers.tf                  # keycloak/keycloak provider
     ├── variables.tf
@@ -25,10 +28,18 @@ inventory.
 
 ### Standup (`ansible-playbook playbooks/10-keycloak/standup.yml`)
 
-1. **Pre-chart** (`h3xinfra-keycloak-pre`) creates:
-   - A `Secret` (`<prefix>-pre-bootstrap`) with the admin username/password and
-     PostgreSQL credentials, consumed by the Bitnami chart via
-     `auth.existingSecret` and `postgresql.auth.existingSecret`.
+1. **Keycloak Operator** is installed by applying the upstream manifests
+   pinned to `chart_versions.keycloak` (the Operator is distributed as raw
+   manifests, not a Helm chart). The operator's Deployment must reach
+   `Available` before reconciliation proceeds.
+2. **Pre-chart** (`h3xinfra-keycloak-pre`) creates:
+   - A `Secret` (`<prefix>-pre-bootstrap-admin`) holding the master-realm
+     admin username/password, consumed by the Keycloak CR via
+     `spec.bootstrapAdmin.user.secret`.
+   - A **CloudNativePG `Cluster`** (`postgresql.cnpg.io/v1`) backing Keycloak.
+     Replaces the previous single-pod Bitnami subchart so a node failure
+     does not take auth down. Keycloak connects through the CNPG-rendered
+     `<cluster>-rw` Service which always points at the current primary.
    - Two `HTTPRoute` objects (Gateway API) on the same host, attached to the
      shared Envoy Gateway:
      - **Public**: `/realms/`, `/resources/`, `/js/`, `/robots.txt` — reachable
@@ -36,12 +47,15 @@ inventory.
      - **Admin**: `/admin/`, `/metrics`, `/health` — restricted via a
        `SecurityPolicy` (`authorization.principal.clientCIDRs`) populated
        from `keycloak.ingress.trusted_setup_ips`.
-2. **Main chart** (`bitnami/keycloak`) deploys Keycloak in production mode with
-   its own bundled PostgreSQL subchart. Chart-native ingress is disabled; the
-   pre-chart owns routing via Gateway API.
-3. **Readiness probe** hits `/realms/master/.well-known/openid-configuration`
+3. **Main chart** (`h3xinfra-keycloak-main`) renders a `Keycloak` CR
+   (`k8s.keycloak.org/v2alpha1`). The Operator reconciles the CR into a
+   StatefulSet, Service, pod anti-affinity, JGroups KUBE_PING discovery
+   for the Infinispan distributed cache, and rolling upgrades. The chart
+   also renders a `PodDisruptionBudget` with `minAvailable: 1` (the
+   Operator does not render one itself).
+4. **Readiness probe** hits `/realms/master/.well-known/openid-configuration`
    and retries until it returns `200`.
-4. **Terraform apply** renders `terraform.tfvars.json` from inventory, runs
+5. **Terraform apply** renders `terraform.tfvars.json` from inventory, runs
    `terraform init` + `apply` against the fresh instance, and creates the
    configured realm + OIDC clients.
 
@@ -61,8 +75,7 @@ Use `h3xinfra-gen-pass` to produce vault ciphertext for each:
 | Field                          | Purpose                                     |
 |--------------------------------|---------------------------------------------|
 | `keycloak.admin.password`      | Master realm admin (also used by Terraform) |
-| `keycloak.db_password`         | Keycloak app DB user password               |
-| `keycloak.db_postgres_password`| PostgreSQL superuser password               |
+| `keycloak.db_password`         | Keycloak app DB user password (CNPG)        |
 | `keycloak.realm.smtp.password` | SMTP relay password (if SMTP enabled)       |
 | `keycloak.clients[*].client_secret` | Per-client confidential OIDC secret    |
 
