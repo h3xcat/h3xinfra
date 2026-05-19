@@ -31,6 +31,36 @@ The deployment follows this sequence:
 11. Mailu email server deployment
 12. Keycloak identity management deployment (Operator + CloudNativePG)
 
+## Node Topology
+
+The cluster runs a **dedicated control-plane** model with two node roles:
+
+| Role | Nodes (example) | Schedulable for | Identifying taint |
+|---|---|---|---|
+| **Server** (control-plane + etcd) | 3 nodes (quorum) | k8s control-plane components, Cilium, kured, other system DaemonSets that explicitly tolerate the taint | `CriticalAddonsOnly=true:NoSchedule` |
+| **Agent** (workload) | 5+ nodes | All workloads — Longhorn storage, platform services (Mailu, Keycloak), apps (Plex, *arr stack, etc.) | none |
+
+### Why dedicated control-plane
+
+Stateful workloads (Longhorn replicas, Postgres data, *arr SQLite DBs, Plex library) are kept off the server nodes so:
+
+- A misbehaving app can't OOM kube-apiserver / etcd / kubelet on a quorum-bearing node
+- Server-node reboots affect only control-plane availability, not storage availability
+- The 3-node etcd quorum stays small and predictable (avoids quorum-size growth that hurts write latency)
+
+### How the taint is honored
+
+The `CriticalAddonsOnly=true:NoSchedule` taint on server nodes means **only pods that explicitly tolerate it can land there**. The two outcomes:
+
+- **System DaemonSets that must run on every node** (Cilium CNI agent, kured reboot daemon, csi-driver-smb node plugin, longhorn-manager, etc.) tolerate **all** taints via `tolerations: [{operator: Exists}]`. They run on the full 8-node fleet so functionality stays uniform.
+- **Workloads** (Longhorn replicas, CNPG postgres, Keycloak, *arr apps, Plex, qbittorrent, etc.) carry no special tolerations. They schedule onto the 5 agent nodes only. Longhorn observably advertises 5 storage providers, not 8 — by design.
+
+### Implications
+
+- **Longhorn replica count vs node count**: with 5 storage-capable agent nodes and `defaultReplicaCount: 3`, you can lose 2 agents simultaneously without data loss
+- **Workload HA spread**: anti-affinity policies operate within the 5-agent pool
+- **Server-node reboots**: only affect control-plane (handled by 3-node etcd quorum tolerating 1 down)
+
 ## Network Architecture
 
 ### Pod Networking

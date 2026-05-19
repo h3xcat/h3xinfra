@@ -86,6 +86,12 @@
             startTime: "{{ kured.start_time | default('') }}"
             endTime: "{{ kured.end_time | default('') }}"
             timeZone: "{{ kured.time_zone | default('') }}"
+          # kured is a system DaemonSet — it must run on every node so any
+          # node can get rebooted. Mirroring the existing system-DS pattern
+          # (cilium, csi-driver-smb) we tolerate all taints. This includes
+          # node-role.kubernetes.io/control-plane, /master, and any custom
+          # taints like CriticalAddonsOnly used for dedicated control-plane.
+          tolerations: "{{ kured.tolerations | default([{'operator': 'Exists'}]) }}"
           # Resource footprint: kured does nothing 99% of the time.
           resources:
             requests:
@@ -98,4 +104,7 @@
           extraEnvVars: "{{ kured.extra_env_vars | default([]) }}"
         state: present
         wait: true
-        timeout: "180s"
+        # DaemonSet rolls one pod at a time across 3–8 nodes with image pulls
+        # and start probes on slow ARM hosts; 180s ran out at 7/8 on a fresh
+        # install. 10 min is safe headroom.
+        timeout: "600s"

@@ -11,6 +11,7 @@ This document describes the architectural patterns, naming conventions, and stru
 - [Helm Deployment Patterns](#helm-deployment-patterns)
 - [Inventory Structure](#inventory-structure)
 - [Security Patterns](#security-patterns)
+- [Node Scheduling](#node-scheduling)
 - [Network Architecture](#network-architecture)
 - [Extension Guidelines](#extension-guidelines)
 
@@ -672,6 +673,54 @@ trusted_ips:
 
 ---
 
+## Node Scheduling
+
+### Dedicated control-plane via `CriticalAddonsOnly` taint
+
+Server nodes (k3s control-plane + etcd) carry the taint
+`CriticalAddonsOnly=true:NoSchedule`. This keeps stateful workloads off
+the quorum-bearing nodes so:
+
+- A misbehaving app can't OOM `kube-apiserver` / `etcd` / `kubelet` on a
+  node whose loss would affect quorum
+- Server reboots only affect control-plane availability, not storage
+- Longhorn replicas, CNPG Postgres data, *arr SQLite DBs etc. all live
+  on agent nodes
+
+### When to add `tolerations: [{operator: Exists}]`
+
+A chart's DaemonSet (or other workload) needs the universal toleration
+**only if it must run on every node, including the tainted servers**.
+Examples in this repo:
+
+| Pattern | Tolerate `CriticalAddonsOnly`? | Why |
+|---|---|---|
+| CNI agent (Cilium) | yes | networking must be present on every node |
+| Reboot daemon (kured) | yes | a node without a kured pod won't auto-reboot |
+| Node-local CSI plugin (csi-driver-smb) | yes | mounts happen wherever pods land |
+| Longhorn manager / engine-image / csi-plugin DaemonSets | **no** (intentionally) | storage is a workload tier — servers stay storage-free |
+| App workloads (Plex, *arr, qbittorrent, Keycloak, Mailu, …) | **no** | should never land on a server node |
+
+In a chart's `values.yaml` or playbook `helm.values`, the idiomatic form is:
+
+```yaml
+tolerations:
+- operator: Exists       # tolerate any taint — system DaemonSet pattern
+```
+
+Setting `tolerations` in helm values **replaces** the chart's defaults
+rather than appending. If the upstream chart already tolerates
+`node-role.kubernetes.io/control-plane` etc., note that the universal
+toleration above subsumes those.
+
+### When NOT to add it
+
+For ordinary apps (single-replica or multi-replica workloads that aren't
+node-local), do not add the universal toleration. Let the scheduler
+filter them to the agent pool — that's the point of the taint.
+
+---
+
 ## Network Architecture
 
 ### Dual-Stack Configuration
@@ -860,6 +909,7 @@ fullnameOverride: ""
 - **Encrypt all secrets** with Ansible Vault
 - **Import `kube-connect`** utility in all k8s-related playbooks
 - **Version pin** all Helm charts with `chart_version`
+- **Tolerate all taints with `[{operator: Exists}]`** for DaemonSets that must run on every node (CNI agents, reboot daemon, node-local CSI plugins) — see [Node Scheduling](#node-scheduling)
 
 ### ❌ DON'T:
 

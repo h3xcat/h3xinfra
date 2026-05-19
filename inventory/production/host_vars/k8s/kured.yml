@@ -34,6 +34,13 @@ kured:
   end_time: ""
   time_zone: ""
 
+  # Tolerations for kured DaemonSet pod. kured must run on every node so
+  # any node can get rebooted. Default matches the system-DS pattern of
+  # tolerating all taints (cilium, csi-driver-smb, etc.) — appropriate
+  # since you can't reboot a node without an agent on it.
+  tolerations:
+    - operator: Exists
+
   # Optional notification webhook (Slack, Discord via shoutrrr, etc.).
   # Example:
   #   extra_env_vars:

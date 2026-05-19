@@ -1,0 +1,98 @@
+---
+# Trigger a rolling reboot of every node in the K3s cluster by creating
+# the /var/run/reboot-required sentinel that kured watches.
+#
+# kured (deployed by the 10-kured layer) picks up the sentinel, acquires
+# the cluster lock annotation, and reboots nodes one at a time — draining
+# pods, waiting for Longhorn replica migration + CNPG primary failover,
+# rebooting, waiting for Ready, uncordoning. Then it moves to the next.
+#
+# Use cases:
+#   - Apply a kernel cmdline change that was just deployed (e.g. removing
+#     `hugepages=` from GRUB / Pi `cmdline.txt`) without waiting for
+#     unattended-upgrades to flag it.
+#   - Push a fleet reboot for firmware/config changes that need a fresh
+#     boot to take effect.
+#
+# Prerequisites:
+#   - 10-kured layer deployed and DaemonSet Ready
+#   - Longhorn 1.5+ with `nodeDrainPolicy: block-if-contains-last-replica`
+#   - 3-replica Longhorn volumes (so drain has a healthy quorum to fall back to)
+#
+# Run:
+#   ansible-playbook ./h3xinfra/playbooks/99-utils/rolling-reboot.yml
+#
+# Watch progress:
+#   kubectl logs -n kured -l app.kubernetes.io/name=kured -f
+#   kubectl get nodes  # see which is currently cordoned
+
+# Pre-flight: establish kubectl context (needed for the kured DS check below).
+- import_playbook: kube-connect.yml
+
+- name: Verify kured DaemonSet is Ready
+  hosts: k8s
+  gather_facts: false
+  tasks:
+    - name: Check kured DaemonSet is fully Ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: DaemonSet
+        namespace: "{{ kured.namespace | default('kured') }}"
+        name: "{{ kured.release_name_prefix | default('h3xinfra-kured') }}-main"
+      register: kured_ds
+      failed_when: >-
+        kured_ds.resources | length == 0
+        or (kured_ds.resources[0].status.numberReady | default(0))
+           < (kured_ds.resources[0].status.desiredNumberScheduled | default(1))
+
+    - name: Confirm kured readiness
+      debug:
+        msg: >-
+          kured DaemonSet ready on
+          {{ kured_ds.resources[0].status.numberReady }} /
+          {{ kured_ds.resources[0].status.desiredNumberScheduled }} nodes.
+          Proceeding to create reboot sentinels.
+
+- name: Create reboot sentinel on every node
+  hosts: k3s_cluster
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Touch /var/run/reboot-required
+      file:
+        path: /var/run/reboot-required
+        state: touch
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Drop audit-trail note (cleared on reboot anyway, just for kured logs)
+      copy:
+        dest: /var/run/reboot-required.pkgs
+        content: |
+          # Triggered by playbooks/99-utils/rolling-reboot.yml
+          # at {{ ansible_date_time.iso8601 }}
+          # host: {{ inventory_hostname }}
+        owner: root
+        group: root
+        mode: "0644"
+
+- name: Post — instructions
+  hosts: k8s
+  gather_facts: false
+  tasks:
+    - name: Print watch commands
+      debug:
+        msg:
+          - "✓ Sentinel created on all {{ groups['k3s_cluster'] | length }} nodes."
+          - "kured will now drain + reboot one node at a time."
+          - "Each cycle is typically 3–10 min depending on pod count and image pulls."
+          - ""
+          - "Watch kured's progress:"
+          - "  kubectl logs -n {{ kured.namespace | default('kured') }} -l app.kubernetes.io/name=kured -f --max-log-requests=10"
+          - ""
+          - "See which node is currently cordoned:"
+          - "  kubectl get nodes"
+          - ""
+          - "Cancel a pending reboot for a specific node (BEFORE drain starts):"
+          - "  ssh ansible@<node> sudo rm /var/run/reboot-required"
