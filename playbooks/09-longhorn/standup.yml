@@ -80,7 +80,11 @@
             storageReservedPercentageForDefaultDisk: 5
 
             # Performance Optimization
-            defaultReplicaCount: 2
+            # 3 replicas tolerates one node loss during rebuild — needed
+            # because the cluster has 8 worker-capable nodes and the
+            # default-2 setting was inconsistent with the actual fleet
+            # state (every volume was manually bumped to 3 over time).
+            defaultReplicaCount: 3
             defaultDataLocality: best-effort
             replicaAutoBalance: least-effort
 
