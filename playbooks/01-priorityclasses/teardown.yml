@@ -1,0 +1,21 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Remove h3xinfra PriorityClasses
+  hosts: k8s
+  gather_facts: false
+
+  tasks:
+    - name: Remove h3xinfra-platform-critical PriorityClass
+      kubernetes.core.k8s:
+        state: absent
+        api_version: scheduling.k8s.io/v1
+        kind: PriorityClass
+        name: h3xinfra-platform-critical
+
+    - name: Remove h3xinfra-app-background PriorityClass
+      kubernetes.core.k8s:
+        state: absent
+        api_version: scheduling.k8s.io/v1
+        kind: PriorityClass
+        name: h3xinfra-app-background

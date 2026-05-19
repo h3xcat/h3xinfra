@@ -38,6 +38,7 @@ h3xinfra/
 │   ├── stack-teardown.yml # Master teardown orchestration
 │   ├── 00-prep/           # Server preparation layer
 │   ├── 01-k3s/            # Kubernetes cluster layer
+│   ├── 01-priorityclasses/ # Cluster-wide PriorityClass definitions
 │   ├── 02-cilium/         # CNI networking layer
 │   ├── 03-metallb/        # Load balancer layer
 │   ├── 04-health/         # Health endpoint layer
@@ -78,6 +79,7 @@ Layers are numbered to enforce deployment order and dependency relationships:
 #### Core Infrastructure (00-09)
 - **00-prep**: Server preparation, system configuration, package installation
 - **01-k3s**: K3s Kubernetes cluster deployment
+- **01-priorityclasses**: Custom `PriorityClass` definitions (`h3xinfra-platform-critical`, `h3xinfra-app-background`) used by downstream layers to control eviction order
 - **02-cilium**: Cilium CNI with eBPF networking
 - **03-metallb**: MetalLB load balancer for bare metal
 - **04-health**: Health check endpoints and monitoring
@@ -99,6 +101,8 @@ Layers are numbered to enforce deployment order and dependency relationships:
 00-prep (servers ready)
   ↓
 01-k3s (cluster running)
+  ↓
+01-priorityclasses (scheduling classes ready)
   ↓
 02-cilium (networking ready)
   ↓

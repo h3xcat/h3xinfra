@@ -1,0 +1,64 @@
+---
+# Cluster-wide PriorityClass definitions used to control eviction order
+# under node pressure. Two custom tiers in addition to the K8s built-ins:
+#
+#   h3xinfra-platform-critical (100000): infrastructure that, if lost,
+#     breaks auth/networking/storage for everything else — Keycloak,
+#     CNPG Postgres, Mailu, Longhorn engine, Envoy Gateway, cert-manager.
+#
+#   h3xinfra-app-background (10000): workloads where a few minutes of
+#     downtime is acceptable and the pod is the first thing to evict
+#     under memory pressure — sabnzbd, qbittorrent, flaresolverr,
+#     recyclarr.
+#
+# Apps not explicitly assigned a priorityClassName run at priority 0
+# (default) — *arr stack, Plex, monitoring, etc.
+#
+# Built-in references:
+#   system-node-critical    = 2000001000
+#   system-cluster-critical = 2000000000
+#   default                 = 0
+
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Apply h3xinfra PriorityClasses
+  hosts: k8s
+  gather_facts: false
+
+  tasks:
+    - name: Define h3xinfra-platform-critical PriorityClass
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: scheduling.k8s.io/v1
+          kind: PriorityClass
+          metadata:
+            name: h3xinfra-platform-critical
+            labels:
+              app.kubernetes.io/managed-by: h3xinfra
+              app.kubernetes.io/part-of: h3xinfra-priorityclasses
+          value: 100000
+          globalDefault: false
+          preemptionPolicy: PreemptLowerPriority
+          description: >-
+            h3xinfra platform-critical workloads (auth, mail, storage engine,
+            ingress gateway, cert-manager). Evicted only after non-priority
+            and h3xinfra-app-background workloads.
+
+    - name: Define h3xinfra-app-background PriorityClass
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: scheduling.k8s.io/v1
+          kind: PriorityClass
+          metadata:
+            name: h3xinfra-app-background
+            labels:
+              app.kubernetes.io/managed-by: h3xinfra
+              app.kubernetes.io/part-of: h3xinfra-priorityclasses
+          value: 10000
+          globalDefault: false
+          preemptionPolicy: PreemptLowerPriority
+          description: >-
+            h3xinfra background workloads (download clients, scrapers,
+            scheduled jobs). First to evict under memory pressure.

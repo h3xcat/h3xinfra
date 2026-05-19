@@ -9,6 +9,10 @@
 # Single kubectl connection check for components that need kubernetes
 - import_playbook: 99-utils/kube-connect.yml
 
+# Cluster-wide PriorityClasses (platform-critical, app-background) consumed
+# by downstream layers to control eviction order under node pressure.
+- import_playbook: 01-priorityclasses/standup.yml
+
 - import_playbook: 02-cilium/standup.yml
 
 - import_playbook: 03-metallb/standup.yml
