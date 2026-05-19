@@ -10,8 +10,12 @@ kured:
   namespace: "kured"
   release_name_prefix: "h3xinfra-kured"
 
-  # How often to check the sentinel. Default 1h is fine; lower for testing.
-  period: "1h"
+  # How often to check the sentinel. kured does NOT check on startup —
+  # only on the period ticker — so this is also the maximum latency
+  # between sentinel creation and kured reacting. 10m is a reasonable
+  # homelab default; production fleets that batch reboots into a
+  # maintenance window often use 1h.
+  period: "10m"
 
   # Pod termination grace period during drain. 180s gives Plex, *arr apps,
   # and CNPG/Keycloak ample time for clean shutdown.
