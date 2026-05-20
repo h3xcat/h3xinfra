@@ -5,9 +5,11 @@
 # lock to ensure only one node reboots at a time.
 #
 # Drain compatibility with Longhorn relies on the `nodeDrainPolicy` setting
-# applied in 09-longhorn (block-if-contains-last-replica). With 3-replica
-# volumes, Longhorn dynamically lifts the instance-manager PDB so kured's
-# drain succeeds.
+# applied in 09-longhorn (block-for-eviction-if-contains-last-replica).
+# When a node drains, Longhorn actively relocates any last-healthy replica
+# off it before lifting the instance-manager PDB, so kured's drain completes
+# instead of deadlocking on an un-evictable instance-manager pod. The
+# drainTimeout below is the backstop if that relocation ever stalls.
 #
 # CNPG primaries auto-failover when their node is cordoned, so the
 # CNPG primary PDBs do not block drain in practice — the primary moves
@@ -69,6 +71,12 @@
             # 3 min for pods to terminate cleanly. *arr / Plex / qbittorrent
             # have shutdown grace periods well under this.
             drainGracePeriod: "{{ kured.drain_grace_period | default('180') }}"
+            # Hard cap on the whole drain. Chart default is infinite, which
+            # let a single un-evictable pod (Longhorn instance-manager PDB)
+            # hang the drain for hours until kured crashed mid-cycle. With
+            # forceReboot=false a timeout aborts the drain safely (no reboot,
+            # lock released) instead of deadlocking the node forever.
+            drainTimeout: "{{ kured.drain_timeout | default('15m') }}"
             # 1 min wait between drain success and reboot command — lets
             # Longhorn observe the cordon + replica migration finish.
             rebootDelay: "{{ kured.reboot_delay | default('60s') }}"
