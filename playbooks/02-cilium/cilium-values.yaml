@@ -32,6 +32,19 @@ loadBalancer:
   mode: "dsr"
   dsrDispatch: "opt"
 
+# Disable the per-service NodePort health server (renders cilium-config
+# enable-health-check-nodeport=false). On this dual-stack cluster
+# (net.ipv6.bindv6only=0) the load-balancer health server loops forever on
+# "bind: address already in use": for every externalTrafficPolicy=Local
+# service it tries to bind BOTH 0.0.0.0 and [::] on the healthCheckNodePort,
+# and with bindv6only=0 the first wildcard bind already claims the other
+# family — ~126 errors/min fleet-wide across every agent. MetalLB runs in L2
+# mode and tracks endpoint readiness itself, so it never consumes
+# healthCheckNodePort; the server is dead weight here.
+# Refs: cilium/cilium#41402 (dual-stack wildcard double-bind), #11168 (flag).
+nodePort:
+  enableHealthCheck: false
+
 # Changed to direct routing mode to be compatible with DSR
 routingMode: "native"
 
