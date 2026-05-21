@@ -31,20 +31,25 @@
       register: gateway_crd_render
       changed_when: false
 
+    # `kubectl apply --server-side` prints "<resource> serverside-applied" for
+    # EVERY object whether or not it changed, so its stdout can't distinguish a
+    # no-op from a real change (the old stdout-parsing changed_when always
+    # matched). Instead use `kubectl diff` (rc 1 = drift, 0 = in sync) to decide
+    # whether to apply at all, which keeps this task idempotent.
+    - name: Diff Envoy Gateway CRD bundle against the cluster
+      ansible.builtin.command:
+        cmd: kubectl diff -f -
+        stdin: "{{ gateway_crd_render.stdout }}"
+      register: gateway_crd_diff
+      changed_when: false
+      failed_when: gateway_crd_diff.rc not in [0, 1]
+
     - name: Apply Envoy Gateway CRD bundle (server-side)
       ansible.builtin.command:
         cmd: kubectl apply --server-side --force-conflicts --field-manager h3xinfra-gateway-crds -f -
         stdin: "{{ gateway_crd_render.stdout }}"
-      register: gateway_crd_apply
-      # `kubectl apply` prints one line per resource; treat the run as changed if
-      # any resource was created/configured. Checking only for absence of
-      # 'unchanged' would mis-classify mixed runs (some unchanged, some applied)
-      # as no-op.
-      changed_when: >-
-        gateway_crd_apply.stdout_lines
-        | reject('search', ' unchanged$')
-        | select('search', ' (created|configured|serverside-applied)$')
-        | list | length > 0
+      when: gateway_crd_diff.rc == 1
+      changed_when: gateway_crd_diff.rc == 1
 
     - name: Deploy Envoy Gateway controller via Helm (OCI)
       kubernetes.core.helm:
