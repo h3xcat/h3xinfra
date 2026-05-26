@@ -58,12 +58,22 @@
             name: "{{ mailu.release_name_prefix }}-main-front"
             port: 443
           tlsHostname: "{{ mailu.dns_names | first }}"
+          oidc:
+            enabled: "{{ mailu.oauth2.enabled | default(false) }}"
+            issuerUrl: "{{ mailu.oauth2.oidc_issuer_url | default('') }}"
+            clientId: "{{ mailu.oauth2.client_id | default('') }}"
+            clientSecret: "{{ mailu.oauth2.client_secret | default('') }}"
+            secretRef:
+              name: "{{ mailu.release_name_prefix }}-pre-oidc"
+          oidcHostname: "{{ mailu.oauth2.hostname | default('') }}"
+          publicPaths: "{{ mailu.oauth2.public_paths | default([]) }}"
       set_values:
       - value: "certificate.dnsNames={{ mailu.dns_names | to_json }}"
         value_type: json
       state: present
       wait: true
       timeout: "120s"
+    no_log: true
 
   - name: Deploy Mailu via Helm
     kubernetes.core.helm:

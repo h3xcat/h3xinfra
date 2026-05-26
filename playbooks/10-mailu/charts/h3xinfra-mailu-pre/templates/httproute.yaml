@@ -47,4 +47,38 @@ spec:
   validation:
     wellKnownCACertificates: System
     hostname: {{ .Values.gatewayRoute.tlsHostname | default (.Values.certificate.commonName) | quote }}
+{{- if and .Values.gatewayRoute.oidc.enabled .Values.gatewayRoute.publicPaths }}
+---
+# Mail-client autoconfig/autodiscovery endpoints kept publicly reachable.
+# A separate HTTPRoute (not targeted by the OIDC SecurityPolicy) whose
+# more-specific path prefixes take precedence over the catch-all `-web`
+# route, so these paths bypass the Keycloak gate while everything else
+# stays protected. Same front backend; TLS re-origination is covered by
+# the BackendTLSPolicy above (it targets the Service).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "h3xinfra-mailu-pre.fullname" . }}-web-public
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-mailu-pre.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ .Values.gatewayRoute.gateway.name }}
+      namespace: {{ .Values.gatewayRoute.gateway.namespace }}
+  hostnames:
+    {{- range .Values.certificate.dnsNames }}
+    - {{ . | quote }}
+    {{- end }}
+  rules:
+    - matches:
+        {{- range .Values.gatewayRoute.publicPaths }}
+        - path:
+            type: PathPrefix
+            value: {{ . | quote }}
+        {{- end }}
+      backendRefs:
+        - name: {{ .Values.gatewayRoute.frontService.name }}
+          port: {{ .Values.gatewayRoute.frontService.port }}
+{{- end }}
 {{- end }}

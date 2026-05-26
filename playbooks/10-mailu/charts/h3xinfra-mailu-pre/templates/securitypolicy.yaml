@@ -1,0 +1,31 @@
+{{- if and .Values.gatewayRoute.enabled .Values.gatewayRoute.oidc.enabled }}
+---
+# Enforce Keycloak OIDC at the Envoy Gateway for the Mailu web UI (admin +
+# webmail). Targets the catch-all `-web` HTTPRoute; the optional
+# `-web-public` route (mail-client autoconfig paths) is intentionally not
+# targeted so those endpoints stay reachable without authentication.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: {{ include "h3xinfra-mailu-pre.fullname" . }}-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-mailu-pre.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ include "h3xinfra-mailu-pre.fullname" . }}-web
+  oidc:
+    provider:
+      issuer: {{ .Values.gatewayRoute.oidc.issuerUrl | quote }}
+    clientID: {{ .Values.gatewayRoute.oidc.clientId | quote }}
+    clientSecret:
+      name: {{ .Values.gatewayRoute.oidc.secretRef.name }}
+    redirectURL: {{ printf "https://%s/oauth2/callback" (.Values.gatewayRoute.oidcHostname | default .Values.certificate.commonName) | quote }}
+    logoutPath: "/oauth2/sign_out"
+    scopes:
+      {{- range .Values.gatewayRoute.oidc.scopes | default (list "openid" "email" "profile") }}
+      - {{ . | quote }}
+      {{- end }}
+{{- end }}

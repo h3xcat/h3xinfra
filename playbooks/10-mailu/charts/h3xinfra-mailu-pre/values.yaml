@@ -57,6 +57,27 @@ gatewayRoute:
   # SNI/hostname used when validating the upstream TLS connection.
   # Defaults to certificate.commonName when unset.
   tlsHostname: ""
+  # Keycloak OIDC gate enforced at the Envoy Gateway via a SecurityPolicy
+  # attached to the web HTTPRoute. Unauthenticated requests are redirected
+  # to the issuer and the callback is handled by Envoy itself (no
+  # oauth2-proxy sidecar). Mail protocols ride the separate front LB and
+  # are unaffected.
+  oidc:
+    enabled: false
+    issuerUrl: ""
+    clientId: ""
+    clientSecret: ""
+    scopes: ["openid", "email", "profile"]
+    secretRef:
+      name: ""
+  # Browser-facing hostname that carries the OIDC gate and receives the
+  # /oauth2/callback. Must be one of certificate.dnsNames. Defaults to
+  # certificate.commonName when unset.
+  oidcHostname: ""
+  # Path prefixes kept publicly reachable (no OIDC) for mail-client
+  # autoconfig/autodiscovery. Rendered as a separate, unpolicied HTTPRoute
+  # whose more-specific path matches win over the catch-all web route.
+  publicPaths: []
 
 # Network Policy configuration
 networkPolicy:
