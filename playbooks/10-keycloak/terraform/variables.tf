@@ -60,6 +60,13 @@ variable "clients" {
     root_url      = optional(string, "")
     redirect_uris = list(string)
     web_origins   = optional(list(string), [])
+    # Client roles to create on this client for app-level RBAC (e.g. Open
+    # WebUI's `admin`/`user`). When non-empty, a protocol mapper is also added
+    # that flattens these client roles into a top-level `roles` claim (id token
+    # + userinfo). The roles are created but assignment to users stays manual
+    # (Keycloak admin console). The oauth2-proxy-fronted clients don't need
+    # this, so it defaults to empty.
+    client_roles = optional(list(string), [])
   }))
   default = []
 }

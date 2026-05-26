@@ -4,24 +4,24 @@ resource "keycloak_realm" "main" {
   display_name = var.realm_display_name != "" ? var.realm_display_name : var.realm_name
 
   # Sensible defaults for a small self-hosted deployment.
-  login_with_email_allowed   = true
-  registration_allowed       = false
-  reset_password_allowed     = true
-  remember_me                = true
-  verify_email               = true
-  duplicate_emails_allowed   = false
-  edit_username_allowed      = false
+  login_with_email_allowed = true
+  registration_allowed     = false
+  reset_password_allowed   = true
+  remember_me              = true
+  verify_email             = true
+  duplicate_emails_allowed = false
+  edit_username_allowed    = false
 
   password_policy = "upperCase(1) and length(12) and forceExpiredPasswordChange(365) and notUsername"
 
   # Session lifetimes — extended from Keycloak defaults (30m idle / 10h max)
   # so users aren't logged out frequently on this self-hosted deployment.
-  sso_session_idle_timeout              = "12h"
-  sso_session_max_lifespan              = "168h"  # 7d
-  sso_session_idle_timeout_remember_me  = "720h"  # 30d
-  sso_session_max_lifespan_remember_me  = "720h"  # 30d
-  offline_session_idle_timeout          = "720h"  # 30d
-  offline_session_max_lifespan          = "1440h" # 60d
+  sso_session_idle_timeout             = "12h"
+  sso_session_max_lifespan             = "168h"  # 7d
+  sso_session_idle_timeout_remember_me = "720h"  # 30d
+  sso_session_max_lifespan_remember_me = "720h"  # 30d
+  offline_session_idle_timeout         = "720h"  # 30d
+  offline_session_max_lifespan         = "1440h" # 60d
 
   dynamic "smtp_server" {
     for_each = var.smtp.enabled ? [var.smtp] : []
