@@ -1,0 +1,105 @@
+---
+# =============================================================================
+# Enable kube-apiserver OIDC trust via a structured AuthenticationConfiguration.
+#
+# Deploys (per control-plane / server node):
+#   /etc/rancher/k3s/oidc-auth.yaml                 - AuthenticationConfiguration
+#   /etc/rancher/k3s/config.yaml.d/10-oidc-auth.yaml - appends the
+#       `authentication-config=...` kube-apiserver-arg (drop-in, so the
+#       collection-managed config.yaml is left untouched).
+#
+# serial: 1 + a per-node /readyz gate means a bad config can only take down ONE
+# server (the cluster stays up on the remaining two) and the play halts before
+# touching the next node. Rollback: delete the two files and restart k3s.
+#
+# Driven by the `apiserver_oidc` inventory var (group_vars/k3s_cluster).
+# =============================================================================
+- name: Enable kube-apiserver OIDC (structured AuthenticationConfiguration)
+  hosts: server
+  become: true
+  serial: 1
+  gather_facts: false
+
+  tasks:
+    - name: Configure apiserver OIDC
+      when: apiserver_oidc.enabled | default(false)
+      block:
+        - name: Ensure k3s config.yaml.d drop-in directory exists
+          ansible.builtin.file:
+            path: /etc/rancher/k3s/config.yaml.d
+            state: directory
+            owner: root
+            group: root
+            mode: "0700"
+
+        - name: Deploy AuthenticationConfiguration
+          ansible.builtin.copy:
+            dest: /etc/rancher/k3s/oidc-auth.yaml
+            owner: root
+            group: root
+            mode: "0600"
+            content: |
+              apiVersion: apiserver.config.k8s.io/v1
+              kind: AuthenticationConfiguration
+              jwt:
+              - issuer:
+                  url: {{ apiserver_oidc.issuer_url }}
+              {% if (apiserver_oidc.issuer_ca | default('')) | length > 0 %}
+                  certificateAuthority: {{ apiserver_oidc.issuer_ca | to_json }}
+              {% endif %}
+                  audiences: {{ apiserver_oidc.audiences | to_json }}
+                claimMappings:
+                  username:
+                    claim: {{ apiserver_oidc.username_claim }}
+                    prefix: "{{ apiserver_oidc.username_prefix }}"
+                  groups:
+                    claim: {{ apiserver_oidc.groups_claim }}
+                    prefix: "{{ apiserver_oidc.groups_prefix }}"
+          register: oidc_auth_file
+
+        - name: Deploy kube-apiserver-arg drop-in (append authentication-config)
+          ansible.builtin.copy:
+            dest: /etc/rancher/k3s/config.yaml.d/10-oidc-auth.yaml
+            owner: root
+            group: root
+            mode: "0600"
+            content: |
+              kube-apiserver-arg+:
+              - "authentication-config=/etc/rancher/k3s/oidc-auth.yaml"
+          register: oidc_dropin
+
+        - name: Restart k3s to apply the apiserver auth config
+          ansible.builtin.systemd:
+            name: k3s
+            state: restarted
+          when: oidc_auth_file.changed or oidc_dropin.changed
+
+        - name: Wait for the local kube-apiserver to report ready
+          ansible.builtin.command: k3s kubectl get --raw=/readyz
+          register: oidc_readyz
+          changed_when: false
+          retries: 40
+          delay: 5
+          until: oidc_readyz.rc == 0 and 'ok' in oidc_readyz.stdout
+          when: oidc_auth_file.changed or oidc_dropin.changed
+
+        # L4: semantic OIDC check. /readyz only proves the process is up; a
+        # syntactically-valid but wrong issuer/audience starts cleanly and would
+        # be rolled to every server by serial:1. Runs once, on the first server,
+        # after it reports ready; a failure halts the play before the next node.
+        # Opt-in: skipped unless a viewer token is supplied in inventory.
+        - name: Smoke-test OIDC auth mapping before serial proceeds (opt-in)
+          ansible.builtin.command: >-
+            k3s kubectl auth can-i {{ item.verb }} pods
+            --token={{ apiserver_oidc.smoke_test_token }}
+          register: oidc_smoke
+          changed_when: false
+          failed_when: item.expect not in oidc_smoke.stdout
+          run_once: true
+          no_log: true
+          loop:
+            - { verb: "get", expect: "yes" }
+            - { verb: "create", expect: "no" }
+          when:
+            - (apiserver_oidc.smoke_test_token | default('')) | length > 0
+            - oidc_auth_file.changed or oidc_dropin.changed

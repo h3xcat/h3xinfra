@@ -60,3 +60,7 @@
 
 # Import the main k3s orchestration playbook
 - import_playbook: k3s.orchestration.site
+
+# Enable kube-apiserver OIDC trust (Keycloak) once the cluster is up. serial: 1
+# with a per-node readiness gate, so a bad config only affects one server.
+- import_playbook: apiserver-oidc.yml

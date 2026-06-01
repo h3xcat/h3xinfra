@@ -35,6 +35,9 @@ resource "keycloak_openid_client" "clients" {
   valid_redirect_uris = each.value.redirect_uris
   web_origins         = length(each.value.web_origins) > 0 ? each.value.web_origins : ["+"]
 
+  # Keycloak v2 standard token exchange (RFC 8693). Off unless a client opts in.
+  standard_token_exchange_enabled = each.value.standard_token_exchange_enabled
+
   login_theme = "keycloak"
 }
 
