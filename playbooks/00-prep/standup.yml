@@ -223,11 +223,17 @@
         - { name: net.core.rmem_max, value: "16777216" }
         - { name: net.core.wmem_max, value: "16777216" }
 
-    - name: Enable DNSSEC in systemd-resolved
+    # DNSSEC is left disabled here. Strict client-side validation (DNSSEC=yes)
+    # stalls 5-10s on deeply-delegated, short-TTL CDN zones (e.g. Akamai-backed
+    # cdn0X.quay.io), which exceeds containerd's pull-time resolver timeout and
+    # breaks image pulls (EAI_AGAIN / "Try again" -> ImagePullBackOff). The
+    # upstream resolver still validates DNSSEC, so client-side validation here is
+    # redundant. allow-downgrade does not help: those zones are signed, just slow.
+    - name: Configure DNSSEC in systemd-resolved
       lineinfile:
         path: /etc/systemd/resolved.conf
         regexp: '^#?DNSSEC='
-        line: 'DNSSEC=yes'
+        line: 'DNSSEC=no'
         backup: yes
       register: resolved_conf_changed
 
