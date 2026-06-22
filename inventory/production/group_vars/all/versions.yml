@@ -8,7 +8,7 @@
 chart_versions:
   # Infrastructure - Networking
   # renovate: datasource=helm depName=cilium registryUrl=https://helm.cilium.io
-  cilium: "1.19.4"
+  cilium: "1.19.5"
   # renovate: datasource=helm depName=metallb registryUrl=https://metallb.github.io/metallb
   metallb: "0.16.1"
   # Envoy Gateway controller (replaces ingress-nginx).
