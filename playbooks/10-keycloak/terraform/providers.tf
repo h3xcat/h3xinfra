@@ -4,7 +4,7 @@ terraform {
   required_providers {
     keycloak = {
       source  = "keycloak/keycloak"
-      version = "~> 5.7"
+      version = "~> 5.8"
     }
   }
 }
