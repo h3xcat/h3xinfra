@@ -34,7 +34,7 @@ chart_versions:
   # Kubernetes Reboot Daemon — orchestrates rolling node reboots when
   # /var/run/reboot-required is set (e.g. after kernel updates).
   # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
-  kured: "5.12.1"
+  kured: "6.0.0"
 
   # Applications
   # renovate: datasource=helm depName=mailu registryUrl=https://mailu.github.io/helm-charts
