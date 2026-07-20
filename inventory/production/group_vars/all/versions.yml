@@ -22,19 +22,19 @@ chart_versions:
 
   # Infrastructure - Security & Certs
   # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
-  cert_manager: "v1.20.3"
+  cert_manager: "v1.21.0"
 
   # Infrastructure - Storage
   # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
   longhorn: "1.12.0"
   # renovate: datasource=helm depName=csi-driver-smb registryUrl=https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
-  csi_driver_smb: "1.20.1"
+  csi_driver_smb: "1.20.3"
 
   # Infrastructure - Lifecycle
   # Kubernetes Reboot Daemon — orchestrates rolling node reboots when
   # /var/run/reboot-required is set (e.g. after kernel updates).
   # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
-  kured: "6.0.0"
+  kured: "6.1.0"
 
   # Applications
   # renovate: datasource=helm depName=mailu registryUrl=https://mailu.github.io/helm-charts
