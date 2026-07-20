@@ -38,6 +38,10 @@
       loop:
       - keycloaks.k8s.keycloak.org-v1.yml
       - keycloakrealmimports.k8s.keycloak.org-v1.yml
+      # New CRDs introduced by operator 26.7.0 — its informers list these at
+      # startup and the pod crash-loops if they are missing (verified 2026-07-20).
+      - keycloakoidcclients.k8s.keycloak.org-v1.yml
+      - keycloaksamlclients.k8s.keycloak.org-v1.yml
       - kubernetes.yml
 
     - name: Wait for Keycloak Operator deployment to be Available
