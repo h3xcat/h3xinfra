@@ -22,7 +22,7 @@ chart_versions:
 
   # Infrastructure - Security & Certs
   # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
-  cert_manager: "v1.21.0"
+  cert_manager: "v1.21.1"
 
   # Infrastructure - Storage
   # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
