@@ -13,6 +13,11 @@
         owner: root
         group: root
 
+    # NOTE: kubelet's --config-dir (KEP-3983) only processes files with a
+    # `.conf` extension — anything else in the directory is silently ignored
+    # (k3s's own generated defaults live there as 00-k3s-defaults.conf).
+    # These drop-ins were originally deployed as `.yaml` and therefore never
+    # took effect; the cleanup task below removes the dead files.
     - name: Create kubelet configuration file for shutdown grace periods
       ansible.builtin.copy:
         content: |
@@ -20,7 +25,7 @@
           kind: KubeletConfiguration
           shutdownGracePeriod: 90s
           shutdownGracePeriodCriticalPods: 30s
-        dest: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-shutdown-grace-period.yaml
+        dest: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-shutdown-grace-period.conf
         mode: '0644'
         owner: root
         group: root
@@ -53,10 +58,37 @@
             memory.available: "200Mi"
             nodefs.available: "10%"
             imagefs.available: "10%"
-        dest: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-resource-reservations.yaml
+        dest: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-resource-reservations.conf
         mode: '0644'
         owner: root
         group: root
+
+    # Image GC thresholds. Kubelet's defaults (85/80) let unused images pile
+    # up until the disk is 85% full, then only prune back down to 80% — on
+    # small root disks that leaves the node permanently parked at 80%+ with
+    # no headroom before disk-pressure eviction. Defaults here match upstream;
+    # small-disk nodes lower them via inventory host vars so superseded image
+    # versions are pruned continuously. Only unused images are ever removed.
+    - name: Create kubelet configuration file for image GC thresholds
+      ansible.builtin.copy:
+        content: |
+          apiVersion: kubelet.config.k8s.io/v1beta1
+          kind: KubeletConfiguration
+          imageGCHighThresholdPercent: {{ kubelet_image_gc_high_threshold | default(85) }}
+          imageGCLowThresholdPercent: {{ kubelet_image_gc_low_threshold | default(80) }}
+        dest: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-image-gc.conf
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Remove ignored .yaml kubelet drop-ins (kubelet only reads .conf)
+      ansible.builtin.file:
+        path: "/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/{{ item }}"
+        state: absent
+      loop:
+      - 99-shutdown-grace-period.yaml
+      - 99-resource-reservations.yaml
+      - 99-image-gc.yaml
 
 # Import the main k3s orchestration playbook
 - import_playbook: k3s.orchestration.site
