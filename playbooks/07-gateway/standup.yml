@@ -31,6 +31,13 @@
       register: gateway_crd_render
       changed_when: false
 
+    # Helm v4 writes OCI pull metadata ("Pulled:"/"Digest:" lines) to stdout
+    # ahead of the manifests (v3 sent it to stderr), and kubectl rejects those
+    # lines as a YAML document with no Kind. Strip them before piping.
+    - name: Strip Helm OCI pull metadata from the rendered bundle
+      ansible.builtin.set_fact:
+        gateway_crd_manifests: "{{ gateway_crd_render.stdout_lines | reject('match', '^(Pulled|Digest): ') | join('\n') }}"
+
     # `kubectl apply --server-side` prints "<resource> serverside-applied" for
     # EVERY object whether or not it changed, so its stdout can't distinguish a
     # no-op from a real change (the old stdout-parsing changed_when always
@@ -39,7 +46,7 @@
     - name: Diff Envoy Gateway CRD bundle against the cluster
       ansible.builtin.command:
         cmd: kubectl diff -f -
-        stdin: "{{ gateway_crd_render.stdout }}"
+        stdin: "{{ gateway_crd_manifests }}"
       register: gateway_crd_diff
       changed_when: false
       failed_when: gateway_crd_diff.rc not in [0, 1]
@@ -47,7 +54,7 @@
     - name: Apply Envoy Gateway CRD bundle (server-side)
       ansible.builtin.command:
         cmd: kubectl apply --server-side --force-conflicts --field-manager h3xinfra-gateway-crds -f -
-        stdin: "{{ gateway_crd_render.stdout }}"
+        stdin: "{{ gateway_crd_manifests }}"
       when: gateway_crd_diff.rc == 1
       changed_when: gateway_crd_diff.rc == 1
 
