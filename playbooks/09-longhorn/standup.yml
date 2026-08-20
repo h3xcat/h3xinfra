@@ -125,7 +125,9 @@
 
         state: present
         wait: true
-        timeout: "120s"
+        # A version bump rolls the longhorn-manager DaemonSet (image pulls +
+        # one restart per node), which routinely overruns 120s on this fleet.
+        timeout: "600s"
 
     - name: Validate Longhorn OIDC configuration
       ansible.builtin.assert:
