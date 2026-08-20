@@ -4,8 +4,9 @@
 #   1. Copy the host's ~/.ssh into the container (~/.ssh is read-only from
 #      the host mount at /tmp/host-ssh, so we copy + fix ownership/perms).
 #   2. Stage the ansible managed-node private key from the CIFS-mounted
-#      secrets share into ~/.ssh with strict 0600 perms. CIFS forces 0777
-#      on the source, which openssh refuses to use directly.
+#      secrets share into ~/.ssh with strict 0600 perms. CIFS forces
+#      uid/gid/mode on the source (openssh refuses loose modes, and under
+#      rootless podman the forced host uid appears as container root).
 #   3. Maintain a managed block in ~/.ssh/config so interactive `ssh`
 #      to the h3xinfra managed nodes uses the same key, the same user,
 #      and the same ControlMaster socket as ansible.
@@ -22,28 +23,48 @@ IFS=$'\n\t'
 
 log() { echo "[h3xinfra-setup-ssh] $*"; }
 
-# 1. Mirror host ~/.ssh into the container.
+# 1. Mirror host ~/.ssh into the container. Under rootless Podman/Docker the
+# host user maps to container root (uid_map: 0 <host-uid> 1), so the bind
+# mount appears root-owned and unreadable to the container user; sudo bridges
+# that gap without real privilege escalation (container root == host user).
+# chown must run before chmod since the copied files start out root-owned.
 if [ -d /tmp/host-ssh ]; then
     mkdir -p ~/.ssh
-    cp -r /tmp/host-ssh/. ~/.ssh
+    if [ -r /tmp/host-ssh ] && [ -x /tmp/host-ssh ]; then
+        cp -r /tmp/host-ssh/. ~/.ssh
+    else
+        sudo cp -r /tmp/host-ssh/. ~/.ssh
+    fi
+    sudo chown -R "$(id -u):$(id -g)" ~/.ssh
     chmod 700 ~/.ssh
     find ~/.ssh -type f -exec chmod 600 {} +
-    chown -R "$(id -u):$(id -g)" ~/.ssh
 fi
 
 # 2. Stage the ansible managed-node private key locally. If the key is missing
-# there's nothing for steps 3 and 4 to manage, so we exit early.
+# there's nothing for steps 3 and 4 to manage, so we exit early. The CIFS
+# share forces ownership to the host uid (= container root under rootless
+# podman) and ignores chown, so fall back to sudo for reads; the copies in
+# ~/.ssh are chowned back to the container user.
 ANSIBLE_KEY_SRC="${H3XINFRA_SECRETS_DIR:-/h3xinfra/state/secrets}/ansible_ssh_privatekey"
 ANSIBLE_KEY_DST="$HOME/.ssh/h3xinfra_ansible_id"
+SUDO=""
 if [ ! -r "$ANSIBLE_KEY_SRC" ]; then
-    log "Note: ansible private key not found at $ANSIBLE_KEY_SRC (skipping)"
-    exit 0
+    if sudo test -r "$ANSIBLE_KEY_SRC"; then
+        SUDO="sudo"
+    else
+        log "Note: ansible private key not found at $ANSIBLE_KEY_SRC (skipping)"
+        exit 0
+    fi
 fi
-if ! cmp -s "$ANSIBLE_KEY_SRC" "$ANSIBLE_KEY_DST" 2>/dev/null; then
-    install -m 0600 "$ANSIBLE_KEY_SRC" "$ANSIBLE_KEY_DST"
+if ! $SUDO cmp -s "$ANSIBLE_KEY_SRC" "$ANSIBLE_KEY_DST" 2>/dev/null; then
+    $SUDO install -m 0600 "$ANSIBLE_KEY_SRC" "$ANSIBLE_KEY_DST"
+    sudo chown "$(id -u):$(id -g)" "$ANSIBLE_KEY_DST"
     log "Staged ansible private key at $ANSIBLE_KEY_DST"
 fi
-[ -r "${ANSIBLE_KEY_SRC}.pub" ] && install -m 0644 "${ANSIBLE_KEY_SRC}.pub" "${ANSIBLE_KEY_DST}.pub"
+if $SUDO test -r "${ANSIBLE_KEY_SRC}.pub"; then
+    $SUDO install -m 0644 "${ANSIBLE_KEY_SRC}.pub" "${ANSIBLE_KEY_DST}.pub"
+    sudo chown "$(id -u):$(id -g)" "${ANSIBLE_KEY_DST}.pub"
+fi
 
 # 3. Maintain an Include fragment for h3xinfra managed nodes. Using SSH's
 # native Include keeps re-runs simple: we just overwrite the fragment.
