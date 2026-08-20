@@ -30,8 +30,10 @@ ansible-galaxy collection install 'kubernetes.core:>=6.0.0'
 ansible-galaxy collection install community.general
 
 # Install python dependencies
+# netaddr backs ansible.utils.ipwrap, used by the k3s.orchestration collection
+# on the controller.
 pip3 install --upgrade pip
-pip3 install kubernetes ruamel.yaml
+pip3 install kubernetes ruamel.yaml netaddr
 
 # Install helm-diff (skip if already installed)
 if ! helm plugin list | awk 'NR>1 {print $1}' | grep -qx diff; then
