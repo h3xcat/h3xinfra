@@ -9,6 +9,11 @@ metadata:
   labels:
     {{- include "h3xinfra-gateway-pre.labels" . | nindent 4 }}
 spec:
+  # Bind the proxy's Gateway listeners dual-stack. Envoy Gateway defaults to
+  # IPv4-only listeners ("IPv6 and dual-stack environments are not supported
+  # in this default configuration"), so without this the pod RSTs the IPv6
+  # connections the LoadBalancer VIP DNATs to it.
+  ipFamily: DualStack
   provider:
     type: Kubernetes
     kubernetes:
@@ -19,9 +24,21 @@ spec:
           {{- toYaml . | nindent 10 }}
           {{- end }}
         externalTrafficPolicy: Local
-        # ipFamilies / ipFamilyPolicy aren't exposed in EnvoyProxy v1alpha1.
-        # Envoy Gateway honours the cluster default (PreferDualStack on this
-        # cluster), so the rendered Service ends up with both v4 + v6.
+        # ipFamilies / ipFamilyPolicy aren't first-class fields in EnvoyProxy
+        # v1alpha1, and Kubernetes defaults a Service to SingleStack (IPv4), so
+        # without this patch the pool's IPv6 VIP is never allocated: the public
+        # AAAA record points at an address no node announces and dual-stack
+        # clients that dial IPv6 first (including Envoy Gateway's own OIDC
+        # discovery fetch) black-hole. Request both families explicitly,
+        # mirroring the mailu external Service.
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              ipFamilyPolicy: PreferDualStack
+              ipFamilies:
+                - IPv4
+                - IPv6
   telemetry:
     metrics:
       # Envoy proxy exposes Prometheus metrics on :19001/stats/prometheus.

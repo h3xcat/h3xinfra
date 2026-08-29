@@ -2,5 +2,5 @@ apiVersion: v2
 name: h3xinfra-gateway-pre
 description: Pre-flight resources for the Envoy Gateway-managed shared Gateway (wildcard certificate, MetalLB IP pool, GatewayClass, and Gateway).
 type: application
-version: 0.1.0
+version: 0.2.1
 appVersion: "1.4.2"
