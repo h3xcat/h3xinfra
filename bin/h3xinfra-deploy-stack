@@ -2,4 +2,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-ansible-playbook "$H3XINFRA_FOLDER/playbooks/stack-standup.yml" --user ansible
+# --forks 1: the k3s standup path has no `serial` keyword; with forks>1 it
+# restarts multiple etcd-member servers (and all agents) concurrently, risking
+# quorum loss. The k3s_server role's own guidance is --forks=1 on HA clusters.
+ansible-playbook "$H3XINFRA_FOLDER/playbooks/stack-standup.yml" --user ansible --forks 1
