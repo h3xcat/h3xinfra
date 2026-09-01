@@ -57,6 +57,15 @@ extraConfig:
   enable-ipv6-ndp: "true"
   ipv6-mcast-device: "eth0"
 
+# The Cilium CA (kube-system/cilium-ca) is provisioned out-of-band as a
+# 10-year cert (expires 2036-09): the chart's cronJob certgen always reuses
+# the existing secret (--ca-reuse-secret) and offers no CA-validity knob
+# (tls.ca.certValidityDuration only affects the helm TLS method). To rotate:
+# mint a new CA (ECDSA P-256, CA:TRUE, keyCertSign+cRLSign), replace the
+# cilium-ca secret, delete the hubble-server-certs and
+# hubble-relay-client-certs secrets, then run a one-off job from the
+# hubble-generate-certs CronJob. Hubble reloads certs without restarts.
+
 hubble:
   tls:
     auto:
