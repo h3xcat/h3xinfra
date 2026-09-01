@@ -62,7 +62,10 @@ hubble:
     auto:
       enabled: true
       method: cronJob
-      certValidityDuration: 1095
+      # certgen (>= v0.4.9, cilium 1.20) refuses to issue leaf certs that
+      # outlive the CA, so this must stay well under the CA's remaining
+      # lifetime; the CronJob renews every 4 months regardless.
+      certValidityDuration: 365
       schedule: "0 0 1 */4 *"
   relay:
     enabled: true
