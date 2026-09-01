@@ -27,11 +27,68 @@
       debug:
         msg: "{{ longhorn_cli_version_output.stdout }}"
 
+# V2 (SPDK) data engine prerequisites. Only the amd64 servers run V2:
+# the Pis are excluded (hugepage + dedicated-CPU cost on 4-core/16GB
+# nodes, and arm64+NVMe stuck-I/O bug longhorn/longhorn#13243), so they
+# need no hugepages or nvme-tcp.
+- name: Prepare amd64 nodes for the Longhorn V2 data engine
+  hosts: k3s_cluster
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Configure V2 data engine prerequisites (amd64 only)
+      when: ansible_architecture == 'x86_64'
+      block:
+        - name: Reserve 2MiB hugepages for SPDK (2 GiB total)
+          ansible.posix.sysctl:
+            name: vm.nr_hugepages
+            value: "1024"
+            sysctl_file: /etc/sysctl.d/99-longhorn-v2.conf
+            reload: true
+
+        - name: Verify hugepages were actually allocated
+          ansible.builtin.command: grep HugePages_Total /proc/meminfo
+          register: hugepages_total
+          changed_when: false
+          failed_when: (hugepages_total.stdout.split()[1] | int) < 1024
+
+        - name: Load nvme-tcp kernel module at boot
+          ansible.builtin.copy:
+            dest: /etc/modules-load.d/longhorn-v2.conf
+            content: "nvme_tcp\n"
+            mode: "0644"
+
+        - name: Load nvme-tcp kernel module now
+          ansible.builtin.command: modprobe nvme_tcp
+          changed_when: false
+
 - name: Deploy Longhorn via Helm
   hosts: k8s
   gather_facts: true
   vars:
   tasks:
+    - name: Get cluster nodes for V2 engine node selection
+      kubernetes.core.k8s_info:
+        kind: Node
+      register: cluster_nodes
+
+    # Must happen before the Helm deploy enables v2DataEngine, so the
+    # Pis never attempt to start a V2 instance manager (which would
+    # crashloop without hugepages).
+    - name: Exclude arm64 nodes from the V2 data engine
+      kubernetes.core.k8s:
+        state: patched
+        kind: Node
+        name: "{{ item.metadata.name }}"
+        definition:
+          metadata:
+            labels:
+              node.longhorn.io/disable-v2-data-engine: "true"
+      loop: "{{ cluster_nodes.resources }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      when: item.metadata.labels['kubernetes.io/arch'] == 'arm64'
+
     - name: Add Longhorn Helm repository
       kubernetes.core.helm_repository:
         name: longhorn
@@ -116,6 +173,14 @@
 
             # Instance Manager CPU (V1 Data Engine)
             guaranteedInstanceManagerCpu: 15
+
+            # V2 Data Engine (SPDK), GA since 1.12. Enabled cluster-wide,
+            # but arm64 nodes are excluded via the
+            # node.longhorn.io/disable-v2-data-engine label applied above.
+            # V2 replicas additionally require block-type disks, which are
+            # registered per-node (none yet — carve an LV from ubuntu-vg
+            # and add it as a block disk on the Longhorn node CR).
+            v2DataEngine: "true"
 
             # Backup and Maintenance
             createDefaultDiskLabeledNodes: "false"

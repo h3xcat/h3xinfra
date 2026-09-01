@@ -1,0 +1,23 @@
+{{- if .Values.v2StorageClass.enabled }}
+# StorageClass for V2 (SPDK) data engine volumes. Replicas can only land
+# on nodes that expose block-type disks (the amd64 servers); arm64 nodes
+# carry the node.longhorn.io/disable-v2-data-engine label. Note: PVCs
+# from this class do NOT get the `default` recurring-job group label the
+# upstream chart applies to the `longhorn` StorageClass — opt volumes
+# into snapshots/backups explicitly.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.v2StorageClass.name | quote }}
+  labels:
+    {{- include "h3xinfra-longhorn-post.labels" . | nindent 4 }}
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  dataEngine: "v2"
+  numberOfReplicas: "3"
+  staleReplicaTimeout: "30"
+  fsType: "ext4"
+{{- end }}
