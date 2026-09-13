@@ -45,7 +45,7 @@ env:
   YAMLLINT_VERSION: 1.38.0
   # the devcontainer's ansible-core line (syntax-check only needs a parser)
   # renovate: datasource=pypi depName=ansible-core
-  ANSIBLE_CORE_VERSION: 2.18.18
+  ANSIBLE_CORE_VERSION: 2.21.4
   PYTHON_VERSION: "3.12"
 
 jobs:
