@@ -35,7 +35,7 @@ collections:
   # ansible.posix.{mount,sysctl,authorized_key} are used directly by the
   # playbooks.
   - name: ansible.posix
-    version: 1.6.2
+    version: 2.2.2
   # ansible.utils.ipwrap is used by k3s.orchestration on the controller (needs
   # the netaddr python package from requirements.txt).
   - name: ansible.utils
