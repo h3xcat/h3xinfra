@@ -31,7 +31,7 @@ collections:
   # pin on a recent release so Renovate can see it. The tests/ venv runs
   # ansible-core 2.16 (Python 3.10) and only logs a version-mismatch warning.
   - name: community.general
-    version: 12.6.5
+    version: 13.4.0
   # ansible.posix.{mount,sysctl,authorized_key} are used directly by the
   # playbooks.
   - name: ansible.posix
