@@ -54,3 +54,21 @@ kured:
   #           name: kured-notify
   #           key: url
   extra_env_vars: []
+
+  # PreferNoSchedule taint applied to nodes awaiting reboot (see 10-kured).
+  prefer_no_schedule_taint: "weave.works/kured-node-reboot"
+
+  # Hold the lock this long after a node is back Ready, so Longhorn has
+  # re-reported the node's volumes and the rebuild gate below is visible again
+  # before another node may take the lock.
+  lock_release_delay: "5m"
+
+  # Prometheus circuit breaker: kured will not take the reboot lock while any
+  # alert matching the regexp is firing (fail-closed: unreachable Prometheus
+  # also blocks). Requires the storage-ops rules from 22-monitoring AND the
+  # Longhorn metrics from 09-longhorn (ServiceMonitor + NetworkPolicy); apply
+  # 09-longhorn and 22-monitoring before 10-kured, otherwise
+  # LonghornMetricsAbsent fires 15 min later and blocks every reboot.
+  # Empty prometheus_url disables the check.
+  prometheus_url: "http://h3xinfra-monitoring-main-prometheus.monitoring.svc.cluster.local:9090"
+  alert_filter_regexp: "^(LonghornRebuildInProgress|LonghornVolumeFaulted|LonghornMetricsAbsent)$"

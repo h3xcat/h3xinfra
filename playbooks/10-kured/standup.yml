@@ -83,6 +83,13 @@
             # If a reboot stalls (e.g. node never comes back Ready), release
             # the lock after 30 min so subsequent nodes can still be rebooted.
             lockTtl: "{{ kured.lock_ttl | default('30m') }}"
+            # Keep the lock for a while after the node is back Ready. Longhorn
+            # re-reports a returning node's volumes from that node's own
+            # manager, so the degraded metric (and the LonghornRebuildInProgress
+            # gate below) briefly drops out of Prometheus right when the node
+            # comes back; without this delay the next node could grab the lock
+            # in that window. 15m drain + ~4m reboot + 5m stays under lockTtl.
+            lockReleaseDelay: "{{ kured.lock_release_delay | default('5m') }}"
             # Annotate nodes with reboot status — useful for monitoring.
             annotateNodes: true
             # If drain fails or times out, do NOT force the reboot. Better
@@ -94,6 +101,26 @@
             startTime: "{{ kured.start_time | default('') }}"
             endTime: "{{ kured.end_time | default('') }}"
             timeZone: "{{ kured.time_zone | default('') }}"
+            # Taint every node that still needs a reboot with PreferNoSchedule
+            # (removed after it reboots). Without it a node that lost the lock,
+            # or is simply waiting its turn, is the scheduler's emptiest target
+            # and absorbs everything evicted from the node currently rebooting,
+            # only to evict it all again minutes later (2026-09-13: h3xsrv03
+            # took 44 pods incl. both CNPG instances during a 41-minute wait).
+            preferNoScheduleTaint: "{{ kured.prefer_no_schedule_taint | default('weave.works/kured-node-reboot') }}"
+            # Circuit breaker: before taking the lock kured asks Prometheus for
+            # active alerts and refuses to reboot while one matching the regexp
+            # is FIRING (match-only, so unrelated alerts never block). The
+            # 22-monitoring layer defines LonghornRebuildInProgress (fast, sent
+            # to the null receiver) so consecutive node reboots wait for replica
+            # rebuilds instead of leaving [server]-pinned volumes on a single
+            # healthy copy; LonghornVolumeFaulted / LonghornMetricsAbsent stop
+            # the fleet outright. Prometheus unreachable => blocked (fail-closed).
+            # Leave prometheus_url empty to disable.
+            prometheusUrl: "{{ kured.prometheus_url | default('') }}"
+            alertFilterRegexp: "{{ kured.alert_filter_regexp | default('') }}"
+            alertFilterMatchOnly: true
+            alertFiringOnly: true
           # kured is a system DaemonSet — it must run on every node so any
           # node can get rebooted. Mirroring the existing system-DS pattern
           # (cilium, csi-driver-smb) we tolerate all taints. This includes
@@ -110,6 +137,14 @@
               memory: 64Mi
           # Optional Slack/webhook notification (configured via inventory).
           extraEnvVars: "{{ kured.extra_env_vars | default([]) }}"
+          # Expose kured_reboot_required{node} to Prometheus (Service +
+          # ServiceMonitor) so a stuck or looping reboot campaign can alert.
+          # Bootstrap note: the ServiceMonitor CRD comes from the 22-monitoring
+          # layer, which must exist before this layer on a from-scratch standup.
+          metrics:
+            create: true
+          service:
+            create: true
         state: present
         wait: true
         # DaemonSet rolls one pod at a time across 3–8 nodes with image pulls
