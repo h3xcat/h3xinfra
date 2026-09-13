@@ -2,9 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended",
-    ":dependencyDashboard",
     ":semanticCommits",
-    ":separateMajorReleases",
     "docker:enableMajor",
     "helpers:pinGitHubActionDigests"
   ],
@@ -17,116 +15,143 @@
   "commitMessagePrefix": "chore(deps):",
   "rangeStrategy": "bump",
   "minimumReleaseAge": "3 days",
+  "platformAutomerge": false,
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    "**/vendor/**",
+    "**/examples/**",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/__fixtures__/**"
+  ],
+  "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
-    "labels": [
-      "security"
-    ],
-    "automerge": true
+    "labels": ["security"]
+  },
+  "github-actions": {
+    "managerFilePatterns": [
+      "/(^|/)(workflow-templates|\\.(?:github|gitea|forgejo)/(?:workflows|actions))/.+\\.ya?ml(\\.disabled)?$/",
+      "/(^|/)action\\.ya?ml$/"
+    ]
   },
   "packageRules": [
     {
-      "description": "Disable updates for devcontainer features (not standard Docker images)",
+      "description": "Devcontainer features are versioned as major-only docker tags (:1) and pinned by .devcontainer/devcontainer-lock.json, which Renovate cannot update; refresh them by hand with `devcontainer upgrade` instead of getting no-op PRs",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["ghcr.io/devcontainers/features/**"],
       "enabled": false
     },
     {
-      "description": "Group all Helm chart updates together",
+      "description": "One PR for all Helm chart bumps: they are reviewed together against the release notes and applied in one stack-standup run",
       "matchDatasources": ["helm"],
       "groupName": "Helm charts"
     },
     {
-      "description": "Group all Docker image updates together",
+      "description": "One PR for all container image bumps (chart values defaults and the tfvars/inventory pins share this group, so mirrored pins move together)",
       "matchDatasources": ["docker"],
       "groupName": "Docker images"
     },
     {
-      "description": "Automerge patch updates for non-major dependencies",
+      "description": "OCI-hosted Helm charts must use the docker datasource (the helm datasource cannot serve oci://), but they are charts: group them with the Helm charts, not with container images. Placed after the Docker images rule so it wins",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["**/gateway-helm"],
+      "groupName": "Helm charts"
+    },
+    {
+      "description": "Automerge patch/pin/digest updates only once the CI workflow's check runs are green. platformAutomerge is off globally: GitHub auto-merge is disabled on the repo (allow_auto_merge=false) and, if it were enabled without a ruleset requiring the CI checks, GitHub would merge before CI finishes. Renovate-native automerge merges only when every check run on the PR passes and internal renovate/* statuses are not the only checks (internalChecksAsSuccess=false), so the CI workflow must produce at least one check run on every Renovate PR (path filters inside jobs, never on.pull_request.paths)",
       "matchUpdateTypes": ["patch", "pin", "digest"],
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": true
+      "automerge": true
     },
     {
-      "description": "Group Kubernetes-related updates",
+      "description": "Group Kubernetes-related updates (k3s, Gateway API CRDs, kubectl binary/image) into one Monday-morning PR because k3s bumps are a node-rolling event. Regex form because minimatch globs never cross '/' (the old 'kubernetes**'/'k3s**' globs matched nothing). The datasource filter keeps the pypi kubernetes client, the kubernetes.core collection and the hashicorp/kubernetes provider out. Cron schedule (Mon 00:00-09:59 in `timezone`) only gates branch creation; existing branches still rebase",
       "groupName": "Kubernetes",
-      "schedule": ["before 10am on monday"],
-      "matchPackageNames": ["/^kubernetes/", "/^k8s/", "/kubectl/", "/^k3s/"]
+      "schedule": ["* 0-9 * * 1"],
+      "matchDatasources": ["github-releases", "docker"],
+      "matchPackageNames": ["/^kubernetes/", "/(^|/)kubectl$/", "/^k3s/"]
     },
     {
-      "description": "Group Cilium updates",
+      "description": "kubectl must stay within +/-1 minor of the k3s cluster (k3s_version 1.36.x in inventory/production/group_vars/k3s_cluster/main.yml). Raise the ceiling when k3s moves to a new minor; tests/renovate/test_config.py asserts it equals <1.<k3s_minor+2>.0",
+      "matchDatasources": ["github-releases"],
+      "matchPackageNames": ["kubernetes/kubernetes"],
+      "allowedVersions": "<1.38.0"
+    },
+    {
+      "description": "Group Cilium updates into one Monday-morning PR: a CNI bump disrupts every node and is applied in the same window as k3s. Regex form for parity with the Kubernetes rule",
       "groupName": "Cilium",
-      "schedule": ["before 10am on monday"],
+      "schedule": ["* 0-9 * * 1"],
       "matchPackageNames": ["/^cilium/"]
+    },
+    {
+      "description": "ghcr.io, quay.io and mcr.microsoft.com return no release timestamps (only Docker Hub does), so under the global minimumReleaseAge + timestamp-required their updates were parked in 'Pending Status Checks' until someone ticked the dashboard checkbox. Disable the age check for them so they get PRs like everything else",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/**", "quay.io/**", "mcr.microsoft.com/**"],
+      "minimumReleaseAge": null
+    },
+    {
+      "description": "k3s.orchestration is pinned to a git tag of k3s-io/k3s-ansible (requirements.yml, git-tags datasource): git ls-remote returns no timestamps, so under the global minimumReleaseAge (timestamp-required) every new k3s-ansible tag would sit in 'Pending Status Checks' forever. Public-only rule: the private repo has no git-tags dependency",
+      "matchDatasources": ["git-tags"],
+      "minimumReleaseAge": null
+    },
+    {
+      "description": "required_version is a floor, not a pin: bumping '>= x' on every Terraform patch release is noise (private PRs #150 #180 #190 #194, public #119 #123 #124 #126 were one-line churn) and, being typed 'patch', would automerge a raised minimum CLI version for every operator. Bump it by hand when a feature is needed; providers are still updated via required_providers",
+      "matchManagers": ["terraform"],
+      "matchDepTypes": ["required_version"],
+      "enabled": false
+    },
+    {
+      "description": "chart_versions.gateway_api is not consumed: Gateway API CRDs are rendered from oci://docker.io/envoyproxy/gateway-crds-helm at chart_versions.envoy_gateway (h3xinfra/playbooks/07-gateway/standup.yml). Stop generating PRs for it until the pin is removed; delete this rule together with the pin",
+      "matchDatasources": ["github-releases"],
+      "matchPackageNames": ["kubernetes-sigs/gateway-api"],
+      "enabled": false
+    },
+    {
+      "description": "One PR for all GitHub Actions digest/version bumps (helpers:pinGitHubActionDigests keeps the SHA + '# vX.Y.Z' comment current); separate PRs per action would eat the prConcurrentLimit",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "One PR for CI tooling: tests/tool-versions.env tool pins, tests/requirements.txt python pins and any env pins in workflows. Last rule so it wins over the datasource groups for files under tests/; matchManagers keeps the github-actions group separate",
+      "matchManagers": ["custom.regex", "pip_requirements"],
+      "matchFileNames": ["tests/**", ".github/workflows/**"],
+      "groupName": "CI tooling"
     }
   ],
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Update versions in centralized versions.yml using inline renovate comments",
-      "managerFilePatterns": ["/(^|/)versions\\.ya?ml$/"],
+      "description": "Generic `# renovate: datasource=… depName=… [packageName=…] [registryUrl=…] [extractVersion=…] [versioning=…]` marker (attributes in any order) above a `key: value`, `key = \"value\"`, `KEY=value` or Dockerfile `ARG KEY=value` line. Covers inventory versions.yml, terraform *.auto.tfvars, tests/tool-versions.env and other tests/ files, env pins in GitHub workflows, ARG pins in .devcontainer/Dockerfile and the tool pins in scripts/h3xinfra-setup-dependencies. Blank and plain comment lines between marker and key are tolerated (RE2 has no lookahead, so a second `# renovate:` marker or a commented-out key in that gap would be mis-attributed: tests/renovate/test_config.py forbids that)",
+      "managerFilePatterns": [
+        "/(^|/)versions\\.ya?ml$/",
+        "/\\.auto\\.tfvars$/",
+        "/(^|/)tests/.+\\.(env|ya?ml)$/",
+        "/(^|/)\\.github/workflows/[^/]+\\.ya?ml$/",
+        "/(^|/)\\.devcontainer/Dockerfile$/",
+        "/(^|/)scripts/h3xinfra-setup-dependencies$/"
+      ],
       "matchStrings": [
-        "#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+registryUrl=(?<registryUrl>[^\\s]+))?(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?(?:\\s+versioning=(?<versioning>[^\\s]+))?\\s*\\n\\s*(?:chart_version|[\\w_]+):\\s*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
+        "#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+)\\s+depName=(?<depName>[^\\s]+)(?:[^\\S\\n]+(?:packageName=(?<packageName>[^\\s]+)|registryUrl=(?<registryUrl>[^\\s]+)|extractVersion=(?<extractVersion>[^\\s]+)|versioning=(?<versioning>[^\\s]+)))*[^\\S\\n]*\\n(?:[^\\S\\n]*(?:#[^\\n]*)?\\n)*[^\\S\\n]*(?:(?:ARG|ENV)[^\\S\\n]+)?[\\w.-]+[^\\S\\n]*[:=][^\\S\\n]*[\"']?(?<currentValue>[^\\s\"'\\n]+)[\"']?"
       ]
     },
     {
       "customType": "regex",
-      "description": "Update kubectl version in Dockerfile",
-      "managerFilePatterns": ["/(^|/)\\.devcontainer/Dockerfile$/"],
-      "matchStrings": [
-        "curl -LO \"https://dl\\.k8s\\.io/release/v(?<currentValue>[^/]+)/bin/linux/amd64/kubectl\""
-      ],
-      "depNameTemplate": "kubernetes/kubernetes",
-      "datasourceTemplate": "github-releases",
-      "extractVersionTemplate": "^v(?<version>.+)$"
-    },
-    {
-      "customType": "regex",
-      "description": "Update Helm in Dockerfile",
-      "managerFilePatterns": ["/(^|/)\\.devcontainer/Dockerfile$/"],
-      "matchStrings": [
-        "curl https://raw\\.githubusercontent\\.com/helm/helm/(?<currentValue>v[^/]+)/scripts/get-helm-3"
-      ],
-      "depNameTemplate": "helm/helm",
-      "datasourceTemplate": "github-releases"
-    },
-    {
-      "customType": "regex",
-      "description": "Update base devcontainer image",
-      "managerFilePatterns": ["/(^|/)\\.devcontainer/Dockerfile$/"],
-      "matchStrings": [
-        "ARG BASE_IMAGE_NAME=(?<depName>[^\\n]+)\\nARG BASE_IMAGE_TAG=(?<currentValue>[^\\n]+)"
-      ],
-      "datasourceTemplate": "docker"
-    },
-    {
-      "customType": "regex",
-      "description": "Update k3s version in Ansible inventory files",
+      "description": "k3s version pinned in the Ansible inventory (k3s_version key, k3s+build regex versioning so v1.36.4+k3s1 -> +k3s2 is a patch and -rc tags are ignored). Same comment-tolerant tail as the generic manager; the inventory.example pattern only exists in the public repo",
       "managerFilePatterns": ["/(^|/)inventory/.+\\.ya?ml$/", "/(^|/)inventory\\.example\\.ya?ml$/"],
       "matchStrings": [
-        "#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+versioning=(?<versioning>[^\\s]+))?\\s*\\n\\s*k3s_version:\\s*(?<currentValue>[^\\s\"'\\n]+)"
+        "#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+versioning=(?<versioning>[^\\s]+))?[^\\S\\n]*\\n(?:[^\\S\\n]*(?:#[^\\n]*)?\\n)*[^\\S\\n]*k3s_version:\\s*(?<currentValue>[^\\s\"'\\n]+)"
       ]
-    },
-    {
-      "customType": "regex",
-      "description": "Update hardcoded container images in Helm chart templates",
-      "managerFilePatterns": ["/(^|/)charts/.+/templates/.+\\.ya?ml$/"],
-      "matchStrings": [
-        "image:\\s+(?<depName>[a-z][a-z0-9.\\/-]*):(?<currentValue>[0-9][^\\s\\\"'\\n}]*)"
-      ],
-      "datasourceTemplate": "docker"
     }
   ],
   "hostRules": [
     {
-      "description": "Increase timeout for slow Helm registries",
+      "description": "helm.cilium.io is slow to serve its large index.yaml; Renovate's default timeout is already 60000 ms (60 s), so anything lower would shorten it",
       "matchHost": "helm.cilium.io",
-      "timeout": 60000
+      "timeout": 120000
     },
     {
-      "description": "Increase timeout for GitHub Container Registry",
+      "description": "ghcr.io tag listings for the OCI charts/images pinned here are paginated and occasionally slow; raise above the 60000 ms default (the previous 30000 halved it)",
       "matchHost": "ghcr.io",
-      "timeout": 30000
+      "timeout": 90000
     }
   ]
 }

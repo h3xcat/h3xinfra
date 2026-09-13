@@ -1,0 +1,8 @@
+# Controller-side python deps for the kubernetes.core and k3s.orchestration
+# collections. Installed by scripts/h3xinfra-setup-dependencies
+# (`pip3 install -r requirements.txt`); tracked by Renovate (pip_requirements).
+# Pinned to the versions the devcontainer was last verified with.
+kubernetes==36.0.3
+ruamel.yaml==0.19.1
+# netaddr backs ansible.utils.ipwrap, used by k3s.orchestration on the controller.
+netaddr==1.3.0

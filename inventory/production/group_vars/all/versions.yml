@@ -14,7 +14,11 @@ chart_versions:
   # Envoy Gateway controller (replaces ingress-nginx).
   # renovate: datasource=docker depName=envoyproxy/gateway-helm registryUrl=https://docker.io versioning=helm
   envoy_gateway: "1.9.1"
-  # Upstream Gateway API CRDs (standard channel).
+  # NOT consumed by any playbook: the Gateway API CRDs are rendered from
+  # oci://docker.io/envoyproxy/gateway-crds-helm (experimental channel) at
+  # chart_versions.envoy_gateway by playbooks/07-gateway/standup.yml. This pin
+  # is kept for reference only; Renovate updates for it are disabled by a
+  # packageRule in renovate.json (delete the rule together with the pin).
   # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
   gateway_api: "v1.6.2"
   # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
@@ -23,6 +27,8 @@ chart_versions:
   # Infrastructure - Security & Certs
   # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
   cert_manager: "v1.21.1"
+  # renovate: datasource=docker depName=quay.io/keycloak/keycloak
+  keycloak: "26.7.2"
 
   # Infrastructure - Storage
   # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
@@ -44,3 +50,14 @@ chart_versions:
 cli_versions:
   # renovate: datasource=github-releases depName=longhorn/cli
   longhorn_cli: "v1.12.1"
+
+# =============================================================================
+# CENTRALIZED IMAGE VERSIONS
+# =============================================================================
+# Container image tags managed centrally for Renovate automation.
+# Playbooks should use: {{ image_versions.postgresql }}
+# =============================================================================
+
+image_versions:
+  # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
+  postgresql: "18"

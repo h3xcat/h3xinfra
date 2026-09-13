@@ -133,7 +133,7 @@ This is particularly important for Cilium's IPv6 multicast device configuration.
 
 The project includes a sophisticated devcontainer setup with:
 
-- **Base Environment**: Ubuntu 24.04 with custom user configuration
+- **Base Environment**: Ubuntu 22.04 (jammy) with custom user configuration
 - **Tool Integration**: Pre-configured Ansible, kubectl, Helm, and Docker CLI
 - **Path Management**: Custom scripts automatically available in PATH
 - **Volume Strategy**: SSH keys mounted from host, persistent command history
@@ -145,8 +145,13 @@ The project includes a sophisticated devcontainer setup with:
 ```dockerfile
 # Key devcontainer features:
 - ghcr.io/devcontainers/features/docker-outside-of-docker:1
-- ghcr.io/devcontainers/features/kubectl-helm-minikube:1
 ```
+
+kubectl and Helm are not installed by a feature: they are pinned as `ARG
+KUBECTL_VERSION` / `ARG HELM_VERSION` in `.devcontainer/Dockerfile` (with
+`# renovate:` markers, so Renovate bumps them) because the
+`kubectl-helm-minikube` feature installed `latest` over those pins and kubectl
+must stay within +/-1 minor of the k3s cluster version.
 
 ### Environment Variables
 

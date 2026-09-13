@@ -23,19 +23,27 @@ sudo apt-get install -y terraform
 sudo apt-get autoremove -y
 sudo apt-get clean
 
-ansible-galaxy collection install git+https://github.com/k3s-io/k3s-ansible.git
-# kubernetes.core <6.0.0 still passes `--all` to `helm list`, which Helm v4
-# removed. Pin to a Helm-v4-compatible release.
-ansible-galaxy collection install 'kubernetes.core:>=6.0.0'
-ansible-galaxy collection install community.general
+# Ansible collections and controller-side python deps are pinned in
+# requirements.yml / requirements.txt (Renovate-tracked). Exact pins mean a
+# re-run after a Renovate bump installs the new version without --upgrade.
+H3XINFRA_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ansible-galaxy collection install -r "${H3XINFRA_ROOT}/requirements.yml"
 
 # Install python dependencies
-# netaddr backs ansible.utils.ipwrap, used by the k3s.orchestration collection
-# on the controller.
 pip3 install --upgrade pip
-pip3 install kubernetes ruamel.yaml netaddr
+pip3 install -r "${H3XINFRA_ROOT}/requirements.txt"
 
-# Install helm-diff (skip if already installed)
-if ! helm plugin list | awk 'NR>1 {print $1}' | grep -qx diff; then
-    helm plugin install https://github.com/databus23/helm-diff --verify=false
+# Install helm-diff at a pinned release: `helm plugin install` without
+# --version fetches whatever tag is newest, so a container rebuild could pick
+# up a plugin release that breaks kubernetes.core.helm diffs. Idempotent: a
+# matching install is left alone, a different version is replaced.
+# renovate: datasource=github-releases depName=databus23/helm-diff
+HELM_DIFF_VERSION="v3.15.11"
+installed_diff="$(helm plugin list | awk '$1 == "diff" {print $2}')"
+if [ -n "${installed_diff}" ] && [ "v${installed_diff}" != "${HELM_DIFF_VERSION}" ]; then
+    helm plugin uninstall diff
+    installed_diff=""
+fi
+if [ -z "${installed_diff}" ]; then
+    helm plugin install https://github.com/databus23/helm-diff --version "${HELM_DIFF_VERSION}" --verify=false
 fi

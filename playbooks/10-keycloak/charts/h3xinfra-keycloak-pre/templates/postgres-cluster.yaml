@@ -12,7 +12,7 @@ metadata:
     app.kubernetes.io/component: postgres
 spec:
   instances: {{ .Values.postgres.instances | default 2 }}
-  imageName: {{ printf "ghcr.io/cloudnative-pg/postgresql:%s" .Values.postgres.imageTag | quote }}
+  imageName: {{ printf "%s:%s" .Values.postgres.image.repository (.Values.postgres.image.tag | toString) | quote }}
   # Spread replicas across nodes. `preferred` so the cluster can still
   # schedule when distinct-node placement is not possible (e.g. drain).
   affinity:

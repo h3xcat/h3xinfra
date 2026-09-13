@@ -56,6 +56,20 @@ This project provides Ansible playbooks and configurations to deploy and manage 
 ```
 
 
+## Continuous Integration
+
+`.github/workflows/ci.yml` validates every pull request and push to `main`
+without a cluster: `renovate-config-validator`, yamllint, `ansible-playbook
+--syntax-check` against `inventory/production`, `helm lint`/`template` of the
+charts under `playbooks/*/charts`, and `terraform validate` for
+`playbooks/10-keycloak/terraform`. When the `H3XINFRA_PRIVATE_TOKEN` secret
+(fine-grained PAT, *Contents: read* on `h3xcat/h3xinfra-private`) is present,
+the full test suite from that repo's `tests/` directory runs instead (chart
+renders with production-shaped values, kubeconform, artifact existence checks,
+Renovate config invariants). Either way the single check to watch is `ci-ok`;
+Renovate's automerge waits for it. Tool versions are `env:` pins with
+`# renovate:` markers at the top of the workflow.
+
 ## Maintenance
 
 See [Operations Guide](docs/operations.md) for detailed maintenance procedures.
@@ -76,7 +90,7 @@ This project includes a complete devcontainer setup for a consistent development
 ### Using the Devcontainer
 
 The devcontainer provides:
-- **Ubuntu 24.04** base environment
+- **Ubuntu 22.04 (jammy)** base environment
 - **Pre-installed tools**: Ansible, kubectl, Helm, Docker CLI
 - **Integrated scripts**: All `bin/` scripts are available in PATH
 - **SSH key mounting**: Your host SSH keys are available at `/tmp/host-ssh`

@@ -18,7 +18,7 @@
 # │ K8s Node IPs            │ 192.168.1.10-12         │ 2001:db8::10-12         │
 # │ MetalLB Pool (dynamic)  │ 192.168.100.0/24        │ 2001:db8:face:1::/96    │
 # │ Manual Service IPs      │ 192.168.101.0/24        │ 2001:db8:face:0::/96    │
-# │ ├─ Ingress NGINX LB     │ 192.168.101.100/32      │ 2001:db8:face::100/128  │
+# │ ├─ Envoy Gateway LB    │ 192.168.101.100/32      │ 2001:db8:face::100/128  │
 # │ ├─ Mailu LB             │ 192.168.101.101/32      │ 2001:db8:face::101/128  │
 # │ └─ Mailu Public         │ 203.0.113.10 (example)  │ 2001:db8:face::101      │
 # │ K8s Cluster CIDR        │ 10.42.0.0/16            │ 2001:db8:cafe::/96      │
@@ -60,7 +60,7 @@
 #
 # IMPORTANT: Firewall Configuration for IPv6
 # - Your router/firewall must allow the face::/80 subnet through the WAN interface
-# - This enables external access to services like Ingress NGINX and Mailu
+# - This enables external access to services like Envoy Gateway and Mailu
 # - Unlike IPv4 (which uses port forwarding), IPv6 requires subnet-based firewall rules
 # - Example firewall rule: "Allow inbound traffic to 2001:db8:face::/80 from any"
 ---
@@ -73,15 +73,36 @@ all:
     health:
       release_name_prefix: "homeinfra-health"
 
+    # Single-file layout: the playbooks read chart_versions.<svc>,
+    # cli_versions.<tool> and image_versions.<image> (never a per-service
+    # `chart_version`). The canonical, Renovate-managed copy of these values is
+    # inventory/production/group_vars/all/versions.yml; keep this block equal to
+    # it (tests/renovate/test_config.py asserts that). With the structured
+    # layout, group_vars/all/versions.yml is loaded automatically instead.
+    chart_versions:
+      cilium: "1.20.1"
+      metallb: "0.16.1"
+      envoy_gateway: "1.9.1"
+      gateway_api: "v1.6.2"
+      external_dns: "1.21.1"
+      cert_manager: "v1.21.1"
+      keycloak: "26.7.2"
+      longhorn: "1.12.1"
+      csi_driver_smb: "1.20.3"
+      kured: "6.1.0"
+      mailu: "2.7.3"
+    cli_versions:
+      longhorn_cli: "v1.12.1"
+    image_versions:
+      postgresql: "18"
+
     cilium:
       namespace: "kube-system"
       release_name_prefix: "homeinfra-cilium"
-      chart_version: "1.17.3" 
     
     metallb:
       namespace: "metallb-system"
       release_name_prefix: "homeinfra-metallb"
-      chart_version: "0.13.10"
 
       # Example network ranges - replace with your actual network configuration
       # Note: IPv6 addresses use subnets within your ISP's public allocation
@@ -103,7 +124,6 @@ all:
     certmanager:
       namespace: "cert-manager"
       release_name_prefix: "homeinfra-certmanager"
-      chart_version: "v1.17.2"
       # Replace with your actual email address
       cluster_issuer_email: "admin@example.com"
       cluster_issuer_dns: 
@@ -114,7 +134,6 @@ all:
     mailu:
       namespace: "mailu"
       release_name_prefix: "homeinfra-mailu"
-      chart_version: "2.2.2"
       # Replace with your actual domain
       domain: "example.com"
       db_password: !vault |
@@ -152,7 +171,6 @@ all:
     externaldns:
       namespace: "external-dns"
       release_name_prefix: "homeinfra-externaldns"
-      chart_version: "1.16.1"
       domain_filters:
       - "example.com"
       - "second-domain.com"

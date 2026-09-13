@@ -77,7 +77,8 @@
             adminPassword: "{{ keycloak.admin.password }}"
           postgres:
             enabled: true
-            imageTag: "{{ image_versions.postgresql }}"
+            image:
+              tag: "{{ image_versions.postgresql }}"
             instances: "{{ keycloak.postgresql.instances | default(2) }}"
             database: "{{ keycloak.postgresql.auth.database | default('keycloak') }}"
             username: "{{ keycloak.postgresql.auth.username | default('keycloak') }}"

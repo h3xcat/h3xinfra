@@ -1,0 +1,33 @@
+# Mirrors tests/ansible/yamllint.yml in h3xinfra-private (keep the two in sync).
+# It exists so ansible-lint / yamllint run standalone in this repo: ansible-lint
+# reads .yamllint.yml automatically and aborts on an empty one ("invalid
+# config: not a mapping").
+# yamllint config for the h3xinfra test suite (tests/ansible/run.sh).
+# Goal: fail only on real breakage (YAML syntax errors, duplicate keys) and keep
+# the existing baseline (~280 findings) as warnings: yamllint exits 0 on
+# warnings unless --strict. Tighten rule-by-rule as files are cleaned up.
+extends: relaxed
+
+ignore: |
+  **/charts/*/templates/**
+  .terraform/
+  node_modules/
+  .git/
+  .venv/
+
+rules:
+  line-length: disable
+  document-start: disable
+  truthy: disable
+  key-duplicates: {level: error}
+  trailing-spaces: {level: warning}
+  commas: {level: warning}
+  new-line-at-end-of-file: {level: warning}
+  indentation: {level: warning, indent-sequences: consistent}
+  empty-lines: {level: warning}
+  colons: {level: warning}
+  hyphens: {level: warning}
+  comments: {level: warning}
+  comments-indentation: {level: warning}
+  brackets: {level: warning}
+  braces: {level: warning}

@@ -1,0 +1,275 @@
+# CI for h3xcat/h3xinfra (the public core). The full test suite lives in the
+# private repo (h3xinfra-private/tests, which runs in "submodule mode" against
+# this checkout); it is sparse-checked-out here when the H3XINFRA_PRIVATE_TOKEN
+# secret (fine-grained PAT, Contents: read on h3xinfra-private) exists. Without
+# the secret (forks, missing setup) the `minimal` job runs a self-contained
+# subset. `ci-ok` is the one check to require and the one Renovate's automerge
+# waits for (platformAutomerge=false in renovate.json).
+#
+# Every `uses:` is pinned to a full commit SHA with its tag in a comment
+# (helpers:pinGitHubActionDigests keeps them current). Tool versions are env
+# pins with `# renovate:` markers directly above them (generic regex
+# customManager, "CI tooling" group); keep them equal to
+# h3xinfra-private/tests/tool-versions.env.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "37 6 * * 1"  # weekly: pinned remote artifacts must still exist
+
+permissions:
+  contents: read
+
+concurrency:
+  # Only PR runs cancel each other: push, schedule and workflow_dispatch share
+  # refs/heads/main and a cancelled run leaves a red ci-ok on that commit.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # renovate: datasource=github-releases depName=renovatebot/renovate
+  RENOVATE_VERSION: 44.83.0
+  # renovate 44.x needs node ^24.11
+  # renovate: datasource=node-version depName=node
+  NODE_VERSION: 24.21.0
+  # renovate: datasource=github-releases depName=helm/helm
+  HELM_VERSION: v4.3.0
+  # >= 1.16.2 is required by playbooks/10-keycloak/terraform/providers.tf
+  # renovate: datasource=github-releases depName=hashicorp/terraform extractVersion=^v(?<version>.*)$
+  TERRAFORM_VERSION: 1.16.2
+  # renovate: datasource=pypi depName=yamllint
+  YAMLLINT_VERSION: 1.38.0
+  # the devcontainer's ansible-core line (syntax-check only needs a parser)
+  # renovate: datasource=pypi depName=ansible-core
+  ANSIBLE_CORE_VERSION: 2.17.14
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # Secrets cannot be tested in a job-level `if`, so one tiny job turns the
+  # presence of the token into an output.
+  probe:
+    name: probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      has_token: ${{ steps.probe.outputs.has_token }}
+    steps:
+      - id: probe
+        env:
+          TOKEN: ${{ secrets.H3XINFRA_PRIVATE_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then echo "has_token=true" >> "$GITHUB_OUTPUT"; else echo "has_token=false" >> "$GITHUB_OUTPUT"; fi
+
+  # ---------------------------------------------------------------------------
+  # Full suite from h3xinfra-private/tests in submodule mode (needs the token).
+  # ---------------------------------------------------------------------------
+  suite:
+    name: suite
+    needs: probe
+    if: needs.probe.outputs.has_token == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # This repo goes into h3xinfra/, the private tests next to it (never
+      # inside it: the suite scans the repo root and must not see tests/ there).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: h3xinfra
+          fetch-depth: 0  # base-vs-head chart diff on pull requests
+          persist-credentials: false  # nothing below needs git auth
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: h3xcat/h3xinfra-private
+          ref: main
+          token: ${{ secrets.H3XINFRA_PRIVATE_TOKEN }}
+          path: h3xinfra-private
+          sparse-checkout: tests
+          sparse-checkout-cone-mode: true
+          # The PAT is only needed for this checkout; do not leave it in
+          # .git/config where npx/pip/ansible-galaxy/helm/terraform and every
+          # later step could read it.
+          persist-credentials: false
+      - name: Load tool versions (private tests/tool-versions.env wins over the env pins above)
+        run: grep -E '^[A-Z_]+=' h3xinfra-private/tests/tool-versions.env >> "$GITHUB_ENV"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: h3xinfra-private/tests/requirements.txt
+      - run: python -m pip install --disable-pip-version-check -r h3xinfra-private/tests/requirements.txt
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/h3xinfra-tests
+            ~/.cache/h3xtest/collections
+            ~/.cache/terraform-plugins
+          key: suite-${{ hashFiles('h3xinfra-private/tests/tool-versions.env', 'h3xinfra-private/tests/helm/upstream.yaml', 'h3xinfra/requirements.yml', 'h3xinfra/inventory/production/group_vars/all/versions.yml', 'h3xinfra/playbooks/10-keycloak/terraform/.terraform.lock.hcl') }}
+          restore-keys: suite-
+      - name: Install kubeconform, crane, tflint (pinned, checksum-verified, cached)
+        # The cache above is restored by prefix, so each binary is stored under
+        # a version-suffixed name (a version bump in tool-versions.env must be a
+        # guaranteed miss, otherwise the old binary would run and be re-cached
+        # under the new key) and the assets are verified against the checksum
+        # files upstream publishes for the same tag.
+        run: |
+          set -euo pipefail
+          bin="$HOME/.cache/h3xinfra-tests/bin"; mkdir -p "$bin"
+          cd "$RUNNER_TEMP"
+          if [ ! -x "$bin/kubeconform-${KUBECONFORM_VERSION}" ]; then
+            curl -fsSLO "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+            curl -fsSLO "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/CHECKSUMS"
+            sha256sum --ignore-missing -c CHECKSUMS
+            tar -xzf kubeconform-linux-amd64.tar.gz kubeconform
+            install -m0755 kubeconform "$bin/kubeconform-${KUBECONFORM_VERSION}"
+          fi
+          if [ ! -x "$bin/crane-${CRANE_VERSION}" ]; then
+            curl -fsSLO "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz"
+            curl -fsSLO "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/checksums.txt"
+            sha256sum --ignore-missing -c checksums.txt
+            tar -xzf go-containerregistry_Linux_x86_64.tar.gz crane
+            install -m0755 crane "$bin/crane-${CRANE_VERSION}"
+            rm -f checksums.txt
+          fi
+          if [ ! -x "$bin/tflint-${TFLINT_VERSION}" ]; then
+            curl -fsSLO "https://github.com/terraform-linters/tflint/releases/download/${TFLINT_VERSION}/tflint_linux_amd64.zip"
+            curl -fsSLO "https://github.com/terraform-linters/tflint/releases/download/${TFLINT_VERSION}/checksums.txt"
+            sha256sum --ignore-missing -c checksums.txt
+            unzip -o -q tflint_linux_amd64.zip tflint
+            install -m0755 tflint "$bin/tflint-${TFLINT_VERSION}"
+          fi
+          ln -sf "kubeconform-${KUBECONFORM_VERSION}" "$bin/kubeconform"
+          ln -sf "crane-${CRANE_VERSION}" "$bin/crane"
+          ln -sf "tflint-${TFLINT_VERSION}" "$bin/tflint"
+          echo "$bin" >> "$GITHUB_PATH"
+          "$bin/kubeconform" -v | grep -Fx "${KUBECONFORM_VERSION}"
+          "$bin/crane" version | grep -Fx "${CRANE_VERSION#v}"  # crane prints the version without the v
+          "$bin/tflint" --version | grep -F "${TFLINT_VERSION#v}"
+      - name: renovate-config-validator --strict + dry-run extract
+        working-directory: h3xinfra
+        env:
+          LOG_LEVEL: debug
+          LOG_FORMAT: json
+        run: |
+          set -euo pipefail
+          npx --yes --package "renovate@${RENOVATE_VERSION}" renovate-config-validator --strict --no-global renovate.json
+          npx --yes --package "renovate@${RENOVATE_VERSION}" renovate --platform=local --dry-run=extract > "$RUNNER_TEMP/renovate-extract-public.jsonl"
+          grep -q '"msg":"Extracted dependencies"' "$RUNNER_TEMP/renovate-extract-public.jsonl"
+      - name: tests/run-all.sh (submodule mode)
+        env:
+          RENOVATE_VALIDATOR_OK: "1"
+          RENOVATE_EXTRACT_JSON: ${{ runner.temp }}/renovate-extract-public.jsonl
+          REQUIRE_TFLINT: "1"
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+          GH_TOKEN: ${{ github.token }}
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: TFLINT="$HOME/.cache/h3xinfra-tests/bin/tflint" h3xinfra-private/tests/run-all.sh "$GITHUB_WORKSPACE/h3xinfra"
+
+  # ---------------------------------------------------------------------------
+  # Self-contained fallback when the private tests are not reachable.
+  # ---------------------------------------------------------------------------
+  minimal:
+    name: minimal
+    needs: probe
+    if: needs.probe.outputs.has_token == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ANSIBLE_VAULT_PASSWORD: ci-dummy  # vaulted vars only need to parse
+      ANSIBLE_FORCE_COLOR: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: renovate-config-validator --strict
+        run: npx --yes --package "renovate@${RENOVATE_VERSION}" renovate-config-validator --strict --no-global renovate.json
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: python -m pip install --disable-pip-version-check "yamllint==${YAMLLINT_VERSION}" "ansible-core==${ANSIBLE_CORE_VERSION}"
+      - name: yamllint (.yamllint.yml mirrors the private suite's config)
+        run: yamllint -c .yamllint.yml playbooks inventory inventory.example.yml renovate.json requirements.yml .github
+      - name: ansible-playbook --syntax-check (own inventory)
+        run: |
+          set -euo pipefail
+          ansible-galaxy collection install -r requirements.yml </dev/null
+          # playbooks are list-shaped YAML; vars/values files are maps. A file
+          # that does not even parse is kept so ansible-playbook reports the
+          # YAML error instead of the count silently shrinking.
+          mapfile -t playbooks < <(find playbooks -maxdepth 2 \( -name '*.yml' -o -name '*.yaml' \) -not -path '*/charts/*' -print0 \
+            | python3 -c 'import sys,yaml
+          for f in filter(None, sys.stdin.buffer.read().split(b"\0")):
+              f = f.decode()
+              try: doc = yaml.safe_load(open(f))
+              except Exception: doc = []
+              if isinstance(doc, list): print(f)' | sort)
+          echo "${#playbooks[@]} playbooks"
+          rc=0
+          for pb in "${playbooks[@]}"; do
+            ansible-playbook --syntax-check "$pb" </dev/null >/dev/null || { echo "::error file=$pb::syntax-check failed"; rc=1; }
+          done
+          exit "$rc"
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: helm lint --strict + template (defaults plus the values the charts `require`)
+        # Without the private test values, satisfy every `required`/`fail`
+        # guard with fakes; unknown keys are ignored by the other charts.
+        run: |
+          set -euo pipefail
+          rc=0
+          for chart in playbooks/*/charts/*/; do
+            helm lint --strict "$chart" >/dev/null || { echo "::error::helm lint $chart"; rc=1; }
+            if helm template t "$chart" -n test-ns \
+                --set hostname=keycloak.example.com --set bootstrapAdminSecretName=fake --set database.host=db --set database.credentialsSecretName=fake \
+                --set bootstrapSecret.adminPassword=FAKE --set postgres.password=FAKE \
+                --set 'clusterIssuer.acme.dnsZones={example.com}' --set cloudflareApiToken.token=FAKE >/dev/null; then
+              echo "ok   $chart"
+            else
+              echo "::error::helm template $chart"; rc=1
+            fi
+          done
+          exit "$rc"
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: terraform validate playbooks/10-keycloak/terraform
+        working-directory: playbooks/10-keycloak/terraform
+        run: |
+          set -euo pipefail
+          terraform fmt -check -diff
+          terraform init -backend=false -input=false
+          terraform validate
+          git diff --exit-code -- .terraform.lock.hcl
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [probe, suite, minimal]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Aggregate job results
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$RESULTS" | jq -e '[.[] | .result] | any(. == "failure" or . == "cancelled")' >/dev/null; then
+            echo "::error::a job failed or was cancelled"; exit 1
+          fi

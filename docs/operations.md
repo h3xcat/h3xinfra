@@ -9,7 +9,7 @@ This document describes common operational procedures for the H3x Kubernetes clu
 This project includes a complete devcontainer configuration for consistent development across different machines.
 
 #### Features
-- **Base Image**: Ubuntu 24.04 with custom user setup
+- **Base Image**: Ubuntu 22.04 (jammy) with custom user setup
 - **Pre-installed Tools**:
   - Ansible with all required collections
   - kubectl and Helm for Kubernetes management

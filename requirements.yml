@@ -1,0 +1,42 @@
+---
+# Ansible collections used by the playbooks, pinned to exact versions so a
+# fresh devcontainer/CI runner gets the same modules as the last verified run.
+# Installed by scripts/h3xinfra-setup-dependencies
+# (`ansible-galaxy collection install -r requirements.yml`) and tracked by
+# Renovate's ansible-galaxy manager. Keep comments on their own lines: Renovate
+# stops parsing an entry at the first line that is not `key: value`, so a
+# trailing comment on a `version:` line silently drops the pin.
+collections:
+  # k3s.orchestration ships in the k3s-ansible repo (no Galaxy release); the
+  # version is the git tag (== galaxy.yml `version`). Written as name + source
+  # so Renovate resolves it through git-tags: a bare git URL in `name` is
+  # extracted as github-tags with the full URL as packageName and cannot be
+  # looked up.
+  - name: k3s.orchestration
+    source: https://github.com/k3s-io/k3s-ansible.git
+    type: git
+    version: 1.2.2
+  # kubernetes.core <6.0.0 still passes `--all` to `helm list`, which Helm v4
+  # removed; 6.x is the first Helm-v4-compatible line.
+  - name: kubernetes.core
+    version: 6.5.0
+  # community.general.{ini_file,pam_limits,sudoers,terraform} are used directly
+  # by the playbooks. 12.6.5 is the newest release whose `requires_ansible`
+  # (>=2.17.0) the devcontainer's ansible-core 2.17 satisfies; 13.x needs
+  # >=2.18.0. It also shadows the older 9.5.x the PPA `ansible` bundle ships in
+  # site-packages (collections on the collections path win). Renovate's
+  # galaxy-collection datasource only reads Galaxy's first versions page (the
+  # 10 newest of 240+ releases), so a pin older than that page - like the
+  # previous 9.5.2 - is silently skipped (skipReason invalid-value); keep this
+  # pin on a recent release so Renovate can see it. The tests/ venv runs
+  # ansible-core 2.16 (Python 3.10) and only logs a version-mismatch warning.
+  - name: community.general
+    version: 12.6.5
+  # ansible.posix.{mount,sysctl,authorized_key} are used directly by the
+  # playbooks.
+  - name: ansible.posix
+    version: 1.6.2
+  # ansible.utils.ipwrap is used by k3s.orchestration on the controller (needs
+  # the netaddr python package from requirements.txt).
+  - name: ansible.utils
+    version: 4.1.0

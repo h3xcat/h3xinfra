@@ -11,7 +11,7 @@
 # │ K8s Node IPs            │ 192.168.1.10-12         │ 2001:db8::10-12         │
 # │ MetalLB Pool (dynamic)  │ 192.168.100.0/24        │ 2001:db8:face:1::/96    │
 # │ Manual Service IPs      │ 192.168.101.0/24        │ 2001:db8:face:0::/96    │
-# │ ├─ Ingress NGINX LB     │ 192.168.101.100/32      │ 2001:db8:face::100/128  │
+# │ ├─ Envoy Gateway LB    │ 192.168.101.100/32      │ 2001:db8:face::100/128  │
 # │ ├─ Mailu LB             │ 192.168.101.101/32      │ 2001:db8:face::101/128  │
 # │ └─ Mailu Public         │ 203.0.113.10 (example)  │ 2001:db8:face::101      │
 # │ K8s Cluster CIDR        │ 10.42.0.0/16            │ 2001:db8:cafe::/96      │
@@ -53,7 +53,7 @@
 #
 # IMPORTANT: Firewall Configuration for IPv6
 # - Your router/firewall must allow the face::/80 subnet through the WAN interface
-# - This enables external access to services like Ingress NGINX and Mailu
+# - This enables external access to services like Envoy Gateway and Mailu
 # - Unlike IPv4 (which uses port forwarding), IPv6 requires subnet-based firewall rules
 # - Example firewall rule: "Allow inbound traffic to 2001:db8:face::/80 from any"
 

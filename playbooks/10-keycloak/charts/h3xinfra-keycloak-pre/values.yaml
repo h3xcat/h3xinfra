@@ -14,8 +14,11 @@ bootstrapSecret:
 # CloudNativePG-managed Postgres cluster backing Keycloak.
 postgres:
   enabled: true
-  # Used as image: ghcr.io/cloudnative-pg/postgresql:<imageTag>
-  imageTag: "18.3"
+  # Tracked by Renovate's helm-values manager (image.repository + image.tag).
+  # The playbook overrides only `tag` (image_versions.postgresql in the inventory).
+  image:
+    repository: "ghcr.io/cloudnative-pg/postgresql"
+    tag: "18.6"
   instances: 2
   database: "keycloak"
   username: "keycloak"
