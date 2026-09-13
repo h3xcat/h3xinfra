@@ -165,6 +165,34 @@
         daemon_reload: "{{ load_itco_unit.changed | default(false) }}"
       when: ansible_architecture == "x86_64"
 
+    # Bluetooth is unused on the servers, and Ubuntu's 6.8.0-139 kernel ships
+    # an incomplete btmtk backport (LP #2165873) that NULL-derefs inside
+    # btusb_mtk_setup ~4 s into every boot. With kernel.panic_on_oops=1 below
+    # that is a boot-time panic race against systemd-sysctl (h3xsrv01/02 each
+    # panicked once on 2026-09-13). Blacklist the MediaTek USB Bluetooth stack
+    # outright; Wi-Fi uses the separate mt7921e PCIe driver and is unaffected.
+    # Takes effect on the next boot (modules are loaded from the rootfs by udev,
+    # not from the initramfs); do not `modprobe -r` a live btusb, it hangs.
+    - name: Blacklist USB Bluetooth modules (x86)
+      copy:
+        dest: /etc/modprobe.d/blacklist-bluetooth.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          # Managed by h3xinfra 00-prep. Bluetooth is unused on cluster nodes;
+          # btmtk on Ubuntu 6.8.0-139 oopses at boot (LP #2165873).
+          blacklist btusb
+          blacklist btmtk
+          install btusb /bin/false
+          install btmtk /bin/false
+      register: bt_blacklist
+      when: ansible_architecture == "x86_64"
+
+    - name: Rebuild initramfs after Bluetooth blacklist change (x86)
+      command: update-initramfs -u -k all
+      when: ansible_architecture == "x86_64" and bt_blacklist.changed
+
     - name: Load hardware watchdog driver (Raspberry Pi, ARM)
       modprobe:
         name: bcm2835_wdt
@@ -264,27 +292,32 @@
       command: systemctl daemon-reexec
       when: systemd_watchdog_changed.changed
 
-    # Hugepages: previously pre-allocated 1024 * 2 MiB = 2 GiB per node, but
-    # nothing in the stack requests `hugepages-2Mi` resources, so the memory
-    # was effectively dead-weight (~2 GiB/node, ~16 GiB cluster-wide). We
-    # zero the runtime allocation here and strip `hugepages=N` from the
-    # kernel cmdline below so the change survives reboots. Reintroduce if
-    # a workload (e.g. CNPG with large shared_buffers, DPDK) ever needs them.
+    # Hugepages: the Pis once pre-allocated 1024 * 2 MiB = 2 GiB of dead
+    # weight, so the runtime allocation is zeroed here and `hugepages=N` is
+    # stripped from the Pi kernel cmdline below. The amd64 servers are
+    # EXCLUDED: 09-longhorn reserves vm.nr_hugepages=1024 on them for the
+    # Longhorn V2 (SPDK) instance manager via /etc/sysctl.d/99-longhorn-v2.conf,
+    # and zeroing the pool underneath a running instance manager leaves its
+    # replacement unable to start until the next reboot re-applies the sysctl.
     - name: Check current huge page allocation
       shell: cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
       register: hugepage_current
       changed_when: false
+      check_mode: false
+      when: ansible_architecture != "x86_64"
 
-    - name: Release huge page allocation (runtime)
+    - name: Release huge page allocation (runtime, non-amd64 only)
       shell: echo 0 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
       register: hugepage_result
       changed_when: true
-      when: hugepage_current.stdout != "0"
+      when: ansible_architecture != "x86_64" and hugepage_current.stdout != "0"
 
-    - name: Verify huge page allocation is zero
+    - name: Verify huge page allocation is zero (non-amd64 only)
       shell: cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
       register: hugepage_check
       changed_when: false
+      check_mode: false
+      when: ansible_architecture != "x86_64"
 
     - name: Check if GRUB configuration exists
       stat:
