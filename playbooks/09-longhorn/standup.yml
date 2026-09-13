@@ -171,6 +171,21 @@
             # the node cordoned forever and the volume stuck faulted.
             nodeDrainPolicy: block-for-eviction-if-contains-last-replica
 
+            # Orphan cleanup. Longhorn refuses to lift a node's instance-manager
+            # PDB while ANY engine/replica process still runs inside it -- stale
+            # ones included, whose CR long since moved to another node (RWX
+            # fast-failover during an API/etcd blip leaves exactly that behind).
+            # 2026-09-11..13: two orphaned RWX engines on h3xsrv03 blocked kured's
+            # drain for 50 hours; Longhorn had created Orphan CRs for them on
+            # 09-09 but nothing ever acted on them because this was unset.
+            # `instance` deletes orphaned engine/replica *processes* after the
+            # grace period. Deliberately NOT `replica-data`: that purges on-disk
+            # replica directories that have no Replica CR, i.e. the manual
+            # salvage safety net. Orphans on down/unknown nodes are still not
+            # auto-cleaned -- `kubectl -n longhorn-system get orphans.longhorn.io`.
+            orphanResourceAutoDeletion: "instance"
+            orphanResourceAutoDeletionGracePeriod: "300"
+
             # Instance Manager CPU (V1 Data Engine)
             guaranteedInstanceManagerCpu: 15
 
@@ -187,6 +202,16 @@
           defaultBackupStore:
             backupTarget: "{{ longhorn.cifs_backup_target }}"
             backupTargetCredentialSecret: "{{ longhorn.release_name_prefix }}-pre-cifs-secret"
+          # Expose longhorn-manager metrics (:9500, longhorn_volume_robustness,
+          # longhorn_engine_replica_mode, ...) to kube-prometheus-stack via the
+          # chart's ServiceMonitor. The upstream `longhorn-manager` NetworkPolicy
+          # (restrictInternalTraffic) only admits Longhorn components, so the
+          # h3xinfra-longhorn-post chart adds the ingress rule for Prometheus.
+          # Bootstrap note: the ServiceMonitor CRD comes from the 22-monitoring
+          # layer, which must exist before this layer on a from-scratch standup.
+          metrics:
+            serviceMonitor:
+              enabled: true
 
         state: present
         wait: true

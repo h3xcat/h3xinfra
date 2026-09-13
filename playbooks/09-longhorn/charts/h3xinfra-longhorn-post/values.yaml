@@ -62,3 +62,12 @@ v2StorageClass:
   #     retain: 8
   #     concurrency: 1
   #     groups: ["default"]
+
+# NetworkPolicy that lets Prometheus scrape longhorn-manager metrics (:9500);
+# pairs with `metrics.serviceMonitor.enabled` on the upstream chart. See
+# templates/networkpolicy-metrics.yaml.
+metricsNetworkPolicy:
+  enabled: true
+  prometheusNamespace: monitoring
+  prometheusPodLabels:
+    app.kubernetes.io/name: prometheus

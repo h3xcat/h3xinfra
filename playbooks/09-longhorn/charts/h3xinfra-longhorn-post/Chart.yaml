@@ -2,5 +2,5 @@ apiVersion: v2
 name: h3xinfra-longhorn-post
 description: Longhorn Custom Resources for H3X Infra
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "0.0.1"

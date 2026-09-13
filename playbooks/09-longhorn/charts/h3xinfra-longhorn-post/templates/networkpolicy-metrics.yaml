@@ -1,0 +1,32 @@
+{{- if .Values.metricsNetworkPolicy.enabled }}
+---
+# Allow Prometheus (monitoring namespace) to scrape longhorn-manager :9500.
+# The upstream longhorn chart's `longhorn-manager` NetworkPolicy
+# (networkPolicies.restrictInternalTraffic) only admits Longhorn components,
+# so without this the ServiceMonitor enabled in 09-longhorn/standup.yml
+# scrapes up=0. NetworkPolicies are additive: this only widens ingress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "h3xinfra-longhorn-post.fullname" . }}-manager-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-longhorn-post.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: longhorn-manager
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.metricsNetworkPolicy.prometheusNamespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.metricsNetworkPolicy.prometheusPodLabels | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 9500
+{{- end }}
