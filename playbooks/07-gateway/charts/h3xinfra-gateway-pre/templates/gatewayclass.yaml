@@ -17,6 +17,37 @@ spec:
   provider:
     type: Kubernetes
     kubernetes:
+      # Run the data plane with more than one replica, spread across nodes,
+      # so a single node drain/reboot does not take every route (and every
+      # OIDC login) down with it (2026-09-13: the lone proxy on h3xsrv01 went
+      # with the node). MetalLB L2 + externalTrafficPolicy=Local announces the
+      # VIP from one endpoint node at a time, so the extra replica is a hot
+      # standby that shrinks the outage to the L2 re-announce. Deliberately no
+      # PodDisruptionBudget: with kured concurrency 1, a PDB-protected replica
+      # stuck on a dead node would block every other node's drain.
+      envoyDeployment:
+        replicas: {{ .Values.gateway.proxy.replicas }}
+        pod:
+          affinity:
+            # Prefer the MS-01 servers (10 GbE, amd64) but stay schedulable on
+            # the Pi agents when a server is drained; MetalLB L2 announces the
+            # VIP from whichever endpoint node it picks, so a proxy on a Pi
+            # would put all ingress behind a 1 GbE port.
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  preference:
+                    matchExpressions:
+                      - key: kubernetes.io/arch
+                        operator: In
+                        values: ["amd64"]
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      gateway.envoyproxy.io/owning-gateway-name: {{ include "h3xinfra-gateway-pre.gatewayName" . }}
+                      gateway.envoyproxy.io/owning-gateway-namespace: {{ .Release.Namespace }}
       envoyService:
         annotations:
           metallb.universe.tf/address-pool: {{ include "h3xinfra-gateway-pre.fullname" . }}-pool

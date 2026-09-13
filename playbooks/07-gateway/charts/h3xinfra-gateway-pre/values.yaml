@@ -62,6 +62,10 @@ gateway:
   # GatewayClass. Prometheus is enabled by default in Envoy Gateway; `matches`
   # can be used to opt-in additional histograms / per-endpoint stats. Leave
   # empty for the default stat set (cluster, listener, http_conn_manager).
+  # Envoy proxy Deployment (data plane) sizing; see templates/gatewayclass.yaml.
+  proxy:
+    replicas: 2
+
   telemetry:
     metrics:
       matches: []
