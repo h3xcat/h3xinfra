@@ -38,7 +38,7 @@ pip3 install -r "${H3XINFRA_ROOT}/requirements.txt"
 # up a plugin release that breaks kubernetes.core.helm diffs. Idempotent: a
 # matching install is left alone, a different version is replaced.
 # renovate: datasource=github-releases depName=databus23/helm-diff
-HELM_DIFF_VERSION="v3.15.11"
+HELM_DIFF_VERSION="v3.15.12"
 installed_diff="$(helm plugin list | awk '$1 == "diff" {print $2}')"
 if [ -n "${installed_diff}" ] && [ "v${installed_diff}" != "${HELM_DIFF_VERSION}" ]; then
     helm plugin uninstall diff
