@@ -120,9 +120,10 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Generic `# renovate: datasource=… depName=… [packageName=…] [registryUrl=…] [extractVersion=…] [versioning=…]` marker (attributes in any order) above a `key: value`, `key = \"value\"`, `KEY=value` or Dockerfile `ARG KEY=value` line. Covers inventory versions.yml, terraform *.auto.tfvars, tests/tool-versions.env and other tests/ files, env pins in GitHub workflows, ARG pins in .devcontainer/Dockerfile and the tool pins in scripts/h3xinfra-setup-dependencies. Blank and plain comment lines between marker and key are tolerated (RE2 has no lookahead, so a second `# renovate:` marker or a commented-out key in that gap would be mis-attributed: tests/renovate/test_config.py forbids that)",
+      "description": "Generic `# renovate: datasource=… depName=… [packageName=…] [registryUrl=…] [extractVersion=…] [versioning=…]` marker (attributes in any order) above a `key: value`, `key = \"value\"`, `KEY=value` or Dockerfile `ARG KEY=value` line. Covers inventory versions.yml and inventory.example.yml (mirrored pins update together), terraform *.auto.tfvars, tests/tool-versions.env and other tests/ files, env pins in GitHub workflows, ARG pins in .devcontainer/Dockerfile and the tool pins in scripts/h3xinfra-setup-dependencies. Blank and plain comment lines between marker and key are tolerated (RE2 has no lookahead, so a second `# renovate:` marker or a commented-out key in that gap would be mis-attributed: tests/renovate/test_config.py forbids that)",
       "managerFilePatterns": [
         "/(^|/)versions\\.ya?ml$/",
+        "/(^|/)inventory\\.example\\.ya?ml$/",
         "/\\.auto\\.tfvars$/",
         "/(^|/)tests/.+\\.(env|ya?ml)$/",
         "/(^|/)\\.github/workflows/[^/]+\\.ya?ml$/",
@@ -135,8 +136,8 @@
     },
     {
       "customType": "regex",
-      "description": "k3s version pinned in the Ansible inventory (k3s_version key, k3s+build regex versioning so v1.36.4+k3s1 -> +k3s2 is a patch and -rc tags are ignored). Same comment-tolerant tail as the generic manager; the inventory.example pattern only exists in the public repo",
-      "managerFilePatterns": ["/(^|/)inventory/.+\\.ya?ml$/", "/(^|/)inventory\\.example\\.ya?ml$/"],
+      "description": "k3s version pinned in the Ansible inventory (k3s_version key, k3s+build regex versioning so v1.36.4+k3s1 -> +k3s2 is a patch and -rc tags are ignored). Same comment-tolerant tail as the generic manager; inventory.example.yml is handled by the generic manager to avoid duplicate extraction",
+      "managerFilePatterns": ["/(^|/)inventory/.+\\.ya?ml$/"],
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+versioning=(?<versioning>[^\\s]+))?[^\\S\\n]*\\n(?:[^\\S\\n]*(?:#[^\\n]*)?\\n)*[^\\S\\n]*k3s_version:\\s*(?<currentValue>[^\\s\"'\\n]+)"
       ]
