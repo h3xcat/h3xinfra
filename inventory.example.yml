@@ -75,25 +75,38 @@ all:
 
     # Single-file layout: the playbooks read chart_versions.<svc>,
     # cli_versions.<tool> and image_versions.<image> (never a per-service
-    # `chart_version`). The canonical, Renovate-managed copy of these values is
-    # inventory/production/group_vars/all/versions.yml; keep this block equal to
-    # it (tests/renovate/test_config.py asserts that). With the structured
+    # `chart_version`). Renovate updates these marked copies together with
+    # inventory/production/group_vars/all/versions.yml; keep their dependency
+    # markers and values equal (tests/renovate checks both). With the structured
     # layout, group_vars/all/versions.yml is loaded automatically instead.
     chart_versions:
+      # renovate: datasource=helm depName=cilium registryUrl=https://helm.cilium.io
       cilium: "1.20.1"
+      # renovate: datasource=helm depName=metallb registryUrl=https://metallb.github.io/metallb
       metallb: "0.16.1"
+      # renovate: datasource=docker depName=envoyproxy/gateway-helm registryUrl=https://docker.io versioning=helm
       envoy_gateway: "1.9.1"
+      # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
       gateway_api: "v1.6.2"
-      external_dns: "1.21.1"
-      cert_manager: "v1.21.1"
-      keycloak: "26.7.2"
+      # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
+      external_dns: "1.22.0"
+      # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
+      cert_manager: "v1.21.2"
+      # renovate: datasource=docker depName=quay.io/keycloak/keycloak
+      keycloak: "26.7.3"
+      # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
       longhorn: "1.12.1"
+      # renovate: datasource=helm depName=csi-driver-smb registryUrl=https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
       csi_driver_smb: "1.20.3"
+      # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
       kured: "6.1.0"
+      # renovate: datasource=helm depName=mailu registryUrl=https://mailu.github.io/helm-charts
       mailu: "2.7.3"
     cli_versions:
+      # renovate: datasource=github-releases depName=longhorn/cli
       longhorn_cli: "v1.12.1"
     image_versions:
+      # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
       postgresql: "18"
 
     cilium:
