@@ -28,7 +28,7 @@ chart_versions:
   # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
   cert_manager: "v1.21.2"
   # renovate: datasource=docker depName=quay.io/keycloak/keycloak
-  keycloak: "26.7.3"
+  keycloak: "26.7.4"
 
   # Infrastructure - Storage
   # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
