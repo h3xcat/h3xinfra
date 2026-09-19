@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
+from jinja2 import Template
 import yaml
 
 
@@ -179,7 +180,10 @@ class PlaybookSafetyTests(unittest.TestCase):
                 self.assertNotIn("state", service)
                 self.assertEqual(service["name"], "kdump-tools.service")
             if "ansible.builtin.command" in task:
-                self.assertEqual(task["ansible.builtin.command"], "update-grub")
+                self.assertIn(task["ansible.builtin.command"], (
+                    "update-grub",
+                    {"argv": ["/etc/kernel/postinst.d/kdump-tools", "{{ ansible_facts.kernel }}"]},
+                ))
 
     def test_dump_permissions_and_retention(self):
         config = next(task for task in self.tasks if "ansible.builtin.lineinfile" in task)
@@ -205,7 +209,8 @@ class PlaybookSafetyTests(unittest.TestCase):
         config = next(task for task in self.tasks if "ansible.builtin.lineinfile" in task)
         key = "KDUMP_CMDLINE_APPEND"
         regexp = config["ansible.builtin.lineinfile"]["regexp"].replace("{{ item.key }}", key)
-        value = next(item["value"] for item in config["loop"] if item["key"] == key)
+        template = next(item["value"] for item in config["loop"] if item["key"] == key)
+        value = Template(template).render()
         for variant in ("KDUMP_CMDLINE_APPEND=unsafe", "  KDUMP_CMDLINE_APPEND=unsafe", "export KDUMP_CMDLINE_APPEND=unsafe", "\texport\tKDUMP_CMDLINE_APPEND=unsafe"):
             with self.subTest(variant=variant):
                 lines = [f"{key}=old", variant]
