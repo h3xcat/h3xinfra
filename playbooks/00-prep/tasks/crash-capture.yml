@@ -1,0 +1,173 @@
+---
+- name: Require explicit maintenance and reboot inhibition confirmation
+  ansible.builtin.assert:
+    that:
+      - crash_capture_maintenance_confirmed | default(false) is sameas true
+      - crash_capture_kured_inhibited | default(false) is sameas true
+      - crash_capture_loaded.content | b64decode | trim == '0'
+    fail_msg: >-
+      Staging requires a cordoned worker, confirmed inhibition of every automatic
+      reboot mechanism (including kured), and explicit boolean maintenance flags.
+      Package hooks can create reboot-required even though this playbook never
+      reboots. Updating an already armed crash kernel needs a separate procedure.
+
+- name: Confirm GRUB-based boot configuration exists
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /etc/default/grub
+    - /boot/grub/grub.cfg
+  register: crash_capture_grub
+
+- name: Require supported boot loader
+  ansible.builtin.assert:
+    that:
+      - crash_capture_grub.results | map(attribute='stat.exists') | min
+    fail_msg: This staging playbook supports Ubuntu GRUB installations only.
+
+- name: Protect K3s from automatic package-triggered restarts
+  ansible.builtin.import_tasks: needrestart.yml
+
+- name: Enable kdump package configuration without fast-kexec normal reboots
+  ansible.builtin.debconf:
+    name: "{{ item.package }}"
+    question: "{{ item.question }}"
+    value: "{{ item.value }}"
+    vtype: boolean
+  loop:
+    - {package: kdump-tools, question: kdump-tools/use_kdump, value: 'true'}
+    - {package: kexec-tools, question: kexec-tools/load_kexec, value: 'false'}
+
+- name: Install capture tools without starting package services or upgrading the kernel
+  ansible.builtin.apt:
+    name:
+      - kdump-tools
+      - makedumpfile
+      - initramfs-tools-core
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    install_recommends: false
+    policy_rc_d: 101
+  register: crash_capture_packages
+
+- name: Create protected dump and capture configuration directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "{{ crash_capture_dump_dir | default('/var/crash/kdump') }}", mode: '0700'}
+    - {path: /etc/systemd/system/kdump-tools.service.d, mode: '0755'}
+    - {path: /etc/systemd/system/kdump-tools-dump.service.d, mode: '0755'}
+    - {path: /etc/systemd/journald.conf.d, mode: '0755'}
+
+- name: Configure local kernel-only compressed dumps and bounded retention
+  ansible.builtin.lineinfile:
+    path: /etc/default/kdump-tools
+    regexp: "^\\s*(?:export\\s+)?{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+    owner: root
+    group: root
+    mode: '0600'
+    backup: true
+    validate: /bin/sh -n %s
+  loop:
+    - {key: USE_KDUMP, value: '1'}
+    - {key: KDUMP_COREDIR, value: "\"{{ crash_capture_dump_dir | default('/var/crash/kdump') }}\""}
+    - {key: KDUMP_DUMP_DMESG, value: '1'}
+    - {key: KDUMP_NUM_DUMPS, value: '1'}
+    - {key: MAKEDUMP_ARGS, value: '"-c -d 31"'}
+    - {key: KDUMP_KERNEL, value: /var/lib/kdump/vmlinuz}
+    - {key: KDUMP_INITRD, value: /var/lib/kdump/initrd.img}
+    - {key: KDUMP_CMDLINE, value: '""'}
+    - {key: KDUMP_CMDLINE_APPEND, value: '"reset_devices systemd.unit=kdump-tools-dump.service nr_cpus=1 irqpoll usbcore.nousb"'}
+    - {key: KDUMP_KEXEC_ARGS, value: '""'}
+    - {key: NFS, value: '""'}
+    - {key: SSH, value: '""'}
+    - {key: FTP, value: '""'}
+
+- name: Require local dump mount and restrict newly created dump files
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item }}.service.d/30-local-crash-capture.conf"
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Unit]
+      RequiresMountsFor={{ crash_capture_dump_dir | default('/var/crash/kdump') }}
+      AssertPathIsMountPoint={{ crash_capture_dump_mount | default('/var/crash') }}
+
+      [Service]
+      UMask=0077
+  loop:
+    - kdump-tools
+    - kdump-tools-dump
+
+- name: Read packaged crashkernel reservation
+  ansible.builtin.slurp:
+    src: /etc/default/grub.d/kdump-tools.cfg
+  register: crash_capture_grub_fragment
+
+- name: Require the supported Noble crashkernel reservation
+  ansible.builtin.assert:
+    that:
+      - "'crashkernel=2G-4G:320M,4G-32G:512M,32G-64G:1024M,64G-128G:2048M,128G-:4096M' in (crash_capture_grub_fragment.content | b64decode)"
+    fail_msg: >-
+      Packaged crashkernel reservation differs from the reviewed Noble default.
+      Stop and review it; do not replace it with a fixed 256M reservation.
+
+- name: Regenerate GRUB with the package-owned crashkernel fragment
+  ansible.builtin.command: update-grub
+  changed_when: true
+
+- name: Enable kdump for the next boot without loading a crash kernel now
+  ansible.builtin.systemd_service:
+    name: kdump-tools.service
+    enabled: true
+    daemon_reload: true
+
+- name: Create persistent journal directory
+  ansible.builtin.file:
+    path: /var/log/journal
+    state: directory
+    owner: root
+    group: systemd-journal
+    mode: '2755'
+
+- name: Configure persistent bounded journals with a shorter sync interval
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/60-crash-capture.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Journal]
+      Storage=persistent
+      SystemMaxUse=500M
+      SystemKeepFree=2G
+      RuntimeMaxUse=128M
+      SyncIntervalSec=30s
+  notify:
+    - Restart journald for persistent bounded storage
+    - Flush runtime journal to persistent storage
+
+- name: Read crash-kernel state after staging without loading or testing it
+  ansible.builtin.slurp:
+    src: /sys/kernel/kexec_crash_loaded
+  register: crash_capture_loaded_after
+
+- name: Require staging not to arm a crash kernel
+  ansible.builtin.assert:
+    that:
+      - crash_capture_loaded_after.content | b64decode | trim == '0'
+    fail_msg: A crash kernel was loaded unexpectedly; investigate before leaving maintenance.
+
+- name: Report staged but unarmed capture
+  ansible.builtin.debug:
+    msg: >-
+      Capture configuration is staged, not armed. Keep automatic reboots inhibited
+      until a separately approved maintenance reboot. Recheck dump capacity,
+      hardware-watchdog behavior, and kexec_crash_loaded after that reboot.
