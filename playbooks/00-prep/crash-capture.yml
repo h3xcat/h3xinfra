@@ -1,0 +1,66 @@
+---
+- name: Stage crash capture on explicitly selected Ubuntu workers
+  hosts: agent
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Restrict crash capture to supported worker hosts
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname not in groups.get('server', [])
+          - ansible_facts.distribution == 'Ubuntu'
+          - ansible_facts.distribution_version == '24.04'
+          - ansible_facts.architecture == 'x86_64'
+          - ansible_play_hosts_all | length == 1
+        fail_msg: >-
+          Select exactly one Ubuntu 24.04 amd64 agent with --limit.
+          Control-plane and ARM hosts are intentionally unsupported.
+      tags: always
+
+    - name: Validate local dump storage without changing host configuration
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', 'files/crash-capture-preflight.py') }}"
+          - --directory
+          - "{{ crash_capture_dump_dir | default('/var/crash/kdump') }}"
+          - --mount
+          - "{{ crash_capture_dump_mount | default('/var/crash') }}"
+      changed_when: false
+      check_mode: false
+      register: crash_capture_storage
+      tags: always
+
+    - name: Report validated storage
+      ansible.builtin.debug:
+        var: crash_capture_storage.stdout
+      tags: always
+
+    - name: Read current crash-kernel loaded state
+      ansible.builtin.slurp:
+        src: /sys/kernel/kexec_crash_loaded
+      register: crash_capture_loaded
+      tags: always
+
+    - name: Report current armed state separately from configuration
+      ansible.builtin.debug:
+        msg: "Current kexec_crash_loaded={{ crash_capture_loaded.content | b64decode | trim }}; this playbook never loads a crash kernel."
+      tags: always
+
+  tasks:
+    - name: Stage crash capture only during confirmed maintenance
+      ansible.builtin.import_tasks: tasks/crash-capture.yml
+      tags: stage
+
+  handlers:
+    - name: Restart journald for persistent bounded storage
+      ansible.builtin.systemd_service:
+        name: systemd-journald.service
+        state: restarted
+
+    - name: Flush runtime journal to persistent storage
+      ansible.builtin.command: journalctl --flush
+      changed_when: true
