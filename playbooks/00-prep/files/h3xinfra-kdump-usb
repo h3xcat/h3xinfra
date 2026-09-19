@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+# Ubuntu filters on OPTION; the explicit directory guard also protects other builds.
+# shellcheck disable=SC2034
+OPTION=KDUMP
+
+case "${1-}" in
+    prereqs)
+        exit 0
+        ;;
+esac
+
+[ "${CONFDIR-}" = /var/lib/kdump/initramfs-tools ] || exit 0
+[ "${KDUMP-}" = y ] || exit 0
+
+. /usr/share/initramfs-tools/hook-functions
+
+# MODULES=dep follows the root disk, so explicitly retain and load the USB path.
+for module in xhci_pci xhci_hcd ehci_pci ehci_hcd usb_storage uas sd_mod ext4; do
+    modinfo -k "${version:?}" "$module" >/dev/null
+    force_load "$module"
+done

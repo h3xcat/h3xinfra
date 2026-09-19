@@ -1,0 +1,36 @@
+#!/bin/sh
+set -eu
+
+# shellcheck disable=SC2034
+OPTION=KDUMP
+PREREQ=kdump-sysctl
+
+case "${1-}" in
+    prereqs)
+        printf '%s\n' "$PREREQ"
+        exit 0
+        ;;
+esac
+
+[ -e /proc/vmcore ] || exit 0
+
+KDUMP_SYSCTL_PATH=/etc/kdump/sysctl.conf
+RUNTIME_SYSCTL_DIR=/run/sysctl.d
+ROOT=${rootmnt:?}
+[ -f "$KDUMP_SYSCTL_PATH" ]
+mkdir -p "$RUNTIME_SYSCTL_DIR"
+
+# Noble's native hook uses an unsupported find predicate and may sort first.
+# Include its runtime output and all root configuration when choosing a last name.
+last_name=$(
+    for directory in "$ROOT/usr/lib/sysctl.d" "$ROOT/usr/local/lib/sysctl.d" \
+        "$ROOT/lib/sysctl.d" "$ROOT/etc/sysctl.d" "$ROOT/run/sysctl.d" \
+        "$RUNTIME_SYSCTL_DIR"; do
+        for path in "$directory"/*.conf; do
+            [ -f "$path" ] || [ -L "$path" ] || continue
+            printf '%s\n' "${path##*/}"
+        done
+    done | LC_ALL=C sort | tail -n 1
+)
+
+cp "$KDUMP_SYSCTL_PATH" "$RUNTIME_SYSCTL_DIR/${last_name:-00}-h3xinfra-kdump.conf"
