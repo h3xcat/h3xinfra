@@ -3,6 +3,10 @@
   hosts: k3s_cluster
   become: yes
   tasks:
+    # Apply before apt can invoke needrestart for newly installed libraries.
+    - name: Protect K3s from automatic package-triggered restarts
+      ansible.builtin.import_tasks: tasks/needrestart.yml
+
     - name: Install prerequisites
       apt:
         name:

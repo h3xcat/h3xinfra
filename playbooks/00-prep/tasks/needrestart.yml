@@ -1,0 +1,17 @@
+---
+- name: Create needrestart configuration directory
+  ansible.builtin.file:
+    path: /etc/needrestart/conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Defer automatic K3s and container scope restarts
+  ansible.builtin.copy:
+    src: 50-h3xinfra-k3s.conf
+    dest: /etc/needrestart/conf.d/50-h3xinfra-k3s.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/bin/perl -c %s
