@@ -1,0 +1,104 @@
+---
+- name: Install bounded local kubelet recovery and monitoring
+  hosts: k3s_cluster
+  become: true
+  gather_facts: false
+  vars:
+    kubelet_watchdog_unit: "{{ 'k3s.service' if inventory_hostname in groups.get('server', []) else 'k3s-agent.service' }}"
+    kubelet_watchdog_effective_mode: "{{ 'observe' if inventory_hostname in groups.get('server', []) else kubelet_watchdog_mode | default('recover') }}"
+  tasks:
+    - name: Validate the watchdog operating mode
+      ansible.builtin.assert:
+        that: kubelet_watchdog_effective_mode in ['observe', 'recover']
+
+    - name: Ensure watchdog directories exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - {path: /var/lib/k3s-kubelet-watchdog, mode: '0700'}
+        - {path: /var/lib/node_exporter/textfile_collector, mode: '0755'}
+        - {path: '/etc/systemd/system/{{ kubelet_watchdog_unit }}.d', mode: '0755'}
+
+    - name: Install the kubelet watchdog
+      ansible.builtin.copy:
+        src: files/k3s-kubelet-watchdog.py
+        dest: /usr/local/sbin/k3s-kubelet-watchdog
+        owner: root
+        group: root
+        mode: '0755'
+
+    # SIGQUIT produces a Go goroutine dump. Load a larger journal allowance
+    # without restarting K3s during watchdog installation.
+    - name: Allow the K3s goroutine dump through journal rate limiting
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ kubelet_watchdog_unit }}.d/30-watchdog-journal.conf"
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Service]
+          LogRateLimitIntervalSec=30s
+          LogRateLimitBurst=200000
+      notify: Reload watchdog units
+
+    - name: Install the watchdog service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/k3s-kubelet-watchdog.service
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Check local kubelet and recover a hung K3s worker agent
+          After={{ kubelet_watchdog_unit }}
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/k3s-kubelet-watchdog --unit {{ kubelet_watchdog_unit }} --mode {{ kubelet_watchdog_effective_mode }}
+          TimeoutStartSec=90s
+          UMask=0077
+          Nice=10
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ProtectHome=true
+          PrivateTmp=true
+          ReadWritePaths=/var/lib/k3s-kubelet-watchdog /var/lib/node_exporter/textfile_collector
+      notify: Reload watchdog units
+
+    - name: Install the watchdog timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/k3s-kubelet-watchdog.timer
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Check kubelet every 30 seconds after boot grace
+
+          [Timer]
+          OnBootSec=5min
+          OnUnitInactiveSec=30s
+          AccuracySec=1s
+          Unit=k3s-kubelet-watchdog.service
+
+          [Install]
+          WantedBy=timers.target
+      notify: Reload watchdog units
+
+    - name: Load watchdog units before enabling the timer
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable the watchdog timer without restarting K3s
+      ansible.builtin.systemd:
+        name: k3s-kubelet-watchdog.timer
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Reload watchdog units
+      ansible.builtin.systemd:
+        daemon_reload: true

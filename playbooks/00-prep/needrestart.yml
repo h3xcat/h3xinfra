@@ -1,0 +1,8 @@
+---
+- name: Configure K3s needrestart exclusions
+  hosts: k3s_cluster
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Protect K3s from automatic package-triggered restarts
+      ansible.builtin.import_tasks: tasks/needrestart.yml
