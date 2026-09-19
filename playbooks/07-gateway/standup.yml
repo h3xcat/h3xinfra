@@ -77,6 +77,27 @@
           # via EnvoyProxy CRs.
           deployment:
             replicas: 2
+            envoyGateway:
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                  ephemeral-storage: 32Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+                  ephemeral-storage: 256Mi
+          certgen:
+            job:
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                  ephemeral-storage: 32Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+                  ephemeral-storage: 256Mi
           config:
             envoyGateway:
               logging:

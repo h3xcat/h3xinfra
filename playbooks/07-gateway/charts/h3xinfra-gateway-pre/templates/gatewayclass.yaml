@@ -27,6 +27,20 @@ spec:
       # stuck on a dead node would block every other node's drain.
       envoyDeployment:
         replicas: {{ .Values.gateway.proxy.replicas }}
+        container:
+          resources:
+            {{- toYaml .Values.gateway.proxy.resources | nindent 12 }}
+        # The shutdown sidecar has no dedicated resource field in EnvoyProxy.
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              template:
+                spec:
+                  containers:
+                    - name: shutdown-manager
+                      resources:
+                        {{- toYaml .Values.gateway.proxy.shutdownResources | nindent 24 }}
         pod:
           affinity:
             # Prefer the MS-01 servers (10 GbE, amd64) but stay schedulable on

@@ -44,6 +44,15 @@
         namespace: "{{ externaldns.namespace }}"
         create_namespace: false
         values: 
+          resources:
+            requests:
+              cpu: 25m
+              memory: 128Mi
+              ephemeral-storage: 32Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+              ephemeral-storage: 256Mi
           provider:
             name: cloudflare
           env:

@@ -1,3 +1,65 @@
+resources:
+  requests:
+    cpu: 250m
+    memory: 2Gi
+    ephemeral-storage: 32Mi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+    ephemeral-storage: 1Gi
+
+initResources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+    ephemeral-storage: 32Mi
+  limits:
+    cpu: "1"
+    memory: 256Mi
+    ephemeral-storage: 256Mi
+
+cni:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+      ephemeral-storage: 32Mi
+    limits:
+      cpu: "1"
+      memory: 256Mi
+      ephemeral-storage: 256Mi
+
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+
+envoy:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+      ephemeral-storage: 32Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+      ephemeral-storage: 256Mi
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+
+certgen:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+      ephemeral-storage: 32Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+      ephemeral-storage: 256Mi
+
 # Enable both address families
 ipv4:
   enabled: true
@@ -78,6 +140,15 @@ hubble:
       schedule: "0 0 1 */4 *"
   relay:
     enabled: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+        ephemeral-storage: 32Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+        ephemeral-storage: 256Mi
     # Expose hubble-relay's own /metrics so Prometheus can scrape relay health.
     prometheus:
       enabled: true
@@ -85,6 +156,26 @@ hubble:
         enabled: true
   ui:
     enabled: true
+    backend:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 128Mi
+          ephemeral-storage: 32Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+          ephemeral-storage: 256Mi
+    frontend:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 32Mi
+          ephemeral-storage: 32Mi
+        limits:
+          cpu: 250m
+          memory: 128Mi
+          ephemeral-storage: 256Mi
   # Per-flow metrics emitted by every cilium-agent on :9965/metrics.
   # Powers the Hubble Grafana dashboards (HTTP, DNS, TCP, drops, ...).
   metrics:
@@ -120,6 +211,15 @@ dashboards:
     grafana_folder: "Cilium"
 
 operator:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+      ephemeral-storage: 32Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+      ephemeral-storage: 256Mi
   prometheus:
     enabled: true
     serviceMonitor:

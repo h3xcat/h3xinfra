@@ -27,7 +27,8 @@
       debug:
         msg: "{{ longhorn_cli_version_output.stdout }}"
 
-# V2 (SPDK) data engine prerequisites. Only the amd64 servers run V2:
+# V2 (SPDK) prerequisites are opt-in until block disks and V2 volumes are needed.
+# Only the amd64 servers may run V2:
 # the Pis are excluded (hugepage + dedicated-CPU cost on 4-core/16GB
 # nodes, and arm64+NVMe stuck-I/O bug longhorn/longhorn#13243), so they
 # need no hugepages or nvme-tcp.
@@ -37,7 +38,9 @@
   become: true
   tasks:
     - name: Configure V2 data engine prerequisites (amd64 only)
-      when: ansible_architecture == 'x86_64'
+      when:
+        - ansible_architecture == 'x86_64'
+        - longhorn_v2_data_engine | default(false) | bool
       block:
         - name: Reserve 2MiB hugepages for SPDK (2 GiB total)
           ansible.posix.sysctl:
@@ -67,12 +70,60 @@
   gather_facts: true
   vars:
   tasks:
+    - name: Check whether Longhorn volume CRDs already exist
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: volumes.longhorn.io
+      register: longhorn_volume_crd
+
+    - name: Verify the V2 data engine is unused before disabling it
+      when:
+        - not (longhorn_v2_data_engine | default(false) | bool)
+        - longhorn_volume_crd.resources | length > 0
+      block:
+        - name: Read existing Longhorn volumes
+          kubernetes.core.k8s_info:
+            api_version: longhorn.io/v1beta2
+            kind: Volume
+            namespace: "{{ longhorn.namespace }}"
+          register: longhorn_existing_volumes
+
+        - name: Refuse to disable V2 while any V2 volume exists
+          ansible.builtin.assert:
+            that:
+              - longhorn_existing_volumes.resources | selectattr('spec.dataEngine', 'equalto', 'v2') | list | length == 0
+            fail_msg: >-
+              V2 volumes exist. Keep longhorn_v2_data_engine=true and plan
+              their migration separately; this play never detaches or deletes them.
+            quiet: true
+
+        - name: Read existing Longhorn instance managers
+          kubernetes.core.k8s_info:
+            api_version: longhorn.io/v1beta2
+            kind: InstanceManager
+            namespace: "{{ longhorn.namespace }}"
+          register: longhorn_existing_instance_managers
+
+        - name: Refuse to disable V2 while its instance managers contain processes
+          ansible.builtin.assert:
+            that:
+              - item.status.instanceEngines | default({}) | length == 0
+              - item.status.instanceReplicas | default({}) | length == 0
+            fail_msg: >-
+              V2 instance manager {{ item.metadata.name }} still owns processes.
+              Investigate before disabling V2; do not force-delete its Pod.
+            quiet: true
+          loop: "{{ longhorn_existing_instance_managers.resources | selectattr('spec.dataEngine', 'equalto', 'v2') | list }}"
+          loop_control:
+            label: "{{ item.metadata.name }}"
+
     - name: Get cluster nodes for V2 engine node selection
       kubernetes.core.k8s_info:
         kind: Node
       register: cluster_nodes
 
-    # Must happen before the Helm deploy enables v2DataEngine, so the
+    # Must happen before any opt-in Helm deploy enables v2DataEngine, so the
     # Pis never attempt to start a V2 instance manager (which would
     # crashloop without hugepages).
     - name: Exclude arm64 nodes from the V2 data engine
@@ -129,7 +180,50 @@
         namespace: "{{ longhorn.namespace }}"
         create_namespace: false
         values: 
+          longhornManager:
+            resources:
+              requests:
+                cpu: "1"
+                memory: 3Gi
+              limits:
+                cpu: "4"
+                memory: 8Gi
+            updateStrategy:
+              rollingUpdate:
+                maxUnavailable: 1
           defaultSettings:
+            # The native setting accepts a JSON string, not a YAML mapping.
+            systemManagedCSIComponentsResourceLimits: >-
+              {
+                "csi-attacher": {
+                  "requests": {"cpu": "50m", "memory": "64Mi", "ephemeral-storage": "32Mi"},
+                  "limits": {"cpu": "500m", "memory": "256Mi", "ephemeral-storage": "256Mi"}
+                },
+                "csi-provisioner": {
+                  "requests": {"cpu": "50m", "memory": "64Mi", "ephemeral-storage": "32Mi"},
+                  "limits": {"cpu": "500m", "memory": "256Mi", "ephemeral-storage": "256Mi"}
+                },
+                "csi-resizer": {
+                  "requests": {"cpu": "50m", "memory": "64Mi", "ephemeral-storage": "32Mi"},
+                  "limits": {"cpu": "500m", "memory": "256Mi", "ephemeral-storage": "256Mi"}
+                },
+                "csi-snapshotter": {
+                  "requests": {"cpu": "50m", "memory": "64Mi", "ephemeral-storage": "32Mi"},
+                  "limits": {"cpu": "500m", "memory": "256Mi", "ephemeral-storage": "256Mi"}
+                },
+                "longhorn-csi-plugin": {
+                  "requests": {"cpu": "100m", "memory": "128Mi", "ephemeral-storage": "32Mi"},
+                  "limits": {"cpu": "1", "memory": "512Mi", "ephemeral-storage": "256Mi"}
+                },
+                "node-driver-registrar": {
+                  "requests": {"cpu": "25m", "memory": "32Mi", "ephemeral-storage": "32Mi"},
+                  "limits": {"cpu": "250m", "memory": "128Mi", "ephemeral-storage": "256Mi"}
+                },
+                "longhorn-liveness-probe": {
+                  "requests": {"cpu": "25m", "memory": "32Mi", "ephemeral-storage": "32Mi"},
+                  "limits": {"cpu": "250m", "memory": "128Mi", "ephemeral-storage": "256Mi"}
+                }
+              }
             # Storage Configuration
             defaultDataPath: /var/lib/longhorn/
             storageMinimalAvailablePercentage: 10
@@ -186,16 +280,14 @@
             orphanResourceAutoDeletion: "instance"
             orphanResourceAutoDeletionGracePeriod: "300"
 
-            # Instance Manager CPU (V1 Data Engine)
-            guaranteedInstanceManagerCpu: 15
+            # Preserve live reservations; the former lowercase Cpu key was ignored.
+            guaranteedInstanceManagerCPU:
+              v1: "12"
+              v2: "31"
 
-            # V2 Data Engine (SPDK), GA since 1.12. Enabled cluster-wide,
-            # but arm64 nodes are excluded via the
-            # node.longhorn.io/disable-v2-data-engine label applied above.
-            # V2 replicas additionally require block-type disks, which are
-            # registered per-node (none yet — carve an LV from ubuntu-vg
-            # and add it as a block disk on the Longhorn node CR).
-            v2DataEngine: "true"
+            # No V2 volumes or block disks exist. Avoid three idle SPDK managers.
+            # A future opt-in must be shared by k3s_cluster and k8s inventory hosts.
+            v2DataEngine: "{{ longhorn_v2_data_engine | default(false) }}"
 
             # Backup and Maintenance
             createDefaultDiskLabeledNodes: "false"
@@ -218,6 +310,32 @@
         # A version bump rolls the longhorn-manager DaemonSet (image pulls +
         # one restart per node), which routinely overruns 120s on this fleet.
         timeout: "600s"
+
+    - name: Verify the V2 data engine has stopped after disabling it
+      when: not (longhorn_v2_data_engine | default(false) | bool)
+      block:
+        - name: Wait for the native V2 setting to be disabled
+          kubernetes.core.k8s_info:
+            api_version: longhorn.io/v1beta2
+            kind: Setting
+            name: v2-data-engine
+            namespace: "{{ longhorn.namespace }}"
+          register: longhorn_v2_setting
+          until:
+            - longhorn_v2_setting.resources | length == 1
+            - longhorn_v2_setting.resources[0].value == 'false'
+          retries: 60
+          delay: 5
+
+        - name: Wait for unused V2 instance managers to disappear
+          kubernetes.core.k8s_info:
+            api_version: longhorn.io/v1beta2
+            kind: InstanceManager
+            namespace: "{{ longhorn.namespace }}"
+          register: longhorn_remaining_instance_managers
+          until: longhorn_remaining_instance_managers.resources | selectattr('spec.dataEngine', 'equalto', 'v2') | list | length == 0
+          retries: 60
+          delay: 5
 
     - name: Validate Longhorn OIDC configuration
       ansible.builtin.assert:
