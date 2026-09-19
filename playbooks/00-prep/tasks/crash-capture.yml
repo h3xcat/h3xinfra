@@ -64,7 +64,17 @@
     - {path: /etc/systemd/system/kdump-tools-dump.service.d, mode: '0755'}
     - {path: /etc/systemd/journald.conf.d, mode: '0755'}
     - {path: /etc/initramfs-tools/hooks, mode: '0755'}
+    - {path: /etc/initramfs-tools/scripts/local-bottom, mode: '0755'}
     - {path: /usr/local/libexec, mode: '0755'}
+
+- name: Preserve native capture sysctl overrides after production configuration
+  ansible.builtin.copy:
+    src: h3xinfra-kdump-sysctl
+    dest: /etc/initramfs-tools/scripts/local-bottom/h3xinfra-kdump-sysctl
+    owner: root
+    group: root
+    mode: '0755'
+    validate: /bin/sh -n %s
 
 - name: Install capture-only USB driver hook for the explicitly selected USB filesystem
   ansible.builtin.copy:
@@ -135,6 +145,9 @@
       UMask=0077
       {% if crash_capture_usb_uuid | default('') | length > 0 %}
       ExecStartPre=/usr/bin/python3 /usr/local/libexec/h3xinfra-crash-capture-preflight --runtime-check --directory {{ crash_capture_dump_dir | default('/var/crash/kdump') }} --mount {{ crash_capture_dump_mount | default('/var/crash') }} --usb-uuid {{ crash_capture_usb_uuid }}
+      {% endif %}
+      {% if item == 'kdump-tools-dump' %}
+      ExecStartPre=/usr/sbin/sysctl vm.nr_hugepages vm.nr_hugepages_mempolicy
       {% endif %}
   loop:
     - kdump-tools

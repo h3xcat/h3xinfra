@@ -111,6 +111,18 @@ capture initramfs using the package kernel hook, without loading it, and checks
 that generation was not silently skipped (for example, inside a chroot).
 The first subsequent normal boot attempts to load the capture kernel.
 
+Capture must not allocate the production Longhorn hugepage pool from its small
+RAM reservation. Noble's native `/etc/kdump/sysctl.conf` already sets the two
+hugepage reservation controls to zero, but its initramfs script uses an invalid
+`find -maxdepth=1` predicate that can place those overrides before production
+settings. A repository-owned, capture-only local-bottom helper runs after the
+native hook and copies that same override payload into `/run/sysctl.d` under a
+name sorting after existing configuration. It is guarded by `/proc/vmcore` and
+does not modify package files or normal-boot Longhorn settings. Verify the rebuilt
+capture image contains this helper and the native zero-hugepage overrides before
+loading it. A repeated controlled test must verify zero reserved hugepages and
+a complete dump; image inspection alone is not end-to-end validation.
+
 Staging explicitly restores Noble's capture-only boot arguments and managed
 kernel/initrd paths, with USB enabled only for the explicit experimental mode;
 custom capture command lines and paths are not retained.

@@ -77,11 +77,22 @@ class UsbStagingTests(unittest.TestCase):
     def test_both_usb_services_pin_identity_without_capacity_checks(self):
         task = next(task for task in self.tasks if task.get("loop") == ["kdump-tools", "kdump-tools-dump"])
         template = task["ansible.builtin.copy"]["content"]
-        rendered = self.render(template, crash_capture_usb_uuid=UUID)
+        rendered = self.render(template, crash_capture_usb_uuid=UUID, item="kdump-tools")
         self.assertIn("RequiresMountsFor=/var/crash/kdump", rendered)
         self.assertIn("AssertPathIsMountPoint=/var/crash", rendered)
         self.assertIn(f"ExecStartPre=/usr/bin/python3 /usr/local/libexec/h3xinfra-crash-capture-preflight --runtime-check --directory /var/crash/kdump --mount /var/crash --usb-uuid {UUID}", rendered)
-        self.assertNotIn("ExecStartPre=", self.render(template))
+        self.assertNotIn("ExecStartPre=", self.render(template, item="kdump-tools"))
+
+    def test_capture_hugepages_are_logged_read_only_for_dump_service_in_both_modes(self):
+        task = next(task for task in self.tasks if task.get("loop") == ["kdump-tools", "kdump-tools-dump"])
+        template = task["ansible.builtin.copy"]["content"]
+        command = "ExecStartPre=/usr/sbin/sysctl vm.nr_hugepages vm.nr_hugepages_mempolicy"
+        for variables in ({}, {"crash_capture_usb_uuid": UUID}):
+            with self.subTest(variables=variables):
+                self.assertIn(command, self.render(template, item="kdump-tools-dump", **variables))
+                self.assertNotIn(command, self.render(template, item="kdump-tools", **variables))
+        self.assertNotIn(" -w", command)
+        self.assertNotIn("=", command.split("sysctl", 1)[1])
 
     def test_internal_mode_removes_usb_hook_and_runtime_guard(self):
         cleanup = next(task for task in self.tasks if task.get("ansible.builtin.file", {}).get("state") == "absent")
