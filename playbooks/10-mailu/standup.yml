@@ -130,6 +130,13 @@
           storageClass: "longhorn"
 
         front:
+          resources:
+            requests:
+              cpu: "{{ mailu.resources.front.requests.cpu | default('100m') }}"
+              memory: "{{ mailu.resources.front.requests.memory | default('384Mi') }}"
+            limits:
+              cpu: "{{ mailu.resources.front.limits.cpu | default('1') }}"
+              memory: "{{ mailu.resources.front.limits.memory | default('1Gi') }}"
           hostPort:
             enabled: false
           externalService:
@@ -150,30 +157,65 @@
               storageClass: "longhorn"
 
         admin:
+          resources:
+            requests:
+              cpu: "{{ mailu.resources.admin.requests.cpu | default('100m') }}"
+              memory: "{{ mailu.resources.admin.requests.memory | default('256Mi') }}"
+            limits:
+              cpu: "{{ mailu.resources.admin.limits.cpu | default('1') }}"
+              memory: "{{ mailu.resources.admin.limits.memory | default('768Mi') }}"
           persistence:
             storageClass: "longhorn"
           updateStrategy:
             type: "Recreate"
 
         webmail:
+          resources:
+            requests:
+              cpu: "{{ mailu.resources.webmail.requests.cpu | default('100m') }}"
+              memory: "{{ mailu.resources.webmail.requests.memory | default('192Mi') }}"
+            limits:
+              cpu: "{{ mailu.resources.webmail.limits.cpu | default('1') }}"
+              memory: "{{ mailu.resources.webmail.limits.memory | default('512Mi') }}"
           persistence:
             storageClass: "longhorn"
           updateStrategy:
             type: "Recreate"
 
         postfix:
+          resources:
+            requests:
+              cpu: "{{ mailu.resources.postfix.requests.cpu | default('100m') }}"
+              memory: "{{ mailu.resources.postfix.requests.memory | default('128Mi') }}"
+            limits:
+              cpu: "{{ mailu.resources.postfix.limits.cpu | default('1') }}"
+              memory: "{{ mailu.resources.postfix.limits.memory | default('512Mi') }}"
           persistence:
             storageClass: "longhorn"
           updateStrategy:
             type: "Recreate"
 
         dovecot:
+          resources:
+            requests:
+              cpu: "{{ mailu.resources.dovecot.requests.cpu | default('100m') }}"
+              memory: "{{ mailu.resources.dovecot.requests.memory | default('256Mi') }}"
+            limits:
+              cpu: "{{ mailu.resources.dovecot.limits.cpu | default('1') }}"
+              memory: "{{ mailu.resources.dovecot.limits.memory | default('1Gi') }}"
           persistence:
             storageClass: "longhorn"
           updateStrategy:
             type: "Recreate"
 
         rspamd:
+          resources:
+            requests:
+              cpu: "{{ mailu.resources.rspamd.requests.cpu | default('100m') }}"
+              memory: "{{ mailu.resources.rspamd.requests.memory | default('384Mi') }}"
+            limits:
+              cpu: "{{ mailu.resources.rspamd.limits.cpu | default('2') }}"
+              memory: "{{ mailu.resources.rspamd.limits.memory | default('1Gi') }}"
           persistence:
             storageClass: "longhorn"
           updateStrategy:
@@ -185,8 +227,33 @@
           #     sign_headers = (o)from:(x)sender:(o)reply-to:(o)subject:(o)to:(o)cc:(x)mime-version:(x)content-type:(x)content-transfer-encoding:resent-to:resent-cc:resent-from:resent-sender:resent-message-id:(x)in-reply-to:(x)references:list-id:list-help:list-owner:list-unsubscribe:list-unsubscribe-post:list-subscribe:list-post:(x)openpgp:(x)autocrypt:
           #   Message-ID, Date, Return-Path, Bounces-To.
         clamav:
+          resources:
+            requests:
+              cpu: "{{ mailu.resources.clamav.requests.cpu | default('100m') }}"
+              memory: "{{ mailu.resources.clamav.requests.memory | default('1536Mi') }}"
+            limits:
+              cpu: "{{ mailu.resources.clamav.limits.cpu | default('2') }}"
+              memory: "{{ mailu.resources.clamav.limits.memory | default('4Gi') }}"
           persistence:
             storageClass: "longhorn"
+
+        oletools:
+          resources:
+            requests:
+              cpu: "{{ mailu.resources.oletools.requests.cpu | default('50m') }}"
+              memory: "{{ mailu.resources.oletools.requests.memory | default('64Mi') }}"
+            limits:
+              cpu: "{{ mailu.resources.oletools.limits.cpu | default('500m') }}"
+              memory: "{{ mailu.resources.oletools.limits.memory | default('256Mi') }}"
+
+        tika:
+          resources:
+            requests:
+              cpu: "{{ mailu.resources.tika.requests.cpu | default('100m') }}"
+              memory: "{{ mailu.resources.tika.requests.memory | default('768Mi') }}"
+            limits:
+              cpu: "{{ mailu.resources.tika.limits.cpu | default('2') }}"
+              memory: "{{ mailu.resources.tika.limits.memory | default('2Gi') }}"
 
         webdav:
           persistence:
@@ -212,4 +279,3 @@
       wait: true
       timeout: "900s"
     no_log: true
-
