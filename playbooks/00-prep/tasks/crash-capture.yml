@@ -63,6 +63,36 @@
     - {path: /etc/systemd/system/kdump-tools.service.d, mode: '0755'}
     - {path: /etc/systemd/system/kdump-tools-dump.service.d, mode: '0755'}
     - {path: /etc/systemd/journald.conf.d, mode: '0755'}
+    - {path: /etc/initramfs-tools/hooks, mode: '0755'}
+    - {path: /usr/local/libexec, mode: '0755'}
+
+- name: Install capture-only USB driver hook for the explicitly selected USB filesystem
+  ansible.builtin.copy:
+    src: h3xinfra-kdump-usb
+    dest: /etc/initramfs-tools/hooks/h3xinfra-kdump-usb
+    owner: root
+    group: root
+    mode: '0755'
+    validate: /bin/sh -n %s
+  when: crash_capture_usb_uuid | default('') | length > 0
+
+- name: Install USB filesystem identity guard for both normal and capture boots
+  ansible.builtin.copy:
+    src: crash-capture-preflight.py
+    dest: /usr/local/libexec/h3xinfra-crash-capture-preflight
+    owner: root
+    group: root
+    mode: '0755'
+  when: crash_capture_usb_uuid | default('') | length > 0
+
+- name: Remove USB-specific files when returning to internal capture storage
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/initramfs-tools/hooks/h3xinfra-kdump-usb
+    - /usr/local/libexec/h3xinfra-crash-capture-preflight
+  when: crash_capture_usb_uuid | default('') | length == 0
 
 - name: Configure local kernel-only compressed dumps and bounded retention
   ansible.builtin.lineinfile:
@@ -83,7 +113,8 @@
     - {key: KDUMP_KERNEL, value: /var/lib/kdump/vmlinuz}
     - {key: KDUMP_INITRD, value: /var/lib/kdump/initrd.img}
     - {key: KDUMP_CMDLINE, value: '""'}
-    - {key: KDUMP_CMDLINE_APPEND, value: '"reset_devices systemd.unit=kdump-tools-dump.service nr_cpus=1 irqpoll usbcore.nousb"'}
+    - key: KDUMP_CMDLINE_APPEND
+      value: '"reset_devices systemd.unit=kdump-tools-dump.service nr_cpus=1 irqpoll{{ "" if crash_capture_usb_uuid | default("") | length > 0 else " usbcore.nousb" }}"'
     - {key: KDUMP_KEXEC_ARGS, value: '""'}
     - {key: NFS, value: '""'}
     - {key: SSH, value: '""'}
@@ -102,6 +133,9 @@
 
       [Service]
       UMask=0077
+      {% if crash_capture_usb_uuid | default('') | length > 0 %}
+      ExecStartPre=/usr/bin/python3 /usr/local/libexec/h3xinfra-crash-capture-preflight --runtime-check --directory {{ crash_capture_dump_dir | default('/var/crash/kdump') }} --mount {{ crash_capture_dump_mount | default('/var/crash') }} --usb-uuid {{ crash_capture_usb_uuid }}
+      {% endif %}
   loop:
     - kdump-tools
     - kdump-tools-dump
@@ -122,6 +156,33 @@
 - name: Regenerate GRUB with the package-owned crashkernel fragment
   ansible.builtin.command: update-grub
   changed_when: true
+
+- name: Rebuild the capture initramfs with the package hook without arming a kernel
+  ansible.builtin.command:
+    argv:
+      - /etc/kernel/postinst.d/kdump-tools
+      - "{{ ansible_facts.kernel }}"
+  register: crash_capture_initrd_rebuild
+  changed_when: true
+
+- name: Require the package hook to regenerate rather than skip the capture image
+  ansible.builtin.assert:
+    that:
+      - "('kdump-tools: Generating /var/lib/kdump/initrd.img-' ~ ansible_facts.kernel) in crash_capture_initrd_rebuild.stdout"
+    fail_msg: >-
+      The package hook skipped capture initramfs generation. Run staging in the
+      host environment with the running kernel installed; do not arm this image.
+
+- name: Inspect regenerated capture initramfs
+  ansible.builtin.stat:
+    path: "/var/lib/kdump/initrd.img-{{ ansible_facts.kernel }}"
+  register: crash_capture_initrd
+
+- name: Require a nonempty regenerated capture initramfs
+  ansible.builtin.assert:
+    that:
+      - crash_capture_initrd.stat.isreg | default(false)
+      - crash_capture_initrd.stat.size | default(0) > 0
 
 - name: Enable kdump for the next boot without loading a crash kernel now
   ansible.builtin.systemd_service:

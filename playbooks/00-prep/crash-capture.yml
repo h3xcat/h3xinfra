@@ -14,6 +14,7 @@
           - ansible_facts.distribution_version == '24.04'
           - ansible_facts.architecture == 'x86_64'
           - ansible_play_hosts_all | length == 1
+          - crash_capture_usb_uuid | default('') is string
         fail_msg: >-
           Select exactly one Ubuntu 24.04 amd64 agent with --limit.
           Control-plane and ARM hosts are intentionally unsupported.
@@ -21,14 +22,11 @@
 
     - name: Validate local dump storage without changing host configuration
       ansible.builtin.command:
-        argv:
-          - /usr/bin/python3
-          - -c
-          - "{{ lookup('ansible.builtin.file', 'files/crash-capture-preflight.py') }}"
-          - --directory
-          - "{{ crash_capture_dump_dir | default('/var/crash/kdump') }}"
-          - --mount
-          - "{{ crash_capture_dump_mount | default('/var/crash') }}"
+        argv: >-
+          {{ ['/usr/bin/python3', '-c', lookup('ansible.builtin.file', 'files/crash-capture-preflight.py'),
+              '--directory', crash_capture_dump_dir | default('/var/crash/kdump'),
+              '--mount', crash_capture_dump_mount | default('/var/crash')]
+             + (['--usb-uuid', crash_capture_usb_uuid] if crash_capture_usb_uuid | default('') | length > 0 else []) }}
       changed_when: false
       check_mode: false
       register: crash_capture_storage
@@ -48,6 +46,25 @@
     - name: Report current armed state separately from configuration
       ansible.builtin.debug:
         msg: "Current kexec_crash_loaded={{ crash_capture_loaded.content | b64decode | trim }}; this playbook never loads a crash kernel."
+      tags: always
+
+    - name: Read inherited kernel arguments before changing configuration
+      ansible.builtin.slurp:
+        src: /proc/cmdline
+      register: crash_capture_boot_cmdline
+      tags: always
+
+    - name: Reject inherited USB disable and driver blacklist arguments in USB mode
+      ansible.builtin.assert:
+        that:
+          - >-
+            crash_capture_usb_uuid | default('') | length == 0 or
+            (crash_capture_boot_cmdline.content | b64decode | replace('-', '_') | regex_search(
+              '(^|\\s)"?(usbcore\\.(nousb|authorized_default)|nousb|module_blacklist|modprobe\\.blacklist|rd\\.driver\\.blacklist|rdblacklist|initcall_blacklist)(=|\\s|$)')) is none
+        fail_msg: >-
+          USB capture inherits the normal kernel command line. Review and remove
+          USB-disable or driver-blacklist arguments before enabling this mode;
+          this playbook does not rewrite the normal kernel command line.
       tags: always
 
   tasks:
