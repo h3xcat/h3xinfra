@@ -5,10 +5,28 @@
 controller:
   enabled: true
   logLevel: info
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+      ephemeral-storage: 32Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+      ephemeral-storage: 256Mi
 
 speaker:
   enabled: true
   logLevel: info
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+      ephemeral-storage: 32Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+      ephemeral-storage: 256Mi
   frr:
     enabled: false
   # Enable IPv6 support in the speaker component
@@ -19,6 +37,59 @@ speaker:
   extraEnv:
     - name: METALLB_ML_BIND_DUAL_STACK
       value: "true"
+
+frr-k8s:
+  frrk8s:
+    # The bundled chart also uses this block for its status-cleaner Deployment.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+        ephemeral-storage: 32Mi
+      limits:
+        cpu: "1"
+        memory: 512Mi
+        ephemeral-storage: 256Mi
+    frr:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+          ephemeral-storage: 32Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+          ephemeral-storage: 1Gi
+    frrMetrics:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+          ephemeral-storage: 32Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+          ephemeral-storage: 256Mi
+    frrStatus:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+          ephemeral-storage: 32Mi
+        limits:
+          cpu: 250m
+          memory: 256Mi
+          ephemeral-storage: 256Mi
+    reloader:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+          ephemeral-storage: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+          ephemeral-storage: 256Mi
 
 rbac:
   create: true

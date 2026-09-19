@@ -35,19 +35,56 @@
           # HA: 2 replicas per component + PDB so a single-node loss
           # cannot drop the cert-manager control plane.
           replicaCount: 2
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+              ephemeral-storage: 32Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+              ephemeral-storage: 256Mi
           podDisruptionBudget:
             enabled: true
             minAvailable: 1
           webhook:
             replicaCount: 2
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+                ephemeral-storage: 32Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
+                ephemeral-storage: 256Mi
             podDisruptionBudget:
               enabled: true
               minAvailable: 1
           cainjector:
             replicaCount: 2
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+                ephemeral-storage: 32Mi
+              limits:
+                cpu: "1"
+                memory: 512Mi
+                ephemeral-storage: 256Mi
             podDisruptionBudget:
               enabled: true
               minAvailable: 1
+          startupapicheck:
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+                ephemeral-storage: 32Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
+                ephemeral-storage: 256Mi
         state: present
         wait: true
         timeout: "120s"
