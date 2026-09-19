@@ -186,8 +186,10 @@ make a test pass.
 
 Preserve each real crash's dump, kernel version, matching debug symbols,
 firmware/pstore record, and previous-boot journal off-node before pruning.
-After recovery, verify node readiness and storage health before uncordoning or
-releasing the deliberately retained reboot inhibition.
+After recovery, verify node readiness, watchdogs and surviving storage replicas
+before uncordoning. With Longhorn, restoring scheduling may be necessary for
+replica repair. Wait for the expected healthy replica count and completed
+rebuilds before releasing the deliberately retained reboot inhibition.
 
 ## Disabling Or Rolling Back
 
@@ -198,6 +200,14 @@ review the original timestamped `/etc/default/kdump-tools` backup and restore
 only the intended settings. Restore or remove this playbook's two kdump service
 drop-ins and journald drop-in as appropriate, then reload systemd and apply any
 journald change during that maintenance window.
+
+The repository-owned local-bottom helper is
+`/etc/initramfs-tools/scripts/local-bottom/h3xinfra-kdump-sysctl`. Remove it only
+as part of a full, unarmed rollback and regenerate the capture image if it will
+still be used. Switching between USB and internal storage keeps this helper:
+both capture modes need the hugepage override. Never remove the native
+`/etc/kdump/sysctl.conf` override merely to restore production hugepages; it is
+already isolated from normal boot.
 
 To prevent future arming, set `USE_KDUMP=0` and disable `kdump-tools.service`
 without `--now`. This does not unload an already loaded crash kernel or release
