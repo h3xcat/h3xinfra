@@ -243,9 +243,10 @@
             replicaSoftAntiAffinity: "false"
             allowVolumeCreationWithDegradedAvailability: "false"
             rwxVolumeFastFailover: "true"
-            # Auto-failover stuck pods (StatefulSet/Deployment) when their node goes down,
-            # so RWO volumes can be reattached on a healthy node without manual intervention.
-            nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
+            # A failed node is not proof that its old writer stopped. Require
+            # attended recovery before removing Pods or reattaching their data.
+            nodeDownPodDeletionPolicy: do-nothing
+            concurrentAutomaticEngineUpgradePerNodeLimit: 0
             # Drain compatibility for kured + manual kubectl drain.
             #
             # `block-for-eviction-if-contains-last-replica`: when a node is

@@ -94,7 +94,7 @@ class LonghornNativeResourceTests(unittest.TestCase):
             ["item.status.instanceEngines | default({}) | length == 0", "item.status.instanceReplicas | default({}) | length == 0"],
         ])
 
-    def test_existing_storage_and_recovery_policy_is_preserved(self):
+    def test_storage_and_attended_recovery_policy(self):
         settings = helm_values()["defaultSettings"]
         expected = {
             "defaultDataPath": "/var/lib/longhorn/",
@@ -107,7 +107,8 @@ class LonghornNativeResourceTests(unittest.TestCase):
             "replicaSoftAntiAffinity": "false",
             "allowVolumeCreationWithDegradedAvailability": "false",
             "rwxVolumeFastFailover": "true",
-            "nodeDownPodDeletionPolicy": "delete-both-statefulset-and-deployment-pod",
+            "nodeDownPodDeletionPolicy": "do-nothing",
+            "concurrentAutomaticEngineUpgradePerNodeLimit": 0,
             "nodeDrainPolicy": "block-for-eviction-if-contains-last-replica",
             "orphanResourceAutoDeletion": "instance",
             "orphanResourceAutoDeletionGracePeriod": "300",
@@ -179,6 +180,8 @@ class LonghornChartRenderTests(unittest.TestCase):
     def test_native_settings_serialize_cpu_csi_and_v2_correctly(self):
         config = next(doc for doc in self.documents if doc["kind"] == "ConfigMap" and "default-setting.yaml" in doc.get("data", {}))
         settings = yaml.safe_load(config["data"]["default-setting.yaml"])
+        self.assertEqual(settings["node-down-pod-deletion-policy"], "do-nothing")
+        self.assertEqual(settings["concurrent-automatic-engine-upgrade-per-node-limit"], "0")
         self.assertEqual(json.loads(settings["guaranteed-instance-manager-cpu"]), {"v1": "12", "v2": "31"})
         self.assertIs(settings["v2-data-engine"], False)
         self.assertEqual(
