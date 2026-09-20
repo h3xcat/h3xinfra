@@ -39,4 +39,4 @@ collections:
   # ansible.utils.ipwrap is used by k3s.orchestration on the controller (needs
   # the netaddr python package from requirements.txt).
   - name: ansible.utils
-    version: 6.1.0
+    version: 6.1.1
