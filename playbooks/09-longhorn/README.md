@@ -23,8 +23,31 @@ previous `guaranteedInstanceManagerCpu` spelling was ignored by the chart.
 The corrected key preserves live percentages: V1 12, V2 31. This is a CPU
 reservation, not a CPU limit. No instance-manager memory cap is imposed.
 
-Recovery, fencing, drain, orphan-data retention, replica counts, disk free-space
-policies and engine versions are unchanged.
+The resource controls leave drain, orphan-data retention, replica counts,
+disk free-space policies and engine versions unchanged.
+
+## Attended Failure Recovery
+
+`nodeDownPodDeletionPolicy: do-nothing` disables Longhorn's automatic force
+deletion of Pods after node failure. Affected workloads may stay unavailable
+until an operator intervenes. This is not fencing: Node NotReady, cordoning,
+Pod deletion and watchdog activity do not prove that an old writer stopped.
+Require positive shutdown of the old writer or independent fencing before any
+forced deletion/detachment or replacement-writer recovery. Do not remove
+storage finalizers or replica data to bypass a stalled operation.
+
+RWX share-manager fast failover is unchanged and has separate failure semantics;
+this policy does not eliminate every possible dual-writer path. Drain policy
+and orphan-data preservation also remain unchanged. Automatic engine-upgrade
+concurrency is explicitly zero; upgrades are attended, backed up and serial.
+
+For a setting-only rollout, verify the exact current native settings and
+reconcile only the approved saved Helm values at the unchanged chart version.
+Require a ConfigMap-only rendered change and check unrelated native defaults
+for drift before applying. Do not run the full standup
+playbook as a shortcut. Verify the live setting, controller readiness and volume
+health after reconciliation. A rollback changes failure handling again and
+requires an explicit operational decision.
 
 ## Unused V2 Engine
 
