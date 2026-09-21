@@ -71,10 +71,10 @@
       "matchPackageNames": ["/^kubernetes/", "/(^|/)kubectl$/", "/^k3s/"]
     },
     {
-      "description": "kubectl must stay within +/-1 minor of the k3s cluster (k3s_version 1.36.x in inventory/production/group_vars/k3s_cluster/main.yml). Raise the ceiling when k3s moves to a new minor; tests/renovate/test_config.py asserts it equals <1.<k3s_minor+2>.0",
+      "description": "kubectl must stay within +/-1 minor of the k3s cluster (k3s_version 1.37.x in inventory/production/group_vars/k3s_cluster/main.yml). Raise the ceiling when k3s moves to a new minor; tests/renovate/test_config.py asserts it equals <1.<k3s_minor+2>.0",
       "matchDatasources": ["github-releases"],
       "matchPackageNames": ["kubernetes/kubernetes"],
-      "allowedVersions": "<1.38.0"
+      "allowedVersions": "<1.39.0"
     },
     {
       "description": "Group Cilium updates into one Monday-morning PR: a CNI bump disrupts every node and is applied in the same window as k3s. Regex form for parity with the Kubernetes rule",
