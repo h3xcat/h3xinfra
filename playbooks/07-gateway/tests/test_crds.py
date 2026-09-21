@@ -76,10 +76,12 @@ class CrdReconciliationTests(unittest.TestCase):
                 "tasks": [RECONCILE],
             }]))
             env = dict(os.environ, ANSIBLE_CONFIG=str(config), ANSIBLE_NOCOLOR="1",
-                       ANSIBLE_STDOUT_CALLBACK="default", ANSIBLE_CALLBACKS_ENABLED="",
+                       ANSIBLE_STDOUT_CALLBACK="default",
                        PATH=str(root) + os.pathsep + os.environ["PATH"],
                        CRD_TEST_CALLS=str(calls), CRD_TEST_DIFF_RC=str(diff_rc),
                        CRD_TEST_APPLY_RC=str(apply_rc))
+            # An empty value is a plugin named "" in newer Ansible versions.
+            env.pop("ANSIBLE_CALLBACKS_ENABLED", None)
             result = subprocess.run(
                 [ANSIBLE, "-i", "localhost,", "-c", "local", "-e",
                  "ansible_python_interpreter=" + sys.executable, str(playbook)],
