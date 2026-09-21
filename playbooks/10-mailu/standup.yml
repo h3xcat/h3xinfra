@@ -75,6 +75,40 @@
       timeout: "120s"
     no_log: true
 
+  - name: Read Helm version for shutdown renderer compatibility
+    ansible.builtin.command:
+      argv: [helm, version, --short]
+    register: mailu_helm_version
+    changed_when: false
+    check_mode: false
+
+  - name: Read the Helm 4 plugin directory
+    ansible.builtin.command:
+      argv: [helm, env, HELM_PLUGINS]
+    register: mailu_helm_plugins
+    changed_when: false
+    check_mode: false
+    when: mailu_helm_version.stdout is match('v4\\.')
+
+  - name: Create the Mailu shutdown plugin directory
+    ansible.builtin.file:
+      path: "{{ mailu_helm_plugins.stdout }}/h3xinfra-mailu-shutdown"
+      state: directory
+      mode: "0755"
+    when: mailu_helm_version.stdout is match('v4\\.')
+
+  - name: Keep the installed Helm 4 shutdown plugin in sync with the repository
+    ansible.builtin.copy:
+      src: "{{ playbook_dir }}/{{ item }}"
+      dest: "{{ mailu_helm_plugins.stdout }}/h3xinfra-mailu-shutdown/{{ item }}"
+      mode: "{{ '0755' if item == 'shutdown-post-renderer.py' else '0644' }}"
+    loop:
+    - plugin.yaml
+    - shutdown-post-renderer.py
+    - graceful-stop.py
+    - graceful-stop-clamav.sh
+    when: mailu_helm_version.stdout is match('v4\\.')
+
   - name: Deploy Mailu via Helm
     kubernetes.core.helm:
       name: "{{ mailu.release_name_prefix }}-main"
@@ -82,7 +116,9 @@
       chart_version: "{{ chart_versions.mailu }}"
       namespace: "{{ mailu.namespace }}"
       create_namespace: false
-      # post_renderer: "{{ playbook_dir }}/post-renderer.py"
+      post_renderer: >-
+        {{ 'h3xinfra-mailu-shutdown' if mailu_helm_version.stdout is match('v4\\.')
+           else playbook_dir ~ '/shutdown-post-renderer.py' }}
       
       values:
         global:
@@ -130,6 +166,7 @@
           storageClass: "longhorn"
 
         front:
+          terminationGracePeriodSeconds: 120
           resources:
             requests:
               cpu: "{{ mailu.resources.front.requests.cpu | default('100m') }}"
@@ -153,10 +190,12 @@
 
         redis:
           master:
+            terminationGracePeriodSeconds: 120
             persistence:
               storageClass: "longhorn"
 
         admin:
+          terminationGracePeriodSeconds: 120
           resources:
             requests:
               cpu: "{{ mailu.resources.admin.requests.cpu | default('100m') }}"
@@ -170,6 +209,7 @@
             type: "Recreate"
 
         webmail:
+          terminationGracePeriodSeconds: 120
           resources:
             requests:
               cpu: "{{ mailu.resources.webmail.requests.cpu | default('100m') }}"
@@ -183,6 +223,7 @@
             type: "Recreate"
 
         postfix:
+          terminationGracePeriodSeconds: 120
           resources:
             requests:
               cpu: "{{ mailu.resources.postfix.requests.cpu | default('100m') }}"
@@ -196,6 +237,7 @@
             type: "Recreate"
 
         dovecot:
+          terminationGracePeriodSeconds: 120
           resources:
             requests:
               cpu: "{{ mailu.resources.dovecot.requests.cpu | default('100m') }}"
@@ -209,6 +251,7 @@
             type: "Recreate"
 
         rspamd:
+          terminationGracePeriodSeconds: 120
           resources:
             requests:
               cpu: "{{ mailu.resources.rspamd.requests.cpu | default('100m') }}"
@@ -227,6 +270,7 @@
           #     sign_headers = (o)from:(x)sender:(o)reply-to:(o)subject:(o)to:(o)cc:(x)mime-version:(x)content-type:(x)content-transfer-encoding:resent-to:resent-cc:resent-from:resent-sender:resent-message-id:(x)in-reply-to:(x)references:list-id:list-help:list-owner:list-unsubscribe:list-unsubscribe-post:list-subscribe:list-post:(x)openpgp:(x)autocrypt:
           #   Message-ID, Date, Return-Path, Bounces-To.
         clamav:
+          terminationGracePeriodSeconds: 120
           resources:
             requests:
               cpu: "{{ mailu.resources.clamav.requests.cpu | default('100m') }}"
@@ -238,6 +282,7 @@
             storageClass: "longhorn"
 
         oletools:
+          terminationGracePeriodSeconds: 120
           resources:
             requests:
               cpu: "{{ mailu.resources.oletools.requests.cpu | default('50m') }}"
@@ -247,6 +292,7 @@
               memory: "{{ mailu.resources.oletools.limits.memory | default('256Mi') }}"
 
         tika:
+          terminationGracePeriodSeconds: 120
           resources:
             requests:
               cpu: "{{ mailu.resources.tika.requests.cpu | default('100m') }}"
