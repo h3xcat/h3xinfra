@@ -19,7 +19,7 @@ collections:
   # kubernetes.core <6.0.0 still passes `--all` to `helm list`, which Helm v4
   # removed; 6.x is the first Helm-v4-compatible line.
   - name: kubernetes.core
-    version: 6.5.0
+    version: 6.6.0
   # community.general.{ini_file,pam_limits,sudoers,terraform} are used directly
   # by the playbooks. 12.6.5 is the newest release whose `requires_ansible`
   # (>=2.17.0) the devcontainer's ansible-core 2.17 satisfies; 13.x needs
@@ -39,4 +39,4 @@ collections:
   # ansible.utils.ipwrap is used by k3s.orchestration on the controller (needs
   # the netaddr python package from requirements.txt).
   - name: ansible.utils
-    version: 6.1.0
+    version: 6.1.1

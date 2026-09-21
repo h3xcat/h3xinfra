@@ -81,7 +81,7 @@ all:
     # layout, group_vars/all/versions.yml is loaded automatically instead.
     chart_versions:
       # renovate: datasource=helm depName=cilium registryUrl=https://helm.cilium.io
-      cilium: "1.20.1"
+      cilium: "1.20.2"
       # renovate: datasource=helm depName=metallb registryUrl=https://metallb.github.io/metallb
       metallb: "0.16.1"
       # renovate: datasource=docker depName=envoyproxy/gateway-helm registryUrl=https://docker.io versioning=helm
@@ -256,7 +256,7 @@ k3s_cluster:
     ansible_port: 22
     ansible_user: ansible  # Replace with your actual ansible user
     # renovate: datasource=github-releases depName=k3s-io/k3s versioning=regex:^v(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)\+k3s(?<build>\d+)$
-    k3s_version: v1.36.4+k3s1
+    k3s_version: v1.37.0+k3s1
     # Generate your own cluster token with: openssl rand -hex 32
     token: !vault |
       $ANSIBLE_VAULT;1.1;AES256
