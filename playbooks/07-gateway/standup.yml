@@ -14,10 +14,29 @@
         state: present
         wait: true
 
-    # The CRD bundle (Gateway API experimental + Envoy Gateway CRDs) exceeds
-    # Helm's 1 MiB release secret limit, so we render it and apply it via
-    # server-side kubectl rather than as a Helm release. The chart is still
-    # version-pinned via chart_versions.envoy_gateway.
+    # K3s owns the standard Gateway API CRDs through gateway-api-crd. Do not
+    # replace them with the experimental bundle or bypass its upgrade policy.
+    - name: Wait for K3s-managed Gateway API CRDs
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - wait
+          - --for=condition=Established
+          - --timeout=60s
+          - crd/gatewayclasses.gateway.networking.k8s.io
+          - crd/gateways.gateway.networking.k8s.io
+          - crd/httproutes.gateway.networking.k8s.io
+          - crd/grpcroutes.gateway.networking.k8s.io
+          - crd/referencegrants.gateway.networking.k8s.io
+          - crd/backendtlspolicies.gateway.networking.k8s.io
+          - crd/tcproutes.gateway.networking.k8s.io
+          - crd/tlsroutes.gateway.networking.k8s.io
+          - crd/udproutes.gateway.networking.k8s.io
+          - crd/listenersets.gateway.networking.k8s.io
+      changed_when: false
+
+    # Envoy's own CRDs exceed Helm's 1 MiB release secret limit. Render the
+    # pinned chart and manage only those CRDs with server-side kubectl.
     - name: Render Envoy Gateway CRD bundle
       ansible.builtin.command:
         cmd: >-
@@ -25,38 +44,72 @@
           oci://docker.io/envoyproxy/gateway-crds-helm
           --version {{ chart_versions.envoy_gateway }}
           --namespace {{ gateway.namespace }}
-          --set crds.gatewayAPI.enabled=true
-          --set crds.gatewayAPI.channel=experimental
+          --set crds.gatewayAPI.enabled=false
           --set crds.envoyGateway.enabled=true
       register: gateway_crd_render
       changed_when: false
 
     # Helm v4 writes OCI pull metadata ("Pulled:"/"Digest:" lines) to stdout
     # ahead of the manifests (v3 sent it to stderr), and kubectl rejects those
-    # lines as a YAML document with no Kind. Strip them before piping.
+    # lines as a YAML document with no Kind. Strip them before staging.
     - name: Strip Helm OCI pull metadata from the rendered bundle
       ansible.builtin.set_fact:
         gateway_crd_manifests: "{{ gateway_crd_render.stdout_lines | reject('match', '^(Pulled|Digest): ') | join('\n') }}"
 
-    # `kubectl apply --server-side` prints "<resource> serverside-applied" for
-    # EVERY object whether or not it changed, so its stdout can't distinguish a
-    # no-op from a real change (the old stdout-parsing changed_when always
-    # matched). Instead use `kubectl diff` (rc 1 = drift, 0 = in sync) to decide
-    # whether to apply at all, which keeps this task idempotent.
-    - name: Diff Envoy Gateway CRD bundle against the cluster
-      ansible.builtin.command:
-        cmd: kubectl diff -f -
-        stdin: "{{ gateway_crd_manifests }}"
-      register: gateway_crd_diff
-      changed_when: false
-      failed_when: gateway_crd_diff.rc not in [0, 1]
+    # File input preserves kubectl's error when it rejects an early object;
+    # streaming this large bundle can hide that error behind Ansible's EPIPE.
+    - name: Reconcile Envoy Gateway CRDs
+      block:
+        - name: Create temporary Envoy Gateway CRD file
+          ansible.builtin.tempfile:
+            state: file
+            prefix: h3xinfra-gateway-crds-
+            suffix: .yaml
+          register: gateway_crd_file
+          changed_when: false
 
-    - name: Apply Envoy Gateway CRD bundle (server-side)
-      ansible.builtin.command:
-        cmd: kubectl apply --server-side --force-conflicts --field-manager h3xinfra-gateway-crds -f -
-        stdin: "{{ gateway_crd_manifests }}"
-      when: gateway_crd_diff.rc == 1
-      changed_when: gateway_crd_diff.rc == 1
+        - name: Stage Envoy Gateway CRD bundle
+          ansible.builtin.copy:
+            content: "{{ gateway_crd_manifests }}"
+            dest: "{{ gateway_crd_file.path }}"
+            mode: "0600"
+          changed_when: false
+
+        # Diff must use the same apply mode and field manager as the write.
+        # rc 0 = in sync, 1 = drift, >1 = error; only drift permits an apply.
+        - name: Diff Envoy Gateway CRD bundle against the cluster
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - diff
+              - --server-side
+              - --force-conflicts
+              - --field-manager=h3xinfra-gateway-crds
+              - -f
+              - "{{ gateway_crd_file.path }}"
+          register: gateway_crd_diff
+          changed_when: false
+          failed_when: gateway_crd_diff.rc not in [0, 1]
+
+        - name: Apply Envoy Gateway CRD bundle (server-side)
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - apply
+              - --server-side
+              - --force-conflicts
+              - --field-manager=h3xinfra-gateway-crds
+              - -f
+              - "{{ gateway_crd_file.path }}"
+          when: gateway_crd_diff.rc == 1
+          changed_when: gateway_crd_diff.rc == 1
+      always:
+        - name: Remove temporary Envoy Gateway CRD file
+          ansible.builtin.file:
+            path: "{{ gateway_crd_file.path }}"
+            state: absent
+          when: gateway_crd_file.path is defined
+          changed_when: false
 
     - name: Deploy Envoy Gateway controller via Helm (OCI)
       kubernetes.core.helm:
@@ -65,10 +118,8 @@
         chart_version: "{{ chart_versions.envoy_gateway }}"
         release_namespace: "{{ gateway.namespace }}"
         create_namespace: false
-        # CRDs (Gateway API + Envoy Gateway-specific) are rendered above with
-        # `helm template` and applied directly via `kubectl apply --server-side`
-        # (no Helm release owns them); the controller chart must not ship a
-        # duplicate set or a server-side apply conflict will occur.
+        # K3s owns Gateway API; the tasks above own Envoy-specific CRDs.
+        # The controller chart must not install another copy of either set.
         skip_crds: true
         values:
           # HA: 2 controller replicas so a single-node loss does not
