@@ -101,7 +101,7 @@ all:
       # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
       kured: "6.1.0"
       # renovate: datasource=helm depName=mailu registryUrl=https://mailu.github.io/helm-charts
-      mailu: "2.7.3"
+      mailu: "2.8.0"
     cli_versions:
       # renovate: datasource=github-releases depName=longhorn/cli
       longhorn_cli: "v1.12.1"
