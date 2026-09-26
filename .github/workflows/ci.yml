@@ -32,7 +32,7 @@ concurrency:
 
 env:
   # renovate: datasource=github-releases depName=renovatebot/renovate
-  RENOVATE_VERSION: 44.101.3
+  RENOVATE_VERSION: 44.110.0
   # renovate 44.x needs node ^24.11
   # renovate: datasource=node-version depName=node
   NODE_VERSION: 24.21.0
@@ -40,7 +40,7 @@ env:
   HELM_VERSION: v4.3.0
   # >= 1.16.2 is required by playbooks/10-keycloak/terraform/providers.tf
   # renovate: datasource=github-releases depName=hashicorp/terraform extractVersion=^v(?<version>.*)$
-  TERRAFORM_VERSION: 1.16.3
+  TERRAFORM_VERSION: 1.16.4
   # renovate: datasource=pypi depName=yamllint
   YAMLLINT_VERSION: 1.38.0
   # the devcontainer's ansible-core line (syntax-check only needs a parser)
