@@ -104,7 +104,7 @@ all:
       mailu: "2.7.3"
     cli_versions:
       # renovate: datasource=github-releases depName=longhorn/cli
-      longhorn_cli: "v1.12.1"
+      longhorn_cli: "v1.13.0"
     image_versions:
       # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
       postgresql: "18"

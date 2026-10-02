@@ -49,7 +49,7 @@ chart_versions:
 # CLI Tools
 cli_versions:
   # renovate: datasource=github-releases depName=longhorn/cli
-  longhorn_cli: "v1.12.1"
+  longhorn_cli: "v1.13.0"
 
 # =============================================================================
 # CENTRALIZED IMAGE VERSIONS
