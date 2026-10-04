@@ -18,7 +18,11 @@ spec:
   parentRefs:
     - name: {{ .Values.ingress.gateway.name }}
       namespace: {{ .Values.ingress.gateway.namespace }}
-      sectionName: {{ .Values.ingress.gateway.sectionName | default "https" | quote }}
+      {{- if .Values.ingress.gateway.sectionName }}
+      sectionName: {{ .Values.ingress.gateway.sectionName | quote }}
+      {{- else }}
+      port: {{ .Values.ingress.gateway.port | default 443 }}
+      {{- end }}
   hostnames:
     - {{ .Values.ingress.host | quote }}
   rules:
