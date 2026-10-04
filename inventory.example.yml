@@ -85,23 +85,23 @@ all:
       # renovate: datasource=helm depName=metallb registryUrl=https://metallb.github.io/metallb
       metallb: "0.16.1"
       # renovate: datasource=docker depName=envoyproxy/gateway-helm registryUrl=https://docker.io versioning=helm
-      envoy_gateway: "1.9.1"
+      envoy_gateway: "1.9.2"
       # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
       gateway_api: "v1.6.2"
       # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
-      external_dns: "1.22.0"
+      external_dns: "1.23.0"
       # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
       cert_manager: "v1.21.2"
       # renovate: datasource=docker depName=quay.io/keycloak/keycloak
       keycloak: "26.8.0"
       # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
-      longhorn: "1.12.1"
+      longhorn: "1.13.0"
       # renovate: datasource=helm depName=csi-driver-smb registryUrl=https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
       csi_driver_smb: "1.20.3"
       # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
       kured: "6.1.0"
       # renovate: datasource=helm depName=mailu registryUrl=https://mailu.github.io/helm-charts
-      mailu: "2.7.3"
+      mailu: "2.8.0"
     cli_versions:
       # renovate: datasource=github-releases depName=longhorn/cli
       longhorn_cli: "v1.13.0"
