@@ -44,7 +44,8 @@ ingress:
   gateway:
     name: ""
     namespace: ""
-    sectionName: "https"
+    port: 443
+    sectionName: ""
   serviceName: "keycloak"
   servicePort: 8080
   # Empty denies access to the admin rule; public realm paths stay reachable.
