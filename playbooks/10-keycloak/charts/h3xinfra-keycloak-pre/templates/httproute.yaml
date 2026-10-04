@@ -18,6 +18,7 @@ spec:
   parentRefs:
     - name: {{ .Values.ingress.gateway.name }}
       namespace: {{ .Values.ingress.gateway.namespace }}
+      sectionName: {{ .Values.ingress.gateway.sectionName | default "https" | quote }}
   hostnames:
     - {{ .Values.ingress.host | quote }}
   rules:
@@ -40,7 +41,6 @@ spec:
         - name: {{ .Values.ingress.serviceName }}
           port: {{ .Values.ingress.servicePort }}
     # Admin / metrics / health -- IP-restricted via SecurityPolicy
-    # (currently disabled; see securitypolicy.yaml).
     - name: admin
       matches:
         - path:

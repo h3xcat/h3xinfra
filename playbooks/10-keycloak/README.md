@@ -13,7 +13,7 @@ inventory.
 ├── standup.yml                       # Installs Operator, deploys CRs, runs terraform apply
 ├── teardown.yml                      # Runs terraform destroy + removes Helm releases
 ├── charts/
-│   ├── h3xinfra-keycloak-pre/        # Bootstrap admin Secret, CNPG Cluster, split HTTPRoutes
+│   ├── h3xinfra-keycloak-pre/        # Bootstrap admin Secret, CNPG Cluster, HTTPRoute with named rules
 │   └── h3xinfra-keycloak-main/       # Renders the Keycloak CR (+ PDB) consumed by the Operator
 └── terraform/
     ├── providers.tf                  # keycloak/keycloak provider
@@ -40,13 +40,15 @@ inventory.
      Replaces the previous single-pod Bitnami subchart so a node failure
      does not take auth down. Keycloak connects through the CNPG-rendered
      `<cluster>-rw` Service which always points at the current primary.
-   - Two `HTTPRoute` objects (Gateway API) on the same host, attached to the
-     shared Envoy Gateway:
+   - One `HTTPRoute` (Gateway API) with named rules, attached only to the
+     shared Envoy Gateway HTTPS listener:
      - **Public**: `/realms/`, `/resources/`, `/js/`, `/robots.txt` — reachable
        by downstream services and end users.
      - **Admin**: `/admin/`, `/metrics`, `/health` — restricted via a
        `SecurityPolicy` (`authorization.principal.clientCIDRs`) populated
-       from `keycloak.ingress.trusted_setup_ips`.
+       from `keycloak.ingress.trusted_setup_ips`. The policy targets only the
+       `admin` rule; an empty allowlist denies admin access. This requires
+       Envoy Gateway 1.9 rule-level policy attachment (the pinned version).
 3. **Main chart** (`h3xinfra-keycloak-main`) renders a `Keycloak` CR
    (`k8s.keycloak.org/v2alpha1`). The Operator reconciles the CR into a
    StatefulSet, Service, pod anti-affinity, JGroups KUBE_PING discovery

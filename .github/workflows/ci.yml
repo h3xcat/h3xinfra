@@ -169,6 +169,9 @@ jobs:
           npx --yes --package "renovate@${RENOVATE_VERSION}" renovate-config-validator --strict --no-global renovate.json
           npx --yes --package "renovate@${RENOVATE_VERSION}" renovate --platform=local --dry-run=extract > "$RUNNER_TEMP/renovate-extract-public.jsonl"
           grep -q '"msg":"Extracted dependencies"' "$RUNNER_TEMP/renovate-extract-public.jsonl"
+      - name: Test gateway security routing
+        working-directory: h3xinfra
+        run: python -m unittest discover -s playbooks/07-gateway/tests -p test_security_routing.py -v
       - name: tests/run-all.sh (submodule mode)
         env:
           RENOVATE_VALIDATOR_OK: "1"
@@ -249,6 +252,8 @@ jobs:
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
+      - name: Test gateway security routing
+        run: python -m unittest discover -s playbooks/07-gateway/tests -p test_security_routing.py -v
       - name: terraform validate playbooks/10-keycloak/terraform
         working-directory: playbooks/10-keycloak/terraform
         run: |
