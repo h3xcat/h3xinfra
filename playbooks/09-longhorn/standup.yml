@@ -191,6 +191,14 @@
             updateStrategy:
               rollingUpdate:
                 maxUnavailable: 1
+          longhornGlobalManager:
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: "1"
+                memory: 512Mi
           defaultSettings:
             # The native setting accepts a JSON string, not a YAML mapping.
             systemManagedCSIComponentsResourceLimits: >-

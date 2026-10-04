@@ -177,6 +177,16 @@ class LonghornChartRenderTests(unittest.TestCase):
         container = next(c for c in manager["spec"]["template"]["spec"]["containers"] if c["name"] == "longhorn-manager")
         self.assertEqual(container["resources"], MANAGER)
 
+    def test_global_manager_deployment_has_configured_budget(self):
+        manager = next(doc for doc in self.documents if doc["kind"] == "Deployment"
+                       and doc["metadata"]["name"] == "longhorn-global-manager")
+        container = next(c for c in manager["spec"]["template"]["spec"]["containers"]
+                         if c["name"] == "longhorn-global-manager")
+        self.assertEqual(container["resources"], {
+            "requests": {"cpu": "100m", "memory": "128Mi"},
+            "limits": {"cpu": "1", "memory": "512Mi"},
+        })
+
     def test_native_settings_serialize_cpu_csi_and_v2_correctly(self):
         config = next(doc for doc in self.documents if doc["kind"] == "ConfigMap" and "default-setting.yaml" in doc.get("data", {}))
         settings = yaml.safe_load(config["data"]["default-setting.yaml"])
