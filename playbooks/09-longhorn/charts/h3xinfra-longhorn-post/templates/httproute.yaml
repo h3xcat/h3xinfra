@@ -16,6 +16,7 @@ metadata:
 spec:
   parentRefs:
     - name: {{ $gwName | quote }}
+      sectionName: {{ .Values.longhornIngress.gateway.sectionName | default "https" | quote }}
       {{- with .Values.longhornIngress.gateway.namespace }}
       namespace: {{ . | quote }}
       {{- end }}

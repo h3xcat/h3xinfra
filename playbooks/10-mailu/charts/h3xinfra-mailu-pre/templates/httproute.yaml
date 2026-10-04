@@ -15,6 +15,7 @@ spec:
   parentRefs:
     - name: {{ .Values.gatewayRoute.gateway.name }}
       namespace: {{ .Values.gatewayRoute.gateway.namespace }}
+      sectionName: {{ .Values.gatewayRoute.gateway.sectionName | default "https" | quote }}
   hostnames:
     {{- range .Values.certificate.dnsNames }}
     - {{ . | quote }}
@@ -66,6 +67,7 @@ spec:
   parentRefs:
     - name: {{ .Values.gatewayRoute.gateway.name }}
       namespace: {{ .Values.gatewayRoute.gateway.namespace }}
+      sectionName: {{ .Values.gatewayRoute.gateway.sectionName | default "https" | quote }}
   hostnames:
     {{- range .Values.certificate.dnsNames }}
     - {{ . | quote }}
