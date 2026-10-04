@@ -13,7 +13,7 @@ chart_versions:
   metallb: "0.16.1"
   # Envoy Gateway controller (replaces ingress-nginx).
   # renovate: datasource=docker depName=envoyproxy/gateway-helm registryUrl=https://docker.io versioning=helm
-  envoy_gateway: "1.9.1"
+  envoy_gateway: "1.9.2"
   # NOT consumed by any playbook: the Gateway API CRDs are rendered from
   # oci://docker.io/envoyproxy/gateway-crds-helm (experimental channel) at
   # chart_versions.envoy_gateway by playbooks/07-gateway/standup.yml. This pin
@@ -22,7 +22,7 @@ chart_versions:
   # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
   gateway_api: "v1.6.2"
   # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
-  external_dns: "1.22.0"
+  external_dns: "1.23.0"
 
   # Infrastructure - Security & Certs
   # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
@@ -32,7 +32,7 @@ chart_versions:
 
   # Infrastructure - Storage
   # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
-  longhorn: "1.12.1"
+  longhorn: "1.13.0"
   # renovate: datasource=helm depName=csi-driver-smb registryUrl=https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
   csi_driver_smb: "1.20.3"
 
@@ -44,7 +44,7 @@ chart_versions:
 
   # Applications
   # renovate: datasource=helm depName=mailu registryUrl=https://mailu.github.io/helm-charts
-  mailu: "2.7.3"
+  mailu: "2.8.0"
 
 # CLI Tools
 cli_versions:
