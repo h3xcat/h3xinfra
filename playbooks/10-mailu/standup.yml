@@ -88,14 +88,14 @@
     register: mailu_helm_plugins
     changed_when: false
     check_mode: false
-    when: mailu_helm_version.stdout is match('v4\\.')
+    when: mailu_helm_version.stdout.startswith('v4.')
 
   - name: Create the Mailu shutdown plugin directory
     ansible.builtin.file:
       path: "{{ mailu_helm_plugins.stdout }}/h3xinfra-mailu-shutdown"
       state: directory
       mode: "0755"
-    when: mailu_helm_version.stdout is match('v4\\.')
+    when: mailu_helm_version.stdout.startswith('v4.')
 
   - name: Keep the installed Helm 4 shutdown plugin in sync with the repository
     ansible.builtin.copy:
@@ -107,7 +107,7 @@
     - shutdown-post-renderer.py
     - graceful-stop.py
     - graceful-stop-clamav.sh
-    when: mailu_helm_version.stdout is match('v4\\.')
+    when: mailu_helm_version.stdout.startswith('v4.')
 
   - name: Deploy Mailu via Helm
     kubernetes.core.helm:
@@ -117,7 +117,7 @@
       namespace: "{{ mailu.namespace }}"
       create_namespace: false
       post_renderer: >-
-        {{ 'h3xinfra-mailu-shutdown' if mailu_helm_version.stdout is match('v4\\.')
+        {{ 'h3xinfra-mailu-shutdown' if mailu_helm_version.stdout.startswith('v4.')
            else playbook_dir ~ '/shutdown-post-renderer.py' }}
       
       values:
