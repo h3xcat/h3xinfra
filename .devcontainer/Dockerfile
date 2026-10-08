@@ -2,7 +2,7 @@ ARG BASE_IMAGE_NAME=mcr.microsoft.com/devcontainers/base
 # Versioned tag so Renovate's built-in dockerfile manager can track the base
 # image (a bare "jammy" is skipped as invalid-value); the -jammy suffix keeps
 # updates on Ubuntu 22.04.
-ARG BASE_IMAGE_TAG=3.0.8-jammy
+ARG BASE_IMAGE_TAG=3.0.9-jammy
 
 FROM ${BASE_IMAGE_NAME}:${BASE_IMAGE_TAG}
 
