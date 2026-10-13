@@ -4,7 +4,7 @@ fullnameOverride: ""
 
 image:
   repository: "quay.io/keycloak/keycloak"
-  tag: "26.8.0"
+  tag: "26.8.1"
 
 # Replica count for the Keycloak StatefulSet the operator renders.
 # 2+ enables Infinispan distributed cache for session replication
