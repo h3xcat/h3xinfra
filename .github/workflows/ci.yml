@@ -101,7 +101,7 @@ jobs:
           cache: pip
           cache-dependency-path: h3xinfra-private/tests/requirements.txt
       - run: python -m pip install --disable-pip-version-check -r h3xinfra-private/tests/requirements.txt
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
@@ -196,7 +196,7 @@ jobs:
       ANSIBLE_FORCE_COLOR: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: renovate-config-validator --strict
