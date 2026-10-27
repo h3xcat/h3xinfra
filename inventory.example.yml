@@ -91,13 +91,13 @@ all:
       # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
       external_dns: "1.23.0"
       # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
-      cert_manager: "v1.21.2"
+      cert_manager: "v1.21.3"
       # renovate: datasource=docker depName=quay.io/keycloak/keycloak
       keycloak: "26.8.1"
       # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
       longhorn: "1.13.0"
       # renovate: datasource=helm depName=csi-driver-smb registryUrl=https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
-      csi_driver_smb: "1.20.3"
+      csi_driver_smb: "1.20.4"
       # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
       kured: "6.1.0"
       # renovate: datasource=helm depName=mailu registryUrl=https://mailu.github.io/helm-charts
