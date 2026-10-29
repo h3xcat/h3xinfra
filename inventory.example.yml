@@ -85,7 +85,7 @@ all:
       # renovate: datasource=helm depName=metallb registryUrl=https://metallb.github.io/metallb
       metallb: "0.16.1"
       # renovate: datasource=docker depName=envoyproxy/gateway-helm registryUrl=https://docker.io versioning=helm
-      envoy_gateway: "1.9.2"
+      envoy_gateway: "1.9.3"
       # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
       gateway_api: "v1.6.2"
       # renovate: datasource=helm depName=external-dns registryUrl=https://kubernetes-sigs.github.io/external-dns
