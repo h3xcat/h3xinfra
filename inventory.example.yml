@@ -80,6 +80,8 @@ all:
     # markers and values equal (tests/renovate checks both). With the structured
     # layout, group_vars/all/versions.yml is loaded automatically instead.
     chart_versions:
+      # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
+      argocd: "10.11.6"
       # renovate: datasource=helm depName=cilium registryUrl=https://helm.cilium.io
       cilium: "1.20.4"
       # renovate: datasource=helm depName=metallb registryUrl=https://metallb.github.io/metallb

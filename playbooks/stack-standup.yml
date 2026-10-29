@@ -36,5 +36,9 @@
 
 - import_playbook: 10-mailu/standup.yml
 
+# Opt in after the Keycloak client and group assignments have been provisioned.
+- import_playbook: 10-argocd/standup.yml
+  when: argocd.enabled | default(false) | bool
+
 # Display cluster status
 - import_playbook: 99-utils/cluster-status.yml
