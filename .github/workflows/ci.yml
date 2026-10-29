@@ -95,7 +95,7 @@ jobs:
           persist-credentials: false
       - name: Load tool versions (private tests/tool-versions.env wins over the env pins above)
         run: grep -E '^[A-Z_]+=' h3xinfra-private/tests/tool-versions.env >> "$GITHUB_ENV"
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -204,7 +204,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: renovate-config-validator --strict
         run: npx --yes --package "renovate@${RENOVATE_VERSION}" renovate-config-validator --strict --no-global renovate.json
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: python -m pip install --disable-pip-version-check "yamllint==${YAMLLINT_VERSION}" "ansible-core==${ANSIBLE_CORE_VERSION}"
