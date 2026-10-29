@@ -13,7 +13,7 @@ chart_versions:
   metallb: "0.16.1"
   # Envoy Gateway controller (replaces ingress-nginx).
   # renovate: datasource=docker depName=envoyproxy/gateway-helm registryUrl=https://docker.io versioning=helm
-  envoy_gateway: "1.9.2"
+  envoy_gateway: "1.9.3"
   # NOT consumed by any playbook: the Gateway API CRDs are rendered from
   # oci://docker.io/envoyproxy/gateway-crds-helm (experimental channel) at
   # chart_versions.envoy_gateway by playbooks/07-gateway/standup.yml. This pin
