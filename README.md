@@ -15,6 +15,7 @@ This project provides Ansible playbooks and configurations to deploy and manage 
 - Longhorn for persistent storage with CIFS backup
 - Mailu for self-hosted email services
 - Keycloak for identity and access management
+- Argo CD for GitOps delivery with native Keycloak SSO (opt-in)
 - Automated server preparation and updates
 
 ## Documentation
@@ -51,6 +52,7 @@ This project provides Ansible playbooks and configurations to deploy and manage 
 │   ├── 09-longhorn/       # Longhorn storage system
 │   ├── 10-mailu/          # Self-hosted email server
 │   ├── 10-keycloak/       # Keycloak identity provider (Operator + CNPG)
+│   ├── 10-argocd/         # Argo CD with native Keycloak SSO (opt-in)
 │   └── 99-utils/          # Utility playbooks
 └── README.md              # This file
 ```
@@ -71,6 +73,9 @@ Renovate's automerge waits for it. Tool versions are `env:` pins with
 `# renovate:` markers at the top of the workflow.
 
 ## Maintenance
+
+See the [Argo CD layer guide](playbooks/10-argocd/README.md) for Keycloak client
+configuration, deployment, access controls and recovery.
 
 See [Operations Guide](docs/operations.md) for detailed maintenance procedures.
 

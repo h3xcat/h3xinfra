@@ -83,6 +83,11 @@ Use `h3xinfra-gen-pass` to produce vault ciphertext for each:
 
 ### Adding an OIDC client
 
+For native Argo CD SSO, use the [Argo CD client example](../10-argocd/README.md).
+Setting `groups_claim: true` on a client adds a group membership mapper with
+short group names in ID tokens, access tokens and userinfo. It defaults to
+false and does not change existing clients.
+
 Append an entry to `keycloak.clients` in the inventory file:
 
 ```yaml

@@ -67,6 +67,8 @@ variable "clients" {
     # (Keycloak admin console). The oauth2-proxy-fronted clients don't need
     # this, so it defaults to empty.
     client_roles = optional(list(string), [])
+    # Native OIDC consumers such as Argo CD authorize using Keycloak groups.
+    groups_claim = optional(bool, false)
     # Enable Keycloak v2 "standard token exchange" (RFC 8693) for this client,
     # so it may exchange a token issued to itself for one carrying a different
     # audience. Used by the Kubernetes MCP server (STS client = openwebui) to

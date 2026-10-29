@@ -95,6 +95,7 @@ Layers are numbered to enforce deployment order and dependency relationships:
 - **10-kured**: Kubernetes Reboot Daemon — rolling node reboots when `/var/run/reboot-required` is set (unattended-upgrades kernel updates, etc.)
 - **10-mailu**: Self-hosted email server (Mailu)
 - **10-keycloak**: Identity provider (Keycloak Operator + CloudNativePG, Terraform-managed realm/clients)
+- **10-argocd**: Opt-in GitOps controller with native Keycloak SSO; existing resources retain their current owners
 
 #### Utilities (99)
 - **99-utils**: Shared utilities (kube-connect, apt updates, etc.)

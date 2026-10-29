@@ -15,6 +15,21 @@ locals {
   }
 }
 
+# Opt-in direct client mapper: no separate realm-wide "groups" scope needed.
+resource "keycloak_openid_group_membership_protocol_mapper" "client_groups" {
+  for_each = { for name, client in local.clients_by_name : name => client if client.groups_claim }
+
+  realm_id  = keycloak_realm.main.id
+  client_id = keycloak_openid_client.clients[each.key].id
+  name      = "groups"
+
+  claim_name          = "groups"
+  full_path           = false
+  add_to_id_token     = true
+  add_to_access_token = true
+  add_to_userinfo     = true
+}
+
 resource "keycloak_openid_client" "clients" {
   for_each = local.clients_by_name
 

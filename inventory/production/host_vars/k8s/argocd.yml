@@ -1,0 +1,22 @@
+---
+argocd:
+  # Enable after provisioning the Keycloak client described in the layer README.
+  enabled: false
+  namespace: argocd
+  release_name_prefix: h3xinfra-argocd
+  hostname: "argocd.app.{{ domain_name }}"
+  gateway:
+    name: h3xinfra-gateway-pre-shared
+    namespace: envoy-gateway-system
+    section_name: https-app
+  oidc:
+    issuer: "https://keycloak.app.{{ domain_name }}/realms/h3xinfra"
+    client_id: argocd
+    # Store this variable in private inventory using Ansible Vault; reuse it
+    # for the matching keycloak.clients entry. No default shared credential.
+    client_secret: "{{ vault_argocd_oidc_client_secret }}"
+  rbac:
+    # Group names must match the Keycloak groups claim. No default access.
+    policy_csv: |
+      g, argocd-admins, role:admin
+      g, argocd-readonly, role:readonly

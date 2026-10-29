@@ -1,0 +1,16 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Remove Argo CD controllers while retaining GitOps objects
+  hosts: k8s
+  gather_facts: false
+  tasks:
+    # Retain the namespace and CRDs. Deleting Applications can cascade to
+    # managed workloads through Argo CD's resource finalizers.
+    - name: Remove Argo CD Helm release
+      kubernetes.core.helm:
+        name: "{{ argocd.release_name_prefix }}-main"
+        release_namespace: "{{ argocd.namespace }}"
+        state: absent
+        wait: true
+        timeout: 300s
