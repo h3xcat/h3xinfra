@@ -1,0 +1,117 @@
+---
+- import_playbook: ../99-utils/kube-connect.yml
+
+- name: Deploy Argo CD via Helm
+  hosts: k8s
+  gather_facts: false
+  tasks:
+    - name: Validate Argo CD configuration
+      ansible.builtin.assert:
+        that:
+          - argocd.namespace | length > 0
+          - argocd.hostname | length > 0
+          - argocd.oidc.issuer is match('^https://')
+          - argocd.oidc.client_id | length > 0
+          - argocd.oidc.client_secret | length > 0
+          - argocd.rbac.policy_csv | length > 0
+          - argocd.gateway.section_name in ['https', 'https-app', 'https-apex']
+        fail_msg: Configure the Argo CD hostname, HTTPS Gateway listener, Keycloak client and RBAC policy first.
+        quiet: true
+      no_log: true
+
+    - name: Add Argo Helm repository
+      kubernetes.core.helm_repository:
+        name: argo
+        repo_url: https://argoproj.github.io/argo-helm
+        state: present
+        force_update: true
+      changed_when: false
+
+    - name: Create Argo CD namespace
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ argocd.namespace }}"
+        state: present
+        wait: true
+
+    - name: Deploy Argo CD via Helm
+      kubernetes.core.helm:
+        name: "{{ argocd.release_name_prefix }}-main"
+        chart_ref: argo/argo-cd
+        chart_version: "{{ chart_versions.argocd }}"
+        release_namespace: "{{ argocd.namespace }}"
+        create_namespace: false
+        values_files:
+          - "{{ playbook_dir }}/argocd-values.yaml"
+        values:
+          fullnameOverride: "{{ argocd.release_name_prefix }}-main"
+          global:
+            domain: "{{ argocd.hostname }}"
+          configs:
+            cm:
+              url: "https://{{ argocd.hostname }}"
+              oidc.config: |
+                name: Keycloak
+                issuer: {{ argocd.oidc.issuer | to_json }}
+                clientID: {{ argocd.oidc.client_id | to_json }}
+                clientSecret: $oidc.keycloak.clientSecret
+                requestedScopes: [openid, profile, email]
+                requestedIDTokenClaims:
+                  groups:
+                    essential: true
+            secret:
+              extra:
+                oidc.keycloak.clientSecret: "{{ argocd.oidc.client_secret }}"
+            rbac:
+              policy.csv: "{{ argocd.rbac.policy_csv }}"
+          server:
+            httproute:
+              enabled: true
+              hostnames:
+                - "{{ argocd.hostname }}"
+              parentRefs:
+                - name: "{{ argocd.gateway.name }}"
+                  namespace: "{{ argocd.gateway.namespace }}"
+                  sectionName: "{{ argocd.gateway.section_name }}"
+          # The upstream server policy allows every source. Replace it with
+          # this policy; policies are additive, so that policy MUST stay off.
+          extraObjects:
+            # The chart's default-deny policy also depends on global.create,
+            # so supply it here alongside the replacement server policy.
+            - apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: "{{ argocd.release_name_prefix }}-main-default-deny"
+                namespace: "{{ argocd.namespace }}"
+              spec:
+                podSelector: {}
+                policyTypes: [Ingress]
+            - apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: "{{ argocd.release_name_prefix }}-main-server-gateway"
+                namespace: "{{ argocd.namespace }}"
+              spec:
+                podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: argocd-server
+                    app.kubernetes.io/instance: "{{ argocd.release_name_prefix }}-main"
+                policyTypes: [Ingress]
+                ingress:
+                  - from:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: "{{ argocd.gateway.namespace }}"
+                        podSelector:
+                          matchLabels:
+                            gateway.envoyproxy.io/owning-gateway-name: "{{ argocd.gateway.name }}"
+                            gateway.envoyproxy.io/owning-gateway-namespace: "{{ argocd.gateway.namespace }}"
+                    ports:
+                      - protocol: TCP
+                        port: 8080
+        state: present
+        wait: true
+        # Includes CRDs, the Redis credential hook and initial image pulls.
+        timeout: 600s
+      no_log: true

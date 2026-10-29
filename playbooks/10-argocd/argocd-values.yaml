@@ -1,0 +1,71 @@
+---
+# Environment settings and OIDC credentials are supplied by standup.yml.
+crds:
+  install: true
+  keep: true
+global:
+  priorityClassName: h3xinfra-platform-critical
+  dualStack:
+    ipFamilyPolicy: PreferDualStack
+    ipFamilies: [IPv4, IPv6]
+  networkPolicy:
+    # Enable policies per component so the server's allow-all policy stays off.
+    create: false
+configs:
+  cm:
+    admin.enabled: false
+    users.anonymous.enabled: false
+    exec.enabled: false
+  params:
+    # Envoy terminates TLS; the server is ClusterIP-only and ingress is
+    # restricted to Gateway pods. OIDC provider TLS verification stays on.
+    server.insecure: true
+  rbac:
+    policy.default: ""
+    scopes: '[groups]'
+dex:
+  enabled: false
+notifications:
+  enabled: false
+controller:
+  networkPolicy:
+    create: true
+  resources:
+    requests: {cpu: 100m, memory: 256Mi, ephemeral-storage: 64Mi}
+    limits: {cpu: "2", memory: 1Gi, ephemeral-storage: 1Gi}
+server:
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+  networkPolicy:
+    create: false
+  resources:
+    requests: {cpu: 50m, memory: 128Mi, ephemeral-storage: 32Mi}
+    limits: {cpu: "1", memory: 512Mi, ephemeral-storage: 256Mi}
+repoServer:
+  networkPolicy:
+    create: true
+  resources:
+    requests: {cpu: 100m, memory: 256Mi, ephemeral-storage: 256Mi}
+    limits: {cpu: "2", memory: 1Gi, ephemeral-storage: 2Gi}
+  copyutil:
+    resources:
+      requests: {cpu: 10m, memory: 32Mi, ephemeral-storage: 32Mi}
+      limits: {cpu: 100m, memory: 128Mi, ephemeral-storage: 256Mi}
+applicationSet:
+  networkPolicy:
+    create: true
+  resources:
+    requests: {cpu: 50m, memory: 128Mi, ephemeral-storage: 32Mi}
+    limits: {cpu: "1", memory: 512Mi, ephemeral-storage: 256Mi}
+redis:
+  networkPolicy:
+    create: true
+  resources:
+    requests: {cpu: 50m, memory: 64Mi, ephemeral-storage: 32Mi}
+    limits: {cpu: 500m, memory: 256Mi, ephemeral-storage: 256Mi}
+redisSecretInit:
+  resources:
+    requests: {cpu: 10m, memory: 32Mi, ephemeral-storage: 32Mi}
+    limits: {cpu: 100m, memory: 128Mi, ephemeral-storage: 256Mi}

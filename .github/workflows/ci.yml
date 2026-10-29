@@ -172,6 +172,9 @@ jobs:
       - name: Test gateway security routing
         working-directory: h3xinfra
         run: python -m unittest discover -s playbooks/07-gateway/tests -p test_security_routing.py -v
+      - name: Test Argo CD chart and access controls
+        working-directory: h3xinfra
+        run: python -m unittest discover -s playbooks/10-argocd/tests -v
       - name: tests/run-all.sh (submodule mode)
         env:
           RENOVATE_VALIDATOR_OK: "1"
@@ -254,6 +257,8 @@ jobs:
           terraform_wrapper: false
       - name: Test gateway security routing
         run: python -m unittest discover -s playbooks/07-gateway/tests -p test_security_routing.py -v
+      - name: Test Argo CD chart and access controls
+        run: python -m unittest discover -s playbooks/10-argocd/tests -v
       - name: terraform validate playbooks/10-keycloak/terraform
         working-directory: playbooks/10-keycloak/terraform
         run: |
