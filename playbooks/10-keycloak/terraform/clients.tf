@@ -38,8 +38,9 @@ resource "keycloak_openid_client" "clients" {
   name      = each.value.name
   enabled   = true
 
-  access_type   = "CONFIDENTIAL"
-  client_secret = each.value.client_secret
+  access_type                = each.value.access_type
+  client_secret              = each.value.client_secret
+  pkce_code_challenge_method = each.value.pkce_code_challenge_method
 
   standard_flow_enabled        = true
   direct_access_grants_enabled = false

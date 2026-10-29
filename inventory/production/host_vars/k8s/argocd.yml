@@ -12,9 +12,7 @@ argocd:
   oidc:
     issuer: "https://keycloak.app.{{ domain_name }}/realms/h3xinfra"
     client_id: argocd
-    # Store this variable in private inventory using Ansible Vault; reuse it
-    # for the matching keycloak.clients entry. No default shared credential.
-    client_secret: "{{ vault_argocd_oidc_client_secret }}"
+    # Public Keycloak client with PKCE S256; no client secret is used.
   rbac:
     # Group names must match the Keycloak groups claim. No default access.
     policy_csv: |

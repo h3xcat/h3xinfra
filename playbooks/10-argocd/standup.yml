@@ -8,16 +8,18 @@
     - name: Validate Argo CD configuration
       ansible.builtin.assert:
         that:
-          - argocd.namespace | length > 0
-          - argocd.hostname | length > 0
-          - argocd.oidc.issuer is match('^https://')
-          - argocd.oidc.client_id | length > 0
-          - argocd.oidc.client_secret | length > 0
-          - argocd.rbac.policy_csv | length > 0
-          - argocd.gateway.section_name in ['https', 'https-app', 'https-apex']
+          - argocd is defined
+          - argocd.namespace | default('') | length > 0
+          - argocd.release_name_prefix | default('') | length > 0
+          - argocd.hostname | default('') | length > 0
+          - argocd.oidc.issuer | default('') is match('^https://')
+          - argocd.oidc.client_id | default('') | length > 0
+          - argocd.rbac.policy_csv | default('') | length > 0
+          - argocd.gateway.name | default('') | length > 0
+          - argocd.gateway.namespace | default('') | length > 0
+          - argocd.gateway.section_name | default('') in ['https', 'https-app', 'https-apex']
         fail_msg: Configure the Argo CD hostname, HTTPS Gateway listener, Keycloak client and RBAC policy first.
         quiet: true
-      no_log: true
 
     - name: Add Argo Helm repository
       kubernetes.core.helm_repository:
@@ -55,14 +57,11 @@
                 name: Keycloak
                 issuer: {{ argocd.oidc.issuer | to_json }}
                 clientID: {{ argocd.oidc.client_id | to_json }}
-                clientSecret: $oidc.keycloak.clientSecret
+                enablePKCEAuthentication: true
                 requestedScopes: [openid, profile, email]
                 requestedIDTokenClaims:
                   groups:
                     essential: true
-            secret:
-              extra:
-                oidc.keycloak.clientSecret: "{{ argocd.oidc.client_secret }}"
             rbac:
               policy.csv: "{{ argocd.rbac.policy_csv }}"
           server:

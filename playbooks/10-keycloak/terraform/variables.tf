@@ -56,10 +56,14 @@ variable "clients" {
   description = "List of OIDC clients to provision in the realm."
   type = list(object({
     name          = string
-    client_secret = string
-    root_url      = optional(string, "")
-    redirect_uris = list(string)
-    web_origins   = optional(list(string), [])
+    client_secret = optional(string)
+    # Preserve existing confidential clients; public browser/CLI clients
+    # must explicitly opt in and require PKCE S256 instead of a secret.
+    access_type                = optional(string, "CONFIDENTIAL")
+    pkce_code_challenge_method = optional(string, "")
+    root_url                   = optional(string, "")
+    redirect_uris              = list(string)
+    web_origins                = optional(list(string), [])
     # Client roles to create on this client for app-level RBAC (e.g. Open
     # WebUI's `admin`/`user`). When non-empty, a protocol mapper is also added
     # that flattens these client roles into a top-level `roles` claim (id token
@@ -76,4 +80,21 @@ variable "clients" {
     standard_token_exchange_enabled = optional(bool, false)
   }))
   default = []
+
+  validation {
+    condition     = alltrue([for client in var.clients : contains(["CONFIDENTIAL", "PUBLIC"], client.access_type)])
+    error_message = "OIDC clients must use CONFIDENTIAL or PUBLIC access_type."
+  }
+
+  validation {
+    condition = alltrue([for client in var.clients : client.access_type == "PUBLIC" ? (
+      client.pkce_code_challenge_method == "S256" && client.client_secret == null
+    ) : try(length(trimspace(client.client_secret)) > 0, false)])
+    error_message = "PUBLIC clients require PKCE S256 and no client_secret; CONFIDENTIAL clients require a non-empty client_secret."
+  }
+
+  validation {
+    condition     = alltrue([for client in var.clients : contains(["", "S256"], client.pkce_code_challenge_method)])
+    error_message = "PKCE must be unset or S256; plain challenges are not supported."
+  }
 }

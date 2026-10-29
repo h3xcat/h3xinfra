@@ -84,9 +84,13 @@ Use `h3xinfra-gen-pass` to produce vault ciphertext for each:
 ### Adding an OIDC client
 
 For native Argo CD SSO, use the [Argo CD client example](../10-argocd/README.md).
+Clients default to `access_type: CONFIDENTIAL` and require a vault-encrypted
+`client_secret`. Browser/CLI clients can opt into `access_type: PUBLIC` with
+`pkce_code_challenge_method: S256` and must omit `client_secret`.
 Setting `groups_claim: true` on a client adds a group membership mapper with
 short group names in ID tokens, access tokens and userinfo. It defaults to
-false and does not change existing clients.
+false and does not change existing clients. Short names collapse same-named
+subgroups under different parents, so use unique names for RBAC bindings.
 
 Append an entry to `keycloak.clients` in the inventory file:
 

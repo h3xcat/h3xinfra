@@ -15,8 +15,8 @@ Keycloak OIDC must be provisioned before enabling the layer. Dex is disabled.
 
 Copy `inventory/production/host_vars/k8s/argocd.yml` into your environment's
 inventory. Set the hostname, HTTPS Gateway listener, issuer, client ID and
-group-to-role policy. Store `vault_argocd_oidc_client_secret` in Ansible Vault.
-The public example contains no usable credentials and disables stack deployment
+group-to-role policy. Argo CD uses a public OIDC client with PKCE S256 for both
+browser and CLI login; no OIDC client secret is required. The example disables stack deployment
 until `argocd.enabled: true` is set. Direct layer deployment validates configuration
 regardless of that stack toggle.
 
@@ -24,30 +24,42 @@ Append this entry to your existing `keycloak.clients` list (keep other clients):
 
 ```yaml
 - name: argocd
-  client_secret: "{{ vault_argocd_oidc_client_secret }}"
+  access_type: PUBLIC
+  pkce_code_challenge_method: S256
   root_url: "https://argocd.app.{{ domain_name }}"
   redirect_uris:
     - "https://argocd.app.{{ domain_name }}/auth/callback"
+    - "https://argocd.app.{{ domain_name }}/pkce/verify"
     - "http://localhost:8085/auth/callback"
   web_origins:
     - "https://argocd.app.{{ domain_name }}"
   groups_claim: true
 ```
 
-The localhost callback supports `argocd login --sso` on the operator's machine.
-The existing Keycloak Terraform layer creates the confidential client and an
+The localhost callback supports `argocd login --sso` on the operator's machine;
+`/pkce/verify` supports browser login. Argo CD sets `enablePKCEAuthentication: true`,
+and Keycloak enforces S256 code challenges. Existing Keycloak clients still
+default to `CONFIDENTIAL` and retain their secrets unless explicitly changed.
+The Keycloak Terraform layer creates the public client and an
 opt-in group membership mapper. It emits short group names in ID/access tokens
 and userinfo, without requiring a realm-wide `groups` client scope. Create the
 `argocd-admins` and `argocd-readonly` groups in Keycloak and assign users as
 appropriate, or use existing groups in `argocd.rbac.policy_csv`.
 
+The mapper uses `full_path = false`: identically named subgroups under different
+parents produce the same claim and match the same RBAC line. Use unique group
+names across the realm for these bindings.
+
 The built-in admin and anonymous access are disabled. Authenticated users have
-no default access; only explicitly mapped groups receive privileges. Argo CD
-stores the client secret in `argocd-secret`, referenced from `oidc.config`;
-secret-bearing Ansible tasks use `no_log`. Helm release records also contain
-the supplied secret, so restrict access to namespace Secrets. Provider TLS
+no default access; only explicitly mapped groups receive privileges. The chart
+still creates `argocd-secret` for Argo CD's own signing material, but no OIDC
+client secret is supplied. Restrict access to namespace Secrets. Provider TLS
 verification remains enabled. See the upstream
 [Keycloak integration guide](https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/keycloak/).
+
+When migrating an existing confidential Argo CD client, remove its inventory
+secret, set the public/S256 options and add `/pkce/verify`. Apply Keycloak before
+Argo CD and start a fresh browser session for the new authentication flow.
 
 ## Deployment and verification
 
@@ -95,7 +107,7 @@ application definitions in Git and provision repository credentials separately.
 
 ## Removal and recovery
 
-`teardown.yml` uninstalls the Helm release, including its OIDC Secret and
+`teardown.yml` uninstalls the Helm release, including its Argo CD Secret and
 HTTPRoute, but retains the namespace, CRDs and GitOps custom resources.
 Existing managed workloads remain running without reconciliation. This layer
 is deliberately absent from automatic stack teardown. Deleting its namespace,
@@ -103,8 +115,8 @@ CRDs or Applications separately can cascade to managed workloads through
 Application finalizers; those deletions are not part of this playbook.
 
 Restore retained application definitions and separately managed Secrets as
-needed, then rerun standup with the same release name, namespace and vault
-secret. Retained Applications resume reconciliation, including any configured
+needed, then rerun standup with the same release name, namespace and public
+OIDC client. Retained Applications resume reconciliation, including any configured
 automated sync/prune. Review their source revisions and policies before restart.
 
 ## Validation
@@ -114,7 +126,12 @@ python3 -m unittest discover -s playbooks/10-argocd/tests -v
 ```
 
 Tests download the pinned upstream chart into a temporary directory and render
-the actual playbook values using fake credentials. Set `ARGOCD_CHART_DIR` to an
+the actual playbook values using example hosts and a public client. Set `ARGOCD_CHART_DIR` to an
 already-downloaded chart for offline runs. Render checks cover HTTPS routing,
-SSO secret references, RBAC, ingress isolation, resources and CRD retention;
-cluster admission and an actual Keycloak login still require deployment checks.
+PKCE configuration, RBAC, ingress isolation, resources and CRD retention.
+Additional tests exercise friendly Ansible validation failures and mocked
+Terraform plans for public PKCE and existing confidential clients. Terraform
+tests copy only the client module definitions into a temporary directory and
+never load deployment state or generated tfvars. Helm, Ansible and Terraform
+are required. Cluster admission and actual browser/CLI logins still require
+deployment checks.

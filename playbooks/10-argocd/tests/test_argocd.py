@@ -1,9 +1,9 @@
 """Render the deployed upstream chart; never connect to a Kubernetes cluster."""
 
-import base64
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -35,7 +35,6 @@ class ArgoCDTests(unittest.TestCase):
         config = yaml.safe_load((ROOT / "inventory/production/host_vars/k8s/argocd.yml").read_text())["argocd"]
         config["hostname"] = "argocd.app.example.com"
         config["oidc"]["issuer"] = "https://keycloak.app.example.com/realms/h3xinfra"
-        config["oidc"]["client_secret"] = "FAKE_ARGOCD_CLIENT_SECRET"
         env = jinja2.Environment(undefined=jinja2.StrictUndefined)
         env.filters["to_json"] = json.dumps
 
@@ -74,16 +73,17 @@ class ArgoCDTests(unittest.TestCase):
         self.assertEqual(backend["port"], 80)
         self.assertFalse(any(doc["kind"] in {"Ingress", "Certificate", "SecurityPolicy", "GRPCRoute"} for doc in self.docs))
 
-    def test_native_sso_secret_and_rbac(self):
+    def test_native_pkce_sso_and_rbac(self):
         cm = self.resource("ConfigMap", "argocd-cm")["data"]
         oidc = yaml.safe_load(cm["oidc.config"])
         self.assertEqual(oidc["issuer"], "https://keycloak.app.example.com/realms/h3xinfra")
-        self.assertEqual(oidc["clientSecret"], "$oidc.keycloak.clientSecret")
-        self.assertNotIn("FAKE_ARGOCD_CLIENT_SECRET", json.dumps(cm))
+        self.assertIs(oidc["enablePKCEAuthentication"], True)
+        self.assertEqual(oidc["clientID"], "argocd")
+        self.assertNotIn("clientSecret", oidc)
         self.assertEqual(cm["admin.enabled"], "false")
         self.assertEqual(cm["users.anonymous.enabled"], "false")
         secret = self.resource("Secret", "argocd-secret")
-        self.assertEqual(base64.b64decode(secret["data"]["oidc.keycloak.clientSecret"]), b"FAKE_ARGOCD_CLIENT_SECRET")
+        self.assertNotIn("oidc.keycloak.clientSecret", secret.get("data") or {})
         rbac = self.resource("ConfigMap", "argocd-rbac-cm")["data"]
         self.assertEqual(rbac["policy.default"], "")
         self.assertIn("g, argocd-admins, role:admin", rbac["policy.csv"])
@@ -122,6 +122,51 @@ class ArgoCDTests(unittest.TestCase):
         teardown = yaml.safe_load((LAYER / "teardown.yml").read_text())
         tasks = [task for play in teardown for task in play.get("tasks", [])]
         self.assertTrue(all("kubernetes.core.k8s" not in task for task in tasks))
+
+
+class ConfigurationTests(unittest.TestCase):
+    def test_validation_reports_missing_configuration(self):
+        plays = yaml.safe_load((LAYER / "standup.yml").read_text())
+        task = plays[1]["tasks"][0]
+        valid = yaml.safe_load((ROOT / "inventory/production/host_vars/k8s/argocd.yml").read_text())
+        with tempfile.TemporaryDirectory(prefix="h3x-argocd-validation-") as directory:
+            config = Path(directory) / "ansible.cfg"
+            config.write_text("[defaults]\n")
+            env = dict(os.environ, ANSIBLE_CONFIG=str(config), ANSIBLE_NOCOLOR="1")
+            cases = [{}, {"argocd": {}}, {"argocd": {"namespace": "argocd"}}, valid]
+            for variables in cases:
+                with self.subTest(variables=variables):
+                    playbook = Path(directory) / "validation.yml"
+                    playbook.write_text(yaml.safe_dump([{
+                        "name": "Check Argo CD inputs", "hosts": "localhost", "gather_facts": False,
+                        "vars": {"domain_name": "example.com", **variables}, "tasks": [task],
+                    }]))
+                    result = subprocess.run([
+                        "ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook),
+                    ], env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+                    output = result.stdout + result.stderr
+                    if variables is valid:
+                        self.assertEqual(result.returncode, 0, output)
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn(task["ansible.builtin.assert"]["fail_msg"], output)
+                        self.assertNotIn("censored", output)
+
+    def test_keycloak_client_plans(self):
+        # Copy just the client definitions: no deployment tfvars, backend,
+        # state or real provider calls can enter this mocked-provider test.
+        source = ROOT / "playbooks/10-keycloak/terraform"
+        with tempfile.TemporaryDirectory(prefix="h3x-argocd-clients-") as directory:
+            target = Path(directory)
+            for name in ("providers.tf", "variables.tf", "clients.tf", "realm.tf", ".terraform.lock.hcl"):
+                shutil.copyfile(source / name, target / name)
+            (target / "tests").mkdir()
+            shutil.copyfile(LAYER / "tests/oidc_clients.tftest.hcl", target / "tests/oidc_clients.tftest.hcl")
+            env = dict(os.environ, TF_DATA_DIR=str(target / ".terraform"), TF_IN_AUTOMATION="1", TF_INPUT="0")
+            for arguments in (["init", "-backend=false", "-lockfile=readonly"], ["test"]):
+                result = subprocess.run(["terraform", *arguments, "-no-color"], cwd=target, env=env,
+                                        capture_output=True, text=True, timeout=120)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

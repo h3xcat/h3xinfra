@@ -1,5 +1,5 @@
 ---
-# Environment settings and OIDC credentials are supplied by standup.yml.
+# Environment settings and public OIDC client are supplied by standup.yml.
 crds:
   install: true
   keep: true
