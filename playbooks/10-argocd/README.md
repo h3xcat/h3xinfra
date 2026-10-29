@@ -70,7 +70,7 @@ when running from the private parent repo):
 ansible-playbook -i /path/to/inventory playbooks/10-keycloak/standup.yml
 ansible-playbook -i /path/to/inventory playbooks/10-argocd/standup.yml
 kubectl -n argocd get pods,httproutes,networkpolicies
-argocd login argocd.app.example.com --sso --grpc-web
+argocd login argocd.app.example.com --sso --grpc-web --skip-test-tls
 ```
 
 The public stack imports this layer conditionally. A downstream stack that
@@ -81,7 +81,10 @@ Keycloak and its client before opting in to Argo CD.
 Check that the HTTPRoute reports `Accepted` and `ResolvedRefs`, the certificate
 matches the hostname, SSO works, administrators can manage applications, and
 unmapped users cannot access applications. Use `--grpc-web` for the CLI over
-the same HTTPRoute. No separate gRPC endpoint is exposed.
+the same HTTPRoute. No separate gRPC endpoint is exposed. The CLI's initial
+TLS-detection probe uses native gRPC even with `--grpc-web` and can time out
+behind this HTTPRoute. `--skip-test-tls` skips that probe; HTTPS certificate
+verification remains enabled. Do not substitute `--insecure` or `--plaintext`.
 
 ## Networking and storage
 
