@@ -35,7 +35,7 @@ env:
   RENOVATE_VERSION: 44.186.1
   # renovate 44.x needs node ^24.11
   # renovate: datasource=node-version depName=node
-  NODE_VERSION: 24.22.1
+  NODE_VERSION: 26.13.0
   # renovate: datasource=github-releases depName=helm/helm
   HELM_VERSION: v4.3.1
   # >= 1.16.2 is required by playbooks/10-keycloak/terraform/providers.tf
