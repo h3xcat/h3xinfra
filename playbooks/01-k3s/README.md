@@ -58,3 +58,30 @@ A stopped K3s service is never started by the watchdog. Retain state during
 maintenance so the recovery budget remains intact. This watchdog does not
 fence storage or prove that API heartbeats and workload reconciliation are
 advancing.
+
+# Hardening Options
+
+These inventory variables control the hardening options of this layer. Each
+option is off when its variable is not set.
+
+| Variable | Effect |
+| --- | --- |
+| `apiserver_audit.enabled` | `apiserver-audit.yml` writes an audit policy and an audit log on each server. It restarts one server at a time and waits for `/readyz`. |
+| `kubelet_protect_kernel_defaults` | The kubelet stops at start if a kernel tunable is not the kubelet value. `standup.yml` sets and checks the six values first. |
+| `kubelet_seccomp_default` | Containers without a seccomp profile get the runtime default profile. |
+| `secrets-encryption: true` in `server_config_yaml` | k3s encrypts Secrets in the datastore. |
+
+Enable `kubelet_seccomp_default` on one node first. Then recreate the pods on
+that node and make sure that they start. A workload that needs a blocked
+syscall fails.
+
+To enable secrets encryption on a cluster that already runs, follow
+"Enable Secrets Encryption on an Existing Cluster" in the
+[k3s secrets-encrypt documentation](https://docs.k3s.io/cli/secrets-encrypt).
+Run `k3s secrets-encrypt enable` on the first server before you deploy the
+changed `server_config_yaml`. If you do not, `standup.yml` stops before it
+restarts the servers. `standup.yml` also stops if it cannot read the
+encryption status on the first server, for example when k3s does not run.
+
+The audit log stays on each server. A root user on the server can change it.
+To keep a copy that is safe from changes, send the log to a central log store.
