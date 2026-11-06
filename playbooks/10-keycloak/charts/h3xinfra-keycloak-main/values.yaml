@@ -12,7 +12,9 @@ image:
 instances: 2
 
 # Public hostname Keycloak advertises (must match the HTTPRoute hostname
-# in the pre-chart).
+# in the pre-chart). Required. Use a bare DNS name such as
+# "auth.example.com", without scheme, port or path. If not, the template
+# fails. Keycloak runs with hostname strict mode on.
 hostname: ""
 
 # Secret rendered by the pre-chart holding `username` / `password` for
