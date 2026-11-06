@@ -157,6 +157,11 @@ all:
       dns_names:
       - "mail.app.example.com"
       - "mail.example.com"
+      # Optional. Hostnames of the web UI on the shared Gateway. If you do not
+      # set it, the web UI uses all dns_names. Set it when a name in dns_names
+      # is only for mail protocols (its DNS goes to the mail load balancer).
+      # web_hostnames:
+      # - "mail.example.com"
       secret_key: !vault |
         $ANSIBLE_VAULT;1.1;AES256
         changeme_please_encrypt_your_actual_secret_key_with_ansible_vault

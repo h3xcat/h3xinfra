@@ -31,6 +31,21 @@ Create chart name and version as used by the chart label.
 {{- end }}
 
 {{/*
+Hostnames that the web HTTPRoutes attach to the shared Gateway, as a JSON
+list: gatewayRoute.hostnames, or certificate.dnsNames when it is empty.
+When the OIDC gate is on, the OIDC host must be in the list. If it is not,
+the OIDC callback does not go to the gated route.
+*/}}
+{{- define "h3xinfra-mailu-pre.webHostnames" -}}
+{{- $hosts := .Values.gatewayRoute.hostnames | default .Values.certificate.dnsNames | default list -}}
+{{- $oidcHost := .Values.gatewayRoute.oidcHostname -}}
+{{- if and .Values.gatewayRoute.oidc.enabled $oidcHost (not (has $oidcHost $hosts)) -}}
+{{- fail (printf "gatewayRoute.oidcHostname %q must be one of the web route hostnames %v" $oidcHost $hosts) -}}
+{{- end -}}
+{{- toJson $hosts -}}
+{{- end }}
+
+{{/*
 Common labels
 */}}
 {{- define "h3xinfra-mailu-pre.labels" -}}
