@@ -38,7 +38,7 @@ chart_versions:
 
   # Infrastructure - Lifecycle
   # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-  argocd: "10.11.6"
+  argocd: "10.11.7"
   # Kubernetes Reboot Daemon — orchestrates rolling node reboots when
   # /var/run/reboot-required is set (e.g. after kernel updates).
   # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
