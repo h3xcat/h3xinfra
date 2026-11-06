@@ -61,7 +61,11 @@ inventory.
    `terraform init` + `apply` against the fresh instance, and creates the
    configured realm + OIDC clients.
 
-### Teardown (`ansible-playbook playbooks/10-keycloak/teardown.yml`)
+### Teardown (`ansible-playbook playbooks/10-keycloak/teardown.yml -e confirm_destroy=yes-destroy-data`)
+
+The playbook stops at the start unless you give
+`-e confirm_destroy=yes-destroy-data`. The teardown deletes the realm, the
+CNPG PVCs, and the namespace. You cannot recover this data.
 
 Runs in reverse order: `terraform destroy` → main Helm release → pre Helm
 release → namespace.

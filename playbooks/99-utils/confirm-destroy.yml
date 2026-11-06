@@ -1,0 +1,36 @@
+---
+# Destructive-operation guard. Every teardown playbook imports this play
+# FIRST, before kube-connect or any other play. The run stops here unless the
+# operator types the confirmation phrase on the command line:
+#
+#   ansible-playbook playbooks/<NN-name>/teardown.yml -e confirm_destroy=yes-destroy-data
+#
+# Teardowns delete Helm releases, namespaces, PVCs, CRDs (Longhorn: every
+# volume on the cluster) and the k3s install itself, so a typo in a playbook
+# path must never be enough to start one.
+#
+# Give the phrase with -e only. Never set confirm_destroy in inventory: that
+# would arm every teardown permanently.
+#
+# hosts: all:localhost so that --limit cannot skip the guard while the
+# teardown plays still match hosts. The pattern also matches the implicit
+# localhost, so the guard runs when the inventory is empty or does not list
+# localhost. The assert runs on the controller and opens no connection to the
+# hosts. any_errors_fatal stops the whole run, including plays imported after
+# this one. The assert has the "always" tag, so --tags cannot skip it.
+- name: Require explicit confirmation before a destructive teardown
+  hosts: all:localhost
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Assert confirm_destroy holds the exact confirmation phrase
+      ansible.builtin.assert:
+        that:
+          - (confirm_destroy | default('') | string) == 'yes-destroy-data'
+        fail_msg: >-
+          Refusing to run a destructive teardown without confirmation. This
+          playbook can delete workloads, volumes and their data. If you are
+          sure, run it again with: -e confirm_destroy=yes-destroy-data
+        quiet: true
+      run_once: true
+      tags: [always]
