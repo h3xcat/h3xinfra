@@ -39,11 +39,35 @@ pip3 install -r "${H3XINFRA_ROOT}/requirements.txt"
 # matching install is left alone, a different version is replaced.
 # renovate: datasource=github-releases depName=databus23/helm-diff
 HELM_DIFF_VERSION="v3.15.15"
+# helm-diff release signing key. The fingerprint is published in the upstream
+# README and in each release note. Helm 4 verifies the signed .prov file of a
+# release tarball against this key; a git URL install cannot be verified.
+HELM_DIFF_KEY_FINGERPRINT="C5645EF47482257A1F806D2BEA17A2A206AFF8CD"
 installed_diff="$(helm plugin list | awk '$1 == "diff" {print $2}')"
 if [ -n "${installed_diff}" ] && [ "v${installed_diff}" != "${HELM_DIFF_VERSION}" ]; then
     helm plugin uninstall diff
     installed_diff=""
 fi
 if [ -z "${installed_diff}" ]; then
-    helm plugin install https://github.com/databus23/helm-diff --version "${HELM_DIFF_VERSION}" --verify=false
+    case "$(uname -m)" in
+        x86_64) helm_diff_arch=amd64 ;;
+        aarch64 | arm64) helm_diff_arch=arm64 ;;
+        *) echo "helm-diff: unsupported architecture $(uname -m)" >&2; exit 1 ;;
+    esac
+    helm_diff_tmp="$(mktemp -d)"
+    # gpg can start an agent bound to the temporary homedir: stop it first.
+    trap 'gpgconf --homedir "${helm_diff_tmp}" --kill gpg-agent 2>/dev/null || true; rm -rf "${helm_diff_tmp}"' EXIT
+    # Import into a throwaway keyring, then export only the pinned key, so a
+    # different key served at the URL cannot verify the plugin.
+    curl -fsSL https://github.com/databus23.gpg -o "${helm_diff_tmp}/keys.asc"
+    gpg --batch --quiet --homedir "${helm_diff_tmp}" --import "${helm_diff_tmp}/keys.asc"
+    gpg --batch --homedir "${helm_diff_tmp}" --export "${HELM_DIFF_KEY_FINGERPRINT}" > "${helm_diff_tmp}/helm-diff.gpg"
+    if [ ! -s "${helm_diff_tmp}/helm-diff.gpg" ]; then
+        echo "helm-diff: signing key ${HELM_DIFF_KEY_FINGERPRINT} not found at https://github.com/databus23.gpg" >&2
+        exit 1
+    fi
+    # The versioned asset name unpacks to plugins/diff, like the old git install.
+    helm plugin install \
+        "https://github.com/databus23/helm-diff/releases/download/${HELM_DIFF_VERSION}/diff-${HELM_DIFF_VERSION#v}-linux-${helm_diff_arch}.tgz" \
+        --keyring "${helm_diff_tmp}/helm-diff.gpg"
 fi

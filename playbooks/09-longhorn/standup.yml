@@ -8,11 +8,17 @@
   vars:
     longhorn_cli_version: "{{ cli_versions.longhorn_cli }}"
     longhorn_cli_arch: "{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }}"
-  serial: 1 
+    longhorn_cli_url: "https://github.com/longhorn/cli/releases/download/{{ longhorn_cli_version }}/longhornctl-linux-{{ longhorn_cli_arch }}"
+  serial: 1
   tasks:
+    # The binary runs as root on every node: verify it against the .sha256
+    # file that upstream publishes next to each release asset. The checksum
+    # also makes get_url replace an existing binary of another version
+    # (without it, an existing dest is never downloaded again).
     - name: Download Longhorn CLI
       get_url:
-        url: "https://github.com/longhorn/cli/releases/download/{{ longhorn_cli_version }}/longhornctl-linux-{{ longhorn_cli_arch }}"
+        url: "{{ longhorn_cli_url }}"
+        checksum: "sha256:{{ longhorn_cli_url }}.sha256"
         dest: "/usr/local/bin/longhornctl"
         mode: '0755'
         owner: root
