@@ -29,8 +29,16 @@
       chart_version: "{{ chart_versions.cilium }}"
       namespace: "{{ cilium.namespace }}"
       create_namespace: false
-      values_files: 
+      values_files:
       - "{{ playbook_dir }}/cilium-values.yaml"
+      # Optional API server address for the agents and the operator. Without
+      # it they use the kubernetes Service (10.43.0.1), which needs kube-proxy
+      # when an agent starts. Set it before you disable kube-proxy in K3s:
+      # KUBE-PROXY-REPLACEMENT.md. Unset: no change to the chart values.
+      values: >-
+        {{ {'k8sServiceHost': cilium.k8s_service_host | trim,
+            'k8sServicePort': cilium.k8s_service_port | default(6443) | int}
+           if cilium.k8s_service_host | default('') | trim else {} }}
       set_values:
       - value: "ipam.operator.clusterPoolIPv4PodCIDRList[0]={{ cluster_cidr.ipv4 }}"
         value_type: string

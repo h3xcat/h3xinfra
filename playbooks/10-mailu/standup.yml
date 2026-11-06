@@ -58,6 +58,8 @@
             name: "{{ mailu.release_name_prefix }}-main-front"
             port: 443
           tlsHostname: "{{ mailu.dns_names | first }}"
+          # Browser hostnames on the Gateway. Default: all dns_names.
+          hostnames: "{{ mailu.web_hostnames | default([]) }}"
           oidc:
             enabled: "{{ mailu.oauth2.enabled | default(false) }}"
             issuerUrl: "{{ mailu.oauth2.oidc_issuer_url | default('') }}"

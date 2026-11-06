@@ -4,6 +4,10 @@ CoreDNS, metrics-server, and local-path-provisioner remain owned by K3s. This
 change deliberately does not patch their Deployments, edit packaged manifests,
 create `.skip` markers, or pass `--disable` for these components.
 
+Exception: `coredns.yml` sets the replica count of the CoreDNS Deployment
+through the scale subresource. It also adds a separate PodDisruptionBudget.
+It does not change the K3s manifest. K3s continues to own CoreDNS.
+
 ## Verified State
 
 The production inventory and live control-plane labels agree: the K3s servers
