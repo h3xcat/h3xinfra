@@ -1,0 +1,21 @@
+nameOverride: ""
+fullnameOverride: ""
+
+# Host firewall policy. Applies only when the Cilium agent runs with
+# hostFirewall.enabled=true (02-cilium/standup.yml sets both from
+# cilium.host_firewall.enabled).
+hostFirewall:
+  # Renders the CiliumClusterwideNetworkPolicy when true.
+  enabled: false
+  # The policy selects only the nodes that have this label. The playbook sets
+  # the label on the nodes in cilium.host_firewall.enforce_nodes.
+  nodeLabel:
+    key: "h3xinfra.io/host-firewall"
+    value: "enforce"
+  # Source ranges that the policy does not deny. The policy denies ingress to
+  # the node from every other address outside the cluster. Cluster peers
+  # (nodes, pods, health checks) have their own identities and CIDR rules do
+  # not select them. Both lists must have at least one entry when enabled.
+  trustedCIDRs:
+    ipv4: []
+    ipv6: []

@@ -5,7 +5,84 @@
   hosts: k8s
   gather_facts: false
 
+  vars:
+    # Optional host firewall. Off by default. Staged rollout: HOST-FIREWALL.md.
+    host_fw: "{{ cilium.host_firewall | default({}) }}"
+    host_fw_enabled: "{{ host_fw.enabled | default(false) | bool }}"
+    # Kubernetes node names that enforce the host policy. Empty = no node.
+    host_fw_nodes: "{{ host_fw.enforce_nodes | default([]) }}"
+    host_fw_label_key: "h3xinfra.io/host-firewall"
+    host_fw_label_value: "enforce"
+    # The agents read enable-host-firewall only at start. rollOutCiliumPods
+    # stays at the chart default (false), so a Helm upgrade does not restart
+    # them. The play records the value that the agents started with in this
+    # pod template annotation, and restarts the agents when the value changes.
+    host_fw_desired: "{{ host_fw_enabled | bool | lower }}"
+    host_fw_agent_daemonset: "cilium"
+    host_fw_agent_config_map: "cilium-config"
+    host_fw_started_key: "h3xinfra.io/host-firewall-enabled"
+    host_fw_config_before_value: >-
+      {{ (((host_fw_config_before.resources | default([]) | first | default({})).data
+           | default({}, true))['enable-host-firewall'] | default('')) | string | lower }}
+    host_fw_agents_started_value: >-
+      {{ ((((host_fw_agent_ds_info.resources | first).spec.template.metadata.annotations)
+           | default({}, true))[host_fw_started_key] | default('')) | string | lower }}
+    # Restart when the agents started with a different value. With no
+    # annotation (never set by this play), restart only to turn the host
+    # firewall on, or to turn it off when cilium-config had it on.
+    host_fw_restart_needed: >-
+      {{ host_fw_agents_started_value != host_fw_desired
+         and (host_fw_agents_started_value != ''
+              or host_fw_desired == 'true'
+              or host_fw_config_before_value == 'true') }}
+    # The policy never denies these sources. Private, link-local and the
+    # unspecified IPv6 source (duplicate address detection) are always
+    # trusted; extra_trusted_cidrs adds site ranges. The global IPv6 prefix
+    # of the node network is required (nodes can use SLAAC source addresses).
+    host_fw_trusted_cidrs:
+      ipv4: "{{ ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16']
+                + (host_fw.extra_trusted_cidrs.ipv4 | default([])) }}"
+      ipv6: "{{ ['fc00::/7', 'fe80::/10', '::/128']
+                + (host_fw.extra_trusted_cidrs.ipv6 | default([])) }}"
+
   tasks:
+  - name: Validate the Cilium host firewall settings
+    ansible.builtin.assert:
+      that:
+      - host_fw_nodes is sequence and host_fw_nodes is not string
+      - (host_fw_enabled | bool) or (host_fw_nodes | length == 0)
+      - host_fw_trusted_cidrs.ipv4 | select('search', ':') | list | length == 0
+      - host_fw_trusted_cidrs.ipv6 | reject('search', ':') | list | length == 0
+      # Address/prefix shape only. The API server checks the full CIDR syntax.
+      - host_fw_trusted_cidrs.ipv4 | reject('match', '^[0-9.]+/([0-9]|[12][0-9]|3[0-2])$') | list | length == 0
+      - host_fw_trusted_cidrs.ipv6 | reject('match', '^[0-9a-fA-F:.]+/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8])$') | list | length == 0
+      fail_msg: >-
+        cilium.host_firewall: enforce_nodes must be a list and needs
+        enabled=true; extra_trusted_cidrs.ipv4 must hold only IPv4 CIDRs and
+        extra_trusted_cidrs.ipv6 only IPv6 CIDRs, each as address/prefix.
+      quiet: true
+
+  - name: List cluster nodes for the host firewall label
+    kubernetes.core.k8s_info:
+      kind: Node
+    register: host_fw_node_info
+
+  - name: Check that every host firewall node exists
+    ansible.builtin.assert:
+      that: host_fw_nodes | difference(host_fw_node_info.resources | map(attribute='metadata.name') | list) | length == 0
+      fail_msg: >-
+        cilium.host_firewall.enforce_nodes has unknown node names:
+        {{ host_fw_nodes | difference(host_fw_node_info.resources | map(attribute='metadata.name') | list) }}
+      quiet: true
+
+  - name: Read the host firewall setting in cilium-config before the upgrade
+    kubernetes.core.k8s_info:
+      api_version: v1
+      kind: ConfigMap
+      name: "{{ host_fw_agent_config_map }}"
+      namespace: "{{ cilium.namespace }}"
+    register: host_fw_config_before
+
   - name: Add Cilium Helm repository
     kubernetes.core.helm_repository:
       name: cilium
@@ -46,8 +123,90 @@
         value_type: string
       - value: "extraConfig.ipv6-mcast-device={{ primary_network_interface }}"
         value_type: string
+      # Sets enable-host-firewall in cilium-config. The agents load the host
+      # firewall datapath only at start: the restart task below applies a
+      # change. Host policies apply only to labeled nodes (below).
+      - value: "hostFirewall.enabled={{ host_fw_enabled | bool | lower }}"
+        value_type: raw
 
       state: present
       wait: true
       timeout: "600s"
 
+  - name: Read the Cilium agent DaemonSet
+    kubernetes.core.k8s_info:
+      api_version: apps/v1
+      kind: DaemonSet
+      name: "{{ host_fw_agent_daemonset }}"
+      namespace: "{{ cilium.namespace }}"
+    register: host_fw_agent_ds_info
+
+  - name: Check that the Cilium agent DaemonSet exists
+    ansible.builtin.assert:
+      that: host_fw_agent_ds_info.resources | length == 1
+      fail_msg: >-
+        DaemonSet {{ cilium.namespace }}/{{ host_fw_agent_daemonset }} not found
+        after the Cilium Helm upgrade.
+      quiet: true
+
+  # A pod template change starts a rolling update (maxUnavailable 1 in
+  # cilium-values.yaml). The task waits until all agents are updated and
+  # ready. The node label tasks run only after this task.
+  - name: Restart the Cilium agents to apply the host firewall setting
+    kubernetes.core.k8s:
+      state: patched
+      api_version: apps/v1
+      kind: DaemonSet
+      name: "{{ host_fw_agent_daemonset }}"
+      namespace: "{{ cilium.namespace }}"
+      definition: "{{ {'spec': {'template': {'metadata': {'annotations': {host_fw_started_key: host_fw_desired}}}}} }}"
+      wait: true
+      wait_timeout: 1800
+    when: host_fw_restart_needed | bool
+
+  - name: Deploy Cilium host firewall policy via Helm
+    kubernetes.core.helm:
+      name: "{{ cilium.release_name_prefix }}-post"
+      chart_ref: "{{ playbook_dir }}/charts/h3xinfra-cilium-post"
+      namespace: "{{ cilium.namespace }}"
+      create_namespace: false
+      values:
+        fullnameOverride: "{{ cilium.release_name_prefix }}-post"
+        hostFirewall:
+          enabled: "{{ host_fw_enabled | bool }}"
+          nodeLabel:
+            key: "{{ host_fw_label_key }}"
+            value: "{{ host_fw_label_value }}"
+          trustedCIDRs: "{{ host_fw_trusted_cidrs }}"
+      state: present
+      wait: true
+      timeout: "120s"
+
+  # The policy selects nodes by label. The inventory list is the source of
+  # truth: the play adds the label to listed nodes and removes it from all
+  # other nodes. An empty list (or enabled=false) removes every label.
+  - name: Label the nodes that enforce the host firewall policy
+    kubernetes.core.k8s:
+      state: patched
+      kind: Node
+      name: "{{ item.metadata.name }}"
+      definition: "{{ {'metadata': {'labels': {host_fw_label_key: host_fw_label_value}}} }}"
+    loop: "{{ host_fw_node_info.resources }}"
+    loop_control:
+      label: "{{ item.metadata.name }}"
+    when:
+    - item.metadata.name in host_fw_nodes
+    - (item.metadata.labels | default({}))[host_fw_label_key] | default('') != host_fw_label_value
+
+  - name: Remove the host firewall label from all other nodes
+    kubernetes.core.k8s:
+      state: patched
+      kind: Node
+      name: "{{ item.metadata.name }}"
+      definition: "{{ {'metadata': {'labels': {host_fw_label_key: none}}} }}"
+    loop: "{{ host_fw_node_info.resources }}"
+    loop_control:
+      label: "{{ item.metadata.name }}"
+    when:
+    - item.metadata.name not in host_fw_nodes
+    - host_fw_label_key in (item.metadata.labels | default({}))
