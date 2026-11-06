@@ -56,18 +56,30 @@ class BehaviorTests(unittest.TestCase):
                 "node1.invalid": {"ansible_host": "192.0.2.1", "ansible_ssh_timeout": 1},
             }},
         }))
-        (work / "playbook.yml").write_text(yaml.safe_dump([
-            {"import_playbook": str(GUARD)},
-            {"name": "Destructive stand-in", "hosts": "k8s", "gather_facts": False,
-             "tasks": [{"ansible.builtin.debug": {"msg": "DESTRUCTIVE-PLAY-RAN"}}]},
-        ]))
+        # Inventories without localhost. The stand-in then targets the implicit
+        # localhost, which the pattern "all" does not match. With the empty
+        # (zero-byte) inventory, "all" matches no host at all, so only
+        # "all:localhost" makes the guard run.
+        (work / "hosts-no-localhost.yml").write_text(yaml.safe_dump({
+            "k3s_cluster": {"hosts": {
+                "node1.invalid": {"ansible_host": "192.0.2.1", "ansible_ssh_timeout": 1},
+            }},
+        }))
+        (work / "empty.yml").write_text("")
+        for name, target in (("playbook.yml", "k8s"), ("playbook-localhost.yml", "localhost")):
+            (work / name).write_text(yaml.safe_dump([
+                {"import_playbook": str(GUARD)},
+                {"name": "Destructive stand-in", "hosts": target, "gather_facts": False,
+                 "tasks": [{"ansible.builtin.debug": {"msg": "DESTRUCTIVE-PLAY-RAN"},
+                            "tags": ["wipe"]}]},
+            ]))
 
-    def run_playbook(self, *args):
+    def run_playbook(self, *args, inventory="hosts.yml", playbook="playbook.yml"):
         work = Path(self.work.name)
         env = dict(os.environ, ANSIBLE_CONFIG=str(work / "ansible.cfg"),
                    ANSIBLE_NOCOLOR="1", ANSIBLE_FORCE_COLOR="0")
         return subprocess.run(
-            ["ansible-playbook", "-i", str(work / "hosts.yml"), str(work / "playbook.yml"), *args],
+            ["ansible-playbook", "-i", str(work / inventory), str(work / playbook), *args],
             env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
 
     def assert_refused(self, result):
@@ -88,6 +100,23 @@ class BehaviorTests(unittest.TestCase):
         for limit in ("k8s", "node1.invalid"):
             with self.subTest(limit=limit):
                 self.assert_refused(self.run_playbook("--limit", limit))
+
+    def test_tags_cannot_skip_the_guard(self):
+        self.assert_refused(self.run_playbook("--tags", "wipe"))
+        result = self.run_playbook("--tags", "wipe", "-e", f"confirm_destroy={PHRASE}")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("DESTRUCTIVE-PLAY-RAN", result.stdout)
+
+    def test_guard_matches_implicit_localhost(self):
+        for inventory in ("hosts-no-localhost.yml", "empty.yml"):
+            with self.subTest(inventory=inventory):
+                self.assert_refused(self.run_playbook(
+                    inventory=inventory, playbook="playbook-localhost.yml"))
+                result = self.run_playbook(
+                    "-e", f"confirm_destroy={PHRASE}",
+                    inventory=inventory, playbook="playbook-localhost.yml")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("DESTRUCTIVE-PLAY-RAN", result.stdout)
 
     def test_runs_with_exact_phrase(self):
         result = self.run_playbook("-e", f"confirm_destroy={PHRASE}")
