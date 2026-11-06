@@ -5,6 +5,28 @@
   gather_facts: false
   
   tasks:
+    # Pod Security: no pods run in these namespaces. The health chart in
+    # `default` renders only a ClusterRole and a ClusterRoleBinding. K3s
+    # creates the namespaces, so this play only adds the labels.
+    # `kubectl debug node/...` creates a host-access pod in the current
+    # namespace. Use `-n kube-system` for it (kube-system is exempt).
+    - name: Label the default and kube-* namespaces for Pod Security
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ item }}"
+            labels:
+              pod-security.kubernetes.io/enforce: "{{ health.pod_security_enforce | default('restricted') }}"
+              pod-security.kubernetes.io/audit: restricted
+              pod-security.kubernetes.io/warn: restricted
+      loop:
+        - default
+        - kube-public
+        - kube-node-lease
+
     - name: Deploy Health Endpoints via Helm
       kubernetes.core.helm:
         name: "{{ health.release_name_prefix }}-main"

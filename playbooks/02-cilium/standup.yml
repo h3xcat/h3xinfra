@@ -14,13 +14,23 @@
       force_update: true
     changed_when: false
 
+  # Pod Security: privileged. The Cilium agent and Envoy DaemonSets use
+  # hostNetwork, hostPath, host ports, a privileged init container and
+  # NET_ADMIN/SYS_ADMIN. The cluster AdmissionConfiguration also exempts
+  # kube-system (the default Cilium namespace).
   - name: Create Cilium namespace
     kubernetes.core.k8s:
-      api_version: v1
-      kind: Namespace
-      name: "{{ cilium.namespace }}"
       state: present
       wait: true
+      definition:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: "{{ cilium.namespace }}"
+          labels:
+            pod-security.kubernetes.io/enforce: privileged
+            pod-security.kubernetes.io/audit: restricted
+            pod-security.kubernetes.io/warn: restricted
 
   - name: Deploy Cilium via Helm
     kubernetes.core.helm:

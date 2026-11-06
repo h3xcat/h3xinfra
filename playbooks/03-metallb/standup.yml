@@ -13,13 +13,21 @@
       force_update: true
     changed_when: false
 
+  # Pod Security: privileged. The speaker and frr-k8s DaemonSets use
+  # hostNetwork and NET_RAW/NET_ADMIN/SYS_ADMIN for L2 and BGP announcements.
   - name: Create MetalLB namespace
     kubernetes.core.k8s:
-      api_version: v1
-      kind: Namespace
-      name: "{{ metallb.namespace }}"
       state: present
       wait: true
+      definition:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: "{{ metallb.namespace }}"
+          labels:
+            pod-security.kubernetes.io/enforce: privileged
+            pod-security.kubernetes.io/audit: restricted
+            pod-security.kubernetes.io/warn: restricted
 
   - name: Deploy MetalLB via Helm
     kubernetes.core.helm:
