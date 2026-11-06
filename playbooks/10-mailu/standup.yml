@@ -75,6 +75,49 @@
       timeout: "120s"
     no_log: true
 
+  # Helm 4 --wait uses kstatus. kstatus marks a LoadBalancer Service as ready
+  # when it has a cluster IP, before MetalLB gives it an address. The mail
+  # ports are on two Services that must share one MetalLB address. These tasks
+  # stop the play if a Service has no address or the addresses are different.
+  - name: Check the Mailu LoadBalancer addresses
+    vars:
+      mailu_lb_service_names:
+      - "{{ mailu.release_name_prefix }}-pre-external"
+      - "{{ mailu.release_name_prefix }}-pre-external-clients"
+    block:
+    - name: Wait until each Mailu LoadBalancer Service has an address
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Service
+        namespace: "{{ mailu.namespace }}"
+      register: mailu_lb_services
+      retries: 24
+      delay: 5
+      until: >-
+        mailu_lb_services.resources | default([])
+        | selectattr('metadata.name', 'in', mailu_lb_service_names)
+        | map(attribute='status.loadBalancer.ingress', default=[])
+        | select | list | length == mailu_lb_service_names | length
+
+    - name: Make sure that the Mailu LoadBalancer Services share one address
+      vars:
+        mailu_lb_addresses: >-
+          {{ mailu_lb_services.resources
+             | selectattr('metadata.name', 'in', mailu_lb_service_names)
+             | map(attribute='status.loadBalancer.ingress', default=[])
+             | map('map', attribute='ip', default='') | map('list')
+             | map('sort') | map('join', ',') | list }}
+      ansible.builtin.assert:
+        that:
+        - mailu_lb_addresses | length == mailu_lb_service_names | length
+        - mailu_lb_addresses | unique | length == 1
+        fail_msg: >-
+          The Mailu LoadBalancer Services {{ mailu_lb_service_names }} do not
+          share one address. Addresses found: {{ mailu_lb_addresses }}.
+          Run `kubectl -n {{ mailu.namespace }} describe svc` on them and
+          look for MetalLB AllocationFailed events.
+        quiet: true
+
   - name: Read Helm version for shutdown renderer compatibility
     ansible.builtin.command:
       argv: [helm, version, --short]

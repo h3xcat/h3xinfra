@@ -86,4 +86,6 @@ networkPolicy:
   
   # Additional IPv6 networks to allow access to restricted ports (IMAPS, POP3S, Sieve)
   # These are in addition to RFC 1918 private networks and ULA ranges
+  # The chart also adds these networks to loadBalancerSourceRanges of the
+  # client-port Service (external-svc.yaml), also when the policy is disabled.
   allowedIPv6Networks: []
