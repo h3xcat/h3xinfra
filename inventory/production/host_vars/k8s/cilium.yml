@@ -9,8 +9,9 @@ cilium:
     enabled: false
     # Kubernetes node names that enforce the host policy.
     enforce_nodes: []
-    # Site ranges to trust in addition to private and link-local ranges,
-    # for example the global IPv6 prefix of the LAN.
+    # Site ranges to trust in addition to private and link-local ranges.
+    # The global IPv6 prefix of the node network is required before a node
+    # gets the label. Add other trusted LAN prefixes too.
     extra_trusted_cidrs:
       ipv4: []
       ipv6:

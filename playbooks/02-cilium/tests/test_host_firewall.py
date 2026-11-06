@@ -17,6 +17,8 @@ CHART = LAYER / "charts/h3xinfra-cilium-post"
 HELM = os.environ.get("HELM") or shutil.which("helm")
 ANSIBLE = shutil.which("ansible-playbook")
 LABEL = "h3xinfra.io/host-firewall"
+STARTED = "h3xinfra.io/host-firewall-enabled"
+RESTART = "Restart the Cilium agents to apply the host firewall setting"
 
 
 def standup_play():
@@ -61,10 +63,26 @@ class HostFirewallPlaybookTests(unittest.TestCase):
         first_change = names.index("Add Cilium Helm repository")
         for name in ("Validate the Cilium host firewall settings", "Check that every host firewall node exists"):
             self.assertLess(names.index(name), first_change)
-        self.assertLess(names.index("Deploy Cilium via Helm"),
-                        names.index("Deploy Cilium host firewall policy via Helm"))
+        self.assertLess(names.index("Read the host firewall setting in cilium-config before the upgrade"),
+                        names.index("Deploy Cilium via Helm"))
+        self.assertLess(names.index("Deploy Cilium via Helm"), names.index("Read the Cilium agent DaemonSet"))
+        self.assertLess(names.index("Read the Cilium agent DaemonSet"), names.index(RESTART))
+        self.assertLess(names.index(RESTART), names.index("Deploy Cilium host firewall policy via Helm"))
         self.assertLess(names.index("Deploy Cilium host firewall policy via Helm"),
                         names.index("Label the nodes that enforce the host firewall policy"))
+
+    def test_restart_patches_the_agent_pod_template_and_waits(self):
+        play = standup_play()
+        restart = task(play, RESTART)
+        k8s = restart["kubernetes.core.k8s"]
+        self.assertEqual((k8s["kind"], k8s["name"], k8s["state"]), ("DaemonSet", "{{ host_fw_agent_daemonset }}", "patched"))
+        self.assertIn("{'spec': {'template': {'metadata': {'annotations': {host_fw_started_key: host_fw_desired}}}}}",
+                      k8s["definition"])
+        self.assertTrue(k8s["wait"])
+        self.assertEqual(restart["when"], "host_fw_restart_needed | bool")
+        self.assertEqual(play["vars"]["host_fw_started_key"], STARTED)
+        self.assertEqual(play["vars"]["host_fw_agent_daemonset"], "cilium")
+        self.assertEqual(play["vars"]["host_fw_agent_config_map"], "cilium-config")
 
     def test_teardown_removes_policy_release_before_cilium(self):
         plays = yaml.safe_load((LAYER / "teardown.yml").read_text())
@@ -83,29 +101,48 @@ class HostFirewallPlaybookLogicTests(unittest.TestCase):
         {"metadata": {"name": "node-c"}},
     ]
 
-    def evaluate(self, host_firewall):
+    def evaluate(self, host_firewall, config_before=None, started=None, annotations=True):
+        """Run the play logic. config_before is enable-host-firewall in
+        cilium-config before the upgrade (None: no ConfigMap). started is the
+        agent pod template annotation (None: not set)."""
         play = standup_play()
         tasks = [copy.deepcopy(task(play, name)) for name in (
             "Validate the Cilium host firewall settings",
             "Check that every host firewall node exists",
+            "Check that the Cilium agent DaemonSet exists",
         )]
-        for name, key in (("Label the nodes that enforce the host firewall policy", "add"),
+        for name, key in ((RESTART, None),
+                          ("Label the nodes that enforce the host firewall policy", "add"),
                           ("Remove the host firewall label from all other nodes", "remove")):
             item = copy.deepcopy(task(play, name))
-            item.pop("kubernetes.core.k8s")
-            item["ansible.builtin.set_fact"] = {key: "{{ (" + key + " | default([])) + [item.metadata.name] }}"}
+            module = item.pop("kubernetes.core.k8s")
+            if key is None:
+                # Keep the real patch body. A nested value keeps its type.
+                item["ansible.builtin.set_fact"] = {"restart": module["definition"]}
+            else:
+                item["ansible.builtin.set_fact"] = {key: "{{ (" + key + " | default([])) + [item.metadata.name] }}"}
             tasks.append(item)
+        config_maps = [] if config_before is None else [{"data": {"enable-host-firewall": config_before}}]
+        template_meta = {}
+        if started is not None:
+            template_meta["annotations"] = {STARTED: started}
+        elif annotations is None:
+            template_meta["annotations"] = None
+        daemonset = {"spec": {"template": {"metadata": template_meta}}}
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "result.json"
             tasks.append({"ansible.builtin.copy": {
                 "dest": str(out),
                 "content": "{{ {'add': add | default([]), 'remove': remove | default([]),"
+                           " 'restart': restart | default(none),"
                            " 'trusted': host_fw_trusted_cidrs, 'enabled': host_fw_enabled | bool} | to_json }}",
             }})
             cilium = {"namespace": "kube-system", "release_name_prefix": "test"}
             if host_firewall is not None:
                 cilium["host_firewall"] = host_firewall
-            vars_ = dict(play["vars"], cilium=cilium, host_fw_node_info={"resources": self.NODES})
+            vars_ = dict(play["vars"], cilium=cilium, host_fw_node_info={"resources": self.NODES},
+                         host_fw_config_before={"resources": config_maps},
+                         host_fw_agent_ds_info={"resources": [daemonset]})
             # An empty config keeps the repository ansible.cfg (inventory,
             # vault password script) out of this local run.
             config = Path(tmp) / "ansible.cfg"
@@ -146,6 +183,42 @@ class HostFirewallPlaybookLogicTests(unittest.TestCase):
         self.assertEqual(data["add"], [])
         self.assertEqual(data["remove"], [])
 
+    def test_default_deploy_does_not_restart_the_agents(self):
+        for config_before in (None, "false"):
+            with self.subTest(config_before=config_before):
+                result, data = self.evaluate(None, config_before=config_before)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIsNone(data["restart"])
+        result, data = self.evaluate(None, config_before="false", annotations=None)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIsNone(data["restart"])
+
+    def test_agents_restart_only_when_the_setting_changes(self):
+        on = {"enabled": True}
+        off = {"enabled": False}
+        cases = (
+            # (settings, cilium-config before, annotation, expected restart)
+            (on, "false", None, "true"),     # first turn-on
+            (on, "true", None, "true"),      # turn-on run stopped before the restart
+            (on, None, None, "true"),        # new install
+            (on, "true", "true", None),      # no change
+            (on, "true", "false", "true"),   # turn on again
+            (off, "true", "true", "false"),  # rollback
+            (off, "true", None, "false"),    # turned on outside this play
+            (off, "false", "false", None),   # no change
+            (off, "false", "true", "false"),  # rollback run stopped before the restart
+        )
+        for settings, config_before, started, expected in cases:
+            with self.subTest(settings=settings, config_before=config_before, started=started):
+                result, data = self.evaluate(settings, config_before=config_before, started=started)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                if expected is None:
+                    self.assertIsNone(data["restart"])
+                else:
+                    # The annotation value must be a string, not a boolean.
+                    self.assertEqual(data["restart"],
+                                     {"spec": {"template": {"metadata": {"annotations": {STARTED: expected}}}}})
+
     def test_unknown_node_name_fails(self):
         result, data = self.evaluate({"enabled": True, "enforce_nodes": ["node-a", "node-x"]})
         self.assertNotEqual(result.returncode, 0)
@@ -158,6 +231,9 @@ class HostFirewallPlaybookLogicTests(unittest.TestCase):
             {"enabled": True, "enforce_nodes": "node-a"},
             {"enabled": True, "extra_trusted_cidrs": {"ipv4": ["2001:db8::/32"]}},
             {"enabled": True, "extra_trusted_cidrs": {"ipv6": ["192.0.2.0/24"]}},
+            {"enabled": True, "extra_trusted_cidrs": {"ipv6": ["2001:db8::/129"]}},
+            {"enabled": True, "extra_trusted_cidrs": {"ipv6": ["2001:db8::"]}},
+            {"enabled": True, "extra_trusted_cidrs": {"ipv4": ["192.0.2.0/33"]}},
         ):
             with self.subTest(host_firewall=host_firewall):
                 result, data = self.evaluate(host_firewall)
