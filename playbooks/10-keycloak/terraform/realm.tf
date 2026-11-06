@@ -14,6 +14,35 @@ resource "keycloak_realm" "main" {
 
   password_policy = "upperCase(1) and length(12) and forceExpiredPasswordChange(365) and notUsername"
 
+  # Brute-force detection. Keycloak counts failed logins per user (not per
+  # client IP) and locks the user temporarily. Permanent lockout stays off so
+  # that failed logins by a third party cannot disable an account until an
+  # admin unlocks it. A successful login resets the count.
+  #
+  # Failed OTP codes also count as failed logins. max_secondary_auth_failures
+  # is not set. On Keycloak 26.6.0 and later the provider sends 0, which means
+  # that there is no separate OTP lockout.
+  #
+  # Headers are not set here. When `headers` is absent, the provider sets its
+  # built-in default browser security headers, the same as it did before this
+  # block was added.
+  #
+  # This block applies only to this realm. The master realm is not managed by
+  # this Terraform and does not get brute-force detection from it.
+  security_defenses {
+    brute_force_detection {
+      permanent_lockout                = false
+      max_temporary_lockouts           = 0 # never escalate to a permanent lockout
+      brute_force_strategy             = "MULTIPLE"
+      max_login_failures               = 5
+      wait_increment_seconds           = 60    # wait = 60s x (failures / 5): grows every 5 failures
+      max_failure_wait_seconds         = 900   # cap: 15m (reached at 75 failures)
+      failure_reset_time_seconds       = 43200 # failure count resets after 12h
+      quick_login_check_milli_seconds  = 1000  # two failures < 1s apart ...
+      minimum_quick_login_wait_seconds = 60    # ... lock the user for 1m
+    }
+  }
+
   # Session lifetimes — extended from Keycloak defaults (30m idle / 10h max)
   # so users aren't logged out frequently on this self-hosted deployment.
   sso_session_idle_timeout             = "12h"
