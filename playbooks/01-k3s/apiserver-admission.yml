@@ -1,0 +1,119 @@
+---
+# =============================================================================
+# Set the cluster-wide Pod Security Admission defaults.
+#
+# Deploys (per control-plane / server node):
+#   /etc/rancher/k3s/pod-security-admission.yaml      - AdmissionConfiguration
+#   /etc/rancher/k3s/config.yaml.d/20-pod-security.yaml - appends the
+#       `admission-control-config-file=...` kube-apiserver-arg (drop-in, so the
+#       collection-managed config.yaml is left untouched).
+#
+# The defaults apply only to namespaces without pod-security.kubernetes.io/*
+# labels. The layer playbooks and Terraform layers label their own namespaces.
+# Exempt namespaces skip all Pod Security checks.
+#
+# serial: 1 + a per-node /readyz gate means a bad config can only take down ONE
+# server and the play halts before it touches the next node. Set `enabled:
+# false` to remove both files and restart k3s on each server.
+#
+# Driven by the `apiserver_pod_security` inventory var (group_vars/k3s_cluster).
+# =============================================================================
+- name: Configure kube-apiserver Pod Security Admission defaults
+  hosts: server
+  become: true
+  serial: 1
+  gather_facts: false
+
+  vars:
+    pod_security_enabled: "{{ apiserver_pod_security.enabled | default(false) | bool }}"
+    pod_security_defaults: "{{ apiserver_pod_security.defaults | default({}) }}"
+    pod_security_exempt_namespaces: "{{ apiserver_pod_security.exemptions.namespaces | default(['kube-system']) }}"
+
+  tasks:
+    - name: Validate the Pod Security levels
+      ansible.builtin.assert:
+        that:
+          - (pod_security_defaults.enforce | default('privileged')) in pod_security_levels
+          - (pod_security_defaults.audit | default('restricted')) in pod_security_levels
+          - (pod_security_defaults.warn | default('restricted')) in pod_security_levels
+        fail_msg: Use privileged, baseline or restricted for each Pod Security default.
+        quiet: true
+      vars:
+        pod_security_levels: [privileged, baseline, restricted]
+      when: pod_security_enabled | bool
+
+    - name: Ensure k3s config.yaml.d drop-in directory exists
+      ansible.builtin.file:
+        path: /etc/rancher/k3s/config.yaml.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      when: pod_security_enabled | bool
+
+    - name: Deploy the Pod Security AdmissionConfiguration
+      ansible.builtin.copy:
+        dest: /etc/rancher/k3s/pod-security-admission.yaml
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          apiVersion: apiserver.config.k8s.io/v1
+          kind: AdmissionConfiguration
+          plugins:
+          - name: PodSecurity
+            configuration:
+              apiVersion: pod-security.admission.config.k8s.io/v1
+              kind: PodSecurityConfiguration
+              defaults:
+                enforce: {{ pod_security_defaults.enforce | default('privileged') | to_json }}
+                enforce-version: "latest"
+                audit: {{ pod_security_defaults.audit | default('restricted') | to_json }}
+                audit-version: "latest"
+                warn: {{ pod_security_defaults.warn | default('restricted') | to_json }}
+                warn-version: "latest"
+              exemptions:
+                usernames: []
+                runtimeClasses: []
+                namespaces: {{ pod_security_exempt_namespaces | to_json }}
+      register: pod_security_file
+      when: pod_security_enabled | bool
+
+    - name: Deploy kube-apiserver-arg drop-in (append admission-control-config-file)
+      ansible.builtin.copy:
+        dest: /etc/rancher/k3s/config.yaml.d/20-pod-security.yaml
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          kube-apiserver-arg+:
+          - "admission-control-config-file=/etc/rancher/k3s/pod-security-admission.yaml"
+      register: pod_security_dropin
+      when: pod_security_enabled | bool
+
+    # Remove the drop-in before the file it points to. On a fresh or never
+    # configured server, both files are absent and nothing restarts.
+    - name: Remove the Pod Security drop-in and AdmissionConfiguration when disabled
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher/k3s/config.yaml.d/20-pod-security.yaml
+        - /etc/rancher/k3s/pod-security-admission.yaml
+      register: pod_security_removed
+      when: not (pod_security_enabled | bool)
+
+    - name: Restart k3s to apply the admission config
+      ansible.builtin.systemd:
+        name: k3s
+        state: restarted
+      when: pod_security_file is changed or pod_security_dropin is changed or pod_security_removed is changed
+
+    - name: Wait for the local kube-apiserver to report ready
+      ansible.builtin.command: k3s kubectl get --raw=/readyz
+      register: pod_security_readyz
+      changed_when: false
+      retries: 40
+      delay: 5
+      until: pod_security_readyz.rc == 0 and 'ok' in pod_security_readyz.stdout
+      when: pod_security_file is changed or pod_security_dropin is changed or pod_security_removed is changed
