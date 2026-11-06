@@ -154,6 +154,31 @@ class LonghornNativeResourceTests(unittest.TestCase):
             self.assertNotIn("ignore_errors", task)
             self.assertNotIn("failed_when", task)
 
+    def test_auth_method_guard_runs_first_and_accepts_only_supported_methods(self):
+        tasks = next(play for play in plays() if play.get("name") == "Deploy Longhorn via Helm")["tasks"]
+        names = [task["name"] for task in tasks]
+        self.assertEqual(names[0], "Validate Longhorn auth method")
+        self.assertLess(names.index("Validate Longhorn auth method"), names.index("Deploy Longhorn via Helm"))
+        self.assertLess(names.index("Validate Longhorn auth method"),
+                        names.index("Deploy Longhorn configuration via Helm"))
+        guard = tasks[0]
+        self.assertNotIn("when", guard)
+        self.assertNotIn("ignore_errors", guard)
+        that = guard["ansible.builtin.assert"]["that"]
+        self.assertEqual(that, ["(longhorn.auth.method | default('none')) in ['none', 'oauth2_proxy']"])
+        check = Environment(undefined=ChainableUndefined).compile_expression(that[0])
+        for context in (
+            {"longhorn": {"auth": {"method": "oauth2_proxy"}}},
+            {"longhorn": {"auth": {"method": "none"}}},
+            {"longhorn": {"auth": {}}},
+            {"longhorn": {}},
+        ):
+            with self.subTest(context=context):
+                self.assertTrue(check(**context))
+        for method in ("basic", "oauth2-proxy", "OAUTH2_PROXY", ""):
+            with self.subTest(method=method):
+                self.assertFalse(check(longhorn={"auth": {"method": method}}))
+
 
 @unittest.skipUnless(CHART, "Set LONGHORN_CHART_PATH to the deployed Longhorn chart")
 class LonghornChartRenderTests(unittest.TestCase):

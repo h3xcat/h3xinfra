@@ -70,6 +70,19 @@
   gather_facts: true
   vars:
   tasks:
+    # The post chart renders only the OIDC filter and the IP allowlist. An
+    # unknown method (for example the old "basic") would render no
+    # authentication. This check is the first task, so a bad value stops the
+    # play before it changes the cluster.
+    - name: Validate Longhorn auth method
+      ansible.builtin.assert:
+        that:
+          - (longhorn.auth.method | default('none')) in ['none', 'oauth2_proxy']
+        fail_msg: >-
+          longhorn.auth.method must be "oauth2_proxy" or "none"
+          (got "{{ longhorn.auth.method | default('none') }}").
+          Basic auth is not supported.
+
     - name: Check whether Longhorn volume CRDs already exist
       kubernetes.core.k8s_info:
         api_version: apiextensions.k8s.io/v1
