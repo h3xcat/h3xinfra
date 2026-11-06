@@ -3,13 +3,13 @@
 ## Resource Budgets
 
 The main Helm task declares CPU and memory requests and limits for the nine
-enabled Mailu application components. Defaults were sized from seven days of
-observed application usage, with additional headroom for mail scanning and
-ClamAV signature reloads. Redis retains its existing upstream resource preset;
-this change does not enable MariaDB or PostgreSQL.
+enabled Mailu application components. The default values come from seven days
+of observed application usage. They also include more headroom for mail scanning
+and ClamAV signature reloads. Redis keeps its existing upstream resource preset.
+This change does not enable MariaDB or PostgreSQL.
 
-Override individual values in the `k8s` inventory without replacing the other
-defaults:
+To override individual values, set them in the `k8s` inventory. The other
+defaults stay the same:
 
 ```yaml
 mailu:
@@ -19,16 +19,21 @@ mailu:
         memory: "5Gi"
 ```
 
-The ordinary `standup.yml` remains the canonical full deployment. For an
-existing release, first compare its deployed chart version and resource values.
-A resource-only maintenance update should use that same chart version and reuse
-the existing release values, overriding only the nine `*.resources` blocks.
-Inspect a server-side dry run without printing manifests or secret values;
-reject changes to images, environment, storage, Services, Secrets, or unrelated
-workloads. The single-replica Recreate workloads will briefly interrupt service
-when their pod templates change.
+The ordinary `standup.yml` is still the canonical full deployment. For a
+resource-only maintenance update of an existing release, do these steps:
 
-Run the focused tests with the pinned upstream chart downloaded separately:
+1. Compare the deployed chart version and the resource values of the release.
+2. Use that same chart version.
+3. Reuse the existing release values. Override only the nine `*.resources`
+   blocks.
+4. Examine a server-side dry run. Do not print manifests or secret values.
+5. Reject changes to images, environment, storage, Services, Secrets, or
+   unrelated workloads.
+
+When their pod templates change, the single-replica Recreate workloads will
+interrupt the service for a short time.
+
+Download the pinned upstream chart separately. Then run the focused tests:
 
 ```bash
 helm pull mailu/mailu --version 2.7.3 --untar --untardir /tmp/mailu-resource-chart
@@ -36,44 +41,71 @@ MAILU_CHART_PATH=/tmp/mailu-resource-chart/mailu \
   python3 -m unittest discover -s playbooks/10-mailu/tests -v
 ```
 
-The render tests check every enabled regular and init container, preserve the
-Redis budget and database enablement, and verify that only the nine resource
-blocks change. They do not contact the cluster or read live release values.
+The render tests check every enabled regular and init container. They make sure
+that the Redis budget and the database enablement stay the same. They also make
+sure that only the nine resource blocks change. The tests do not connect to the
+cluster or read live release values.
 
 ## Graceful Shutdown
 
 All ten enabled workloads have a 120-second termination grace period. A focused
-post-renderer adds `preStop` hooks for admin, Postfix, Dovecot, front, webmail,
-and ClamAV. It does not enable the older, unrelated Service post-renderer.
-Helm 4 uses the local `postrenderer/v1` plugin; the playbook copies its four
-files into Helm's plugin directory on each deployment. Helm 3 uses the same
-renderer executable directly.
+post-renderer adds `preStop` hooks for these components:
 
-Mailu's Python wrapper exits on SIGTERM without forwarding it to its child
-daemons. The hooks therefore stop companions before the main daemon whose exit
-ends that wrapper. Gunicorn, Postfix, and Dovecot receive their orderly shutdown
-signals. Front's certificate watcher receives SIGINT, which runs its observer
-cleanup. PHP-FPM receives SIGQUIT before webmail's Nginx exits. ClamAV's two
-daemonized processes stop before its `tail` init process is terminated; that
-init process may consume the remaining grace period despite clean daemon exits.
-Redis and Rspamd retain their native daemon shutdown paths.
+- admin
+- Postfix
+- Dovecot
+- front
+- webmail
+- ClamAV.
 
-The Python hooks have an 80-second total wait bound and check process identity
-and observed child exit status. Unexpected process layouts or deadlines fail
-the hook, but **do not cancel Kubernetes Pod termination**. Review the hooks
-when changing Mailu images or process topology. The supported source layout is
-Mailu 2024.06.55 as used with chart 2.7.3.
+This post-renderer does not enable the older, unrelated Service post-renderer.
+Helm 4 uses the local `postrenderer/v1` plugin. On each deployment, the playbook
+copies the four files of this plugin into the Helm plugin directory. Helm 3 uses
+the same renderer executable directly.
 
-Changing a controller template does not add hooks or a longer grace period to
-already-running Pods. For the first rollout from the old two-second Pods,
-arrange a maintenance window, take verified backups, and explicitly stop their
-writers before replacing them. Do not assume an ordinary Helm rollout makes
-that initial shutdown safe. Follow-up normal Pod replacements use the new hooks.
+The Mailu Python wrapper exits on SIGTERM. It does not forward the signal to its
+child daemons. Thus, the hooks stop the companion processes before the main
+daemon. The exit of the main daemon ends that wrapper. Each process stops as
+follows:
 
-The focused shutdown tests cover hook-only rendering, scope checks, PID reuse
-and disappearing-process races, daemon discovery, and rejection of observed
-unclean child exits. They supplement, rather than replace, application-specific
-backup and post-restart integrity checks.
+- Gunicorn, Postfix, and Dovecot receive their orderly shutdown signals.
+- The certificate watcher of front receives SIGINT. This signal runs its
+  observer cleanup.
+- PHP-FPM receives SIGQUIT before the Nginx of webmail exits.
+- The two daemonized processes of ClamAV stop before its `tail` init process is
+  terminated. That init process can use all of the remaining grace period, even
+  when the daemons exit cleanly.
+
+Redis and Rspamd keep their native daemon shutdown paths.
+
+The Python hooks have a total wait limit of 80 seconds. They check the process
+identity and the observed child exit status. Unexpected process layouts or
+deadlines fail the hook, but these failures **do not cancel Kubernetes Pod
+termination**. When you change Mailu images or the process topology, review the
+hooks. The supported source layout is Mailu 2024.06.55 as used with chart 2.7.3.
+
+A change to a controller template does not add hooks or a longer grace period
+to Pods that already run. For the first rollout from the old two-second Pods, do
+these steps:
+
+1. Arrange a maintenance window.
+2. Take verified backups.
+3. Explicitly stop the writers of the old Pods.
+4. Replace the old Pods.
+
+Do not assume that an ordinary Helm rollout makes that initial shutdown safe.
+Later normal Pod replacements use the new hooks.
+
+The focused shutdown tests cover these items:
+
+- Hook-only rendering
+- Scope checks
+- PID reuse and disappearing-process races
+- Daemon discovery
+- Rejection of observed unclean child exits.
+
+These tests add to the application-specific backup and post-restart integrity
+checks. They do not replace these checks.
 
 Signal semantics: [Gunicorn](https://gunicorn.org/signals/),
 [Postfix](https://www.postfix.org/master.8.html),

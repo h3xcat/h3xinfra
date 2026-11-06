@@ -4,10 +4,10 @@ This document describes the architecture of the H3x Kubernetes cluster infrastru
 
 ## Overview
 
-The cluster is organized as a layered deployment with the following components:
+The cluster has a layered deployment. These are the layers:
 
 1. **Base Infrastructure** - Physical/virtual servers with network setup
-2. **Kubernetes Layer** - K3s deployment with proper configuration
+2. **Kubernetes Layer** - K3s deployment with the correct configuration
 3. **Network Layer** - Cilium CNI with dual-stack support
 4. **Service Layer** - MetalLB for load balancing
 5. **Security Layer** - Health endpoints, Certificate Manager, External DNS
@@ -17,7 +17,7 @@ The cluster is organized as a layered deployment with the following components:
 
 ## Deployment Flow
 
-The deployment follows this sequence:
+The deployment uses this sequence:
 1. Server preparation (system settings, packages)
 2. K3s installation and configuration
 3. Cilium CNI deployment
@@ -33,7 +33,7 @@ The deployment follows this sequence:
 
 ## Node Topology
 
-The cluster runs a **dedicated control-plane** model with two node roles:
+The cluster uses a **dedicated control-plane** model. There are two node roles:
 
 | Role | Nodes (example) | Schedulable for | Identifying taint |
 |---|---|---|---|
@@ -42,24 +42,24 @@ The cluster runs a **dedicated control-plane** model with two node roles:
 
 ### Why dedicated control-plane
 
-Stateful workloads (Longhorn replicas, Postgres data, *arr SQLite DBs, Plex library) are kept off the server nodes so:
+Stateful workloads stay off the server nodes. These workloads include Longhorn replicas, Postgres data, *arr SQLite DBs, and the Plex library. This gives these results:
 
-- A misbehaving app can't OOM kube-apiserver / etcd / kubelet on a quorum-bearing node
-- Server-node reboots affect only control-plane availability, not storage availability
-- The 3-node etcd quorum stays small and predictable (avoids quorum-size growth that hurts write latency)
+- An app with a fault cannot cause an OOM kill of kube-apiserver / etcd / kubelet on a node that is part of the quorum.
+- A server-node reboot has an effect only on control-plane availability. It has no effect on storage availability.
+- The 3-node etcd quorum stays small and predictable. A larger quorum increases the write latency.
 
 ### How the taint is honored
 
-The `CriticalAddonsOnly=true:NoSchedule` taint on server nodes means **only pods that explicitly tolerate it can land there**. The two outcomes:
+Server nodes have the `CriticalAddonsOnly=true:NoSchedule` taint. Thus, **only pods that explicitly tolerate the taint can go on these nodes**. There are two results:
 
-- **System DaemonSets that must run on every node** (Cilium CNI agent, kured reboot daemon, csi-driver-smb node plugin, longhorn-manager, etc.) tolerate **all** taints via `tolerations: [{operator: Exists}]`. They run on the full 8-node fleet so functionality stays uniform.
-- **Workloads** (Longhorn replicas, CNPG postgres, Keycloak, *arr apps, Plex, qbittorrent, etc.) carry no special tolerations. They schedule onto the 5 agent nodes only. Longhorn observably advertises 5 storage providers, not 8 — by design.
+- **System DaemonSets that must run on every node** tolerate **all** taints with `tolerations: [{operator: Exists}]`. Examples are the Cilium CNI agent, the kured reboot daemon, the csi-driver-smb node plugin, and longhorn-manager. These DaemonSets run on the full 8-node fleet, so the functionality is the same on all nodes.
+- **Workloads** have no special tolerations. Examples are Longhorn replicas, CNPG postgres, Keycloak, *arr apps, Plex, and qbittorrent. These workloads go only on the 5 agent nodes. Longhorn shows 5 storage providers, not 8. This is the intended design.
 
 ### Implications
 
-- **Longhorn replica count vs node count**: with 5 storage-capable agent nodes and `defaultReplicaCount: 3`, you can lose 2 agents simultaneously without data loss
-- **Workload HA spread**: anti-affinity policies operate within the 5-agent pool
-- **Server-node reboots**: only affect control-plane (handled by 3-node etcd quorum tolerating 1 down)
+- **Longhorn replica count vs node count**: There are 5 agent nodes that can hold storage, and `defaultReplicaCount: 3`. Thus, 2 agents can fail at the same time without data loss.
+- **Workload HA spread**: Anti-affinity policies operate in the 5-agent pool.
+- **Server-node reboots**: A reboot has an effect only on the control-plane. The 3-node etcd quorum tolerates 1 node that is down.
 
 ## Network Architecture
 
@@ -90,8 +90,8 @@ The `CriticalAddonsOnly=true:NoSchedule` taint on server nodes means **only pods
 ### Core Platform Services
 - **Cilium CNI**: eBPF-based networking with network policies (v1.17.3)
 - **MetalLB**: Load balancer for bare metal clusters (v0.13.10)
-- **Cert-Manager**: Automated TLS certificate management (v1.17.2)
-- **External-DNS**: Automated DNS record management (v1.16.1)
+- **Cert-Manager**: Automatic TLS certificate management (v1.17.2)
+- **External-DNS**: Automatic DNS record management (v1.16.1)
 - **Envoy Gateway**: Gateway API controller for HTTP routing, TLS termination, OIDC, and IP allowlisting (v1.4.2)
 - **Longhorn**: Distributed block storage (v1.9.0)
 
@@ -99,44 +99,44 @@ The `CriticalAddonsOnly=true:NoSchedule` taint on server nodes means **only pods
 - **Mailu**: Self-hosted email server with web interface (v2.2.2)
   - Domain: example.com
   - Hostnames: mail.app.example.com, mail.example.com
-  - External SMTP relay via smtp2go.com
+  - External SMTP relay through smtp2go.com
 - **Keycloak**: Identity and access management
   - Hostname: identity.app.example.com
-  - Deployed via the Keycloak Operator (`k8s.keycloak.org/v2alpha1` CR)
-  - PostgreSQL backend managed by CloudNativePG (`postgresql.cnpg.io/v1` Cluster)
+  - Deployed with the Keycloak Operator (`k8s.keycloak.org/v2alpha1` CR)
+  - PostgreSQL backend that CloudNativePG manages (`postgresql.cnpg.io/v1` Cluster)
 
 ### DNS Management
 - **Managed Domains**: example.com, *.example.com, example.org, *.example.org, example.net
-- **Cloudflare Integration**: Automated DNS-01 ACME challenges
-- **Wildcard Certificates**: Automated for *.app.example.com and other domains
+- **Cloudflare Integration**: Automatic DNS-01 ACME challenges
+- **Wildcard Certificates**: Automatic for *.app.example.com and other domains
 
 ## Deployment Patterns
 
 ### Custom Helm Charts
-The project uses a sophisticated pattern of custom Helm charts to manage configuration:
+The project uses custom Helm charts to manage configuration. There are three types of chart:
 
-- **Pre-deployment charts**: Create secrets, ConfigMaps, and prerequisites
-- **Main deployment charts**: Deploy primary applications using upstream Helm charts
-- **Post-deployment charts**: Configure ClusterIssuers, additional resources, and integrations
+- **Pre-deployment charts**: Create secrets, ConfigMaps, and prerequisites.
+- **Main deployment charts**: Deploy the primary applications with upstream Helm charts.
+- **Post-deployment charts**: Configure ClusterIssuers, more resources, and integrations.
 
 ### Component Naming Convention
-All releases follow the naming pattern: `h3xinfra-{component}-{phase}`
+All releases use this naming pattern: `h3xinfra-{component}-{phase}`
 - Example: `h3xinfra-metallb-main`, `h3xinfra-certmanager-post`
 
 ### Network Interface Configuration
-The cluster is configured to use the primary network interface: `eth0` (or your primary interface)
-This is particularly important for Cilium's IPv6 multicast device configuration.
+The cluster uses the primary network interface: `eth0` (or your primary interface).
+This setting is important for the Cilium IPv6 multicast device configuration.
 
 ## Development Environment
 
 ### Devcontainer Architecture
 
-The project includes a sophisticated devcontainer setup with:
+The project includes a devcontainer setup with these items:
 
 - **Base Environment**: Ubuntu 22.04 (jammy) with custom user configuration
 - **Tool Integration**: Pre-configured Ansible, kubectl, Helm, and Docker CLI
-- **Path Management**: Custom scripts automatically available in PATH
-- **Volume Strategy**: SSH keys mounted from host, persistent command history
+- **Path Management**: Custom scripts are automatically available in PATH
+- **Volume Strategy**: SSH keys mounted from the host, persistent command history
 - **Network Access**: Docker-outside-of-Docker for container management
 - **IDE Integration**: VS Code extensions for Python and GitHub Copilot
 
@@ -147,31 +147,32 @@ The project includes a sophisticated devcontainer setup with:
 - ghcr.io/devcontainers/features/docker-outside-of-docker:1
 ```
 
-kubectl and Helm are not installed by a feature: they are pinned as `ARG
-KUBECTL_VERSION` / `ARG HELM_VERSION` in `.devcontainer/Dockerfile` (with
-`# renovate:` markers, so Renovate bumps them) because the
-`kubectl-helm-minikube` feature installed `latest` over those pins and kubectl
-must stay within +/-1 minor of the k3s cluster version.
+A feature does not install kubectl and Helm. They are pinned as `ARG KUBECTL_VERSION` / `ARG HELM_VERSION` in `.devcontainer/Dockerfile`.
+These pins have `# renovate:` markers, so Renovate bumps them.
+The project pins the two tools in the Dockerfile for these reasons:
+
+- The `kubectl-helm-minikube` feature installed `latest` over those pins.
+- The kubectl version must stay within +/-1 minor of the k3s cluster version.
 
 ### Environment Variables
 
-- `WORKSPACE_FOLDER`: Points to project root
-- `H3XINFRA_FOLDER`: Points to public h3xinfra project
-- `ANSIBLE_CONFIG`: Points to project ansible.cfg
+- `WORKSPACE_FOLDER`: Points to the project root
+- `H3XINFRA_FOLDER`: Points to the public h3xinfra project
+- `ANSIBLE_CONFIG`: Points to the project ansible.cfg
 - `PATH`: Extended to include `${WORKSPACE_FOLDER}/bin`
 
-This setup ensures consistent development environment across different machines and operating systems.
+This setup makes sure that the development environment is the same on different machines and operating systems.
 
 ## Security Considerations
 
-- Network policies are implemented with Cilium
-- Anonymous access to health endpoints is controlled via dedicated configuration
-- TLS certificates are automatically managed by Cert-Manager using Let's Encrypt
-- DNS records are automatically managed via External-DNS with Cloudflare
-- All secrets are encrypted using Ansible Vault
-- Mailu email server includes SMTP relay configuration for external delivery
-- Keycloak provides centralized identity and access management
-- Longhorn storage includes encrypted backup to CIFS share
+- Cilium implements the network policies.
+- A dedicated configuration controls anonymous access to health endpoints.
+- Cert-Manager automatically manages the TLS certificates with Let's Encrypt.
+- External-DNS automatically manages the DNS records with Cloudflare.
+- Ansible Vault encrypts all secrets.
+- The Mailu email server includes an SMTP relay configuration for external delivery.
+- Keycloak gives centralized identity and access management.
+- Longhorn storage includes an encrypted backup to a CIFS share.
 
 
 ## Maintenance Procedures

@@ -1,33 +1,33 @@
 # Operational Procedures
 
-This document describes common operational procedures for the H3x Kubernetes cluster.
+This document gives the usual operational procedures for the H3x Kubernetes cluster.
 
 ## Development Environment
 
 ### Devcontainer Setup
 
-This project includes a complete devcontainer configuration for consistent development across different machines.
+This project has a full devcontainer configuration. Use it to get the same development environment on different machines.
 
 #### Features
-- **Base Image**: Ubuntu 22.04 (jammy) with custom user setup
+- **Base Image**: Ubuntu 22.04 (jammy) with a custom user setup.
 - **Pre-installed Tools**:
-  - Ansible with all required collections
-  - kubectl and Helm for Kubernetes management
-  - Docker CLI (connected to host Docker daemon)
-  - Python 3 with required packages
+  - Ansible with all the necessary collections.
+  - kubectl and Helm to manage Kubernetes.
+  - Docker CLI. The CLI connects to the Docker daemon on the host.
+  - Python 3 with the necessary packages.
 - **VS Code Extensions**:
-  - Python support
-  - GitHub Copilot integration
+  - Python support.
+  - GitHub Copilot integration.
 - **Environment Configuration**:
-  - `WORKSPACE_FOLDER` environment variable
-  - `H3XINFRA_FOLDER` environment variable pointing to public h3xinfra repo
-  - `ANSIBLE_CONFIG` pointing to project ansible.cfg
-  - `bin/` directory added to PATH
+  - The `WORKSPACE_FOLDER` environment variable.
+  - The `H3XINFRA_FOLDER` environment variable. It points to the public h3xinfra repo.
+  - `ANSIBLE_CONFIG`. It points to the ansible.cfg file of the project.
+  - The `bin/` directory is in PATH.
 - **Volume Mounts**:
-  - Host SSH keys mounted at `/tmp/host-ssh`
-  - Persistent bash history across container rebuilds
+  - The host SSH keys are mounted at `/tmp/host-ssh`.
+  - The bash history stays when you rebuild the container.
 
-#### Getting Started with Devcontainer
+#### Start the Devcontainer
 
 1. **Prerequisites**:
    ```bash
@@ -39,9 +39,9 @@ This project includes a complete devcontainer configuration for consistent devel
    ```
 
 2. **Open Project**:
-   - Open the project folder in VS Code
-   - Click "Reopen in Container" when prompted
-   - Or use Command Palette: "Dev Containers: Reopen in Container"
+   - Open the project folder in VS Code.
+   - When VS Code shows the prompt, click "Reopen in Container".
+   - As an alternative, use the Command Palette: "Dev Containers: Reopen in Container".
 
 3. **Verify Setup**:
    ```bash
@@ -57,7 +57,7 @@ This project includes a complete devcontainer configuration for consistent devel
 
 #### SSH Key Configuration
 
-The devcontainer automatically mounts your host SSH keys for accessing cluster nodes:
+The devcontainer automatically mounts your host SSH keys. You use these keys to get access to the cluster nodes:
 
 ```bash
 # SSH keys are available at:
@@ -73,7 +73,7 @@ chmod 600 ~/.ssh/*
 
 ### Server Updates
 
-To update all servers in the cluster:
+To update all the servers in the cluster, run this command:
 
 ```bash
 h3xinfra-update-servers
@@ -81,7 +81,7 @@ h3xinfra-update-servers
 
 ### Cluster Status Check
 
-To verify the cluster health:
+To examine the cluster health, run this command:
 
 ```bash
 ansible-playbook playbooks/99-utils/cluster-status.yml
@@ -91,7 +91,7 @@ ansible-playbook playbooks/99-utils/cluster-status.yml
 
 ### Deploy Complete Stack
 
-Use the convenience script to deploy the entire cluster:
+To deploy the full cluster, use this script:
 
 ```bash
 h3xinfra-deploy-stack
@@ -99,7 +99,7 @@ h3xinfra-deploy-stack
 
 ### Generate Passwords
 
-Generate encrypted passwords for services:
+To generate encrypted passwords for services, run this command:
 
 ```bash
 h3xinfra-gen-pass
@@ -107,7 +107,7 @@ h3xinfra-gen-pass
 
 ### Generate K3s Token
 
-Generate a new K3s cluster token:
+To generate a new K3s cluster token, run this command:
 
 ```bash
 h3xinfra-generate-token
@@ -216,7 +216,7 @@ ansible-playbook playbooks/10-keycloak/teardown.yml
 
 ### Devcontainer Issues
 
-#### Container Won't Start
+#### Container Does Not Start
 ```bash
 # Rebuild the container
 # In VS Code: Command Palette > "Dev Containers: Rebuild Container"
@@ -226,7 +226,7 @@ docker system prune -f
 # Then reopen in container
 ```
 
-#### SSH Keys Not Working
+#### SSH Keys Do Not Work
 ```bash
 # Check if keys are mounted
 ls -la /tmp/host-ssh/
@@ -259,13 +259,13 @@ export PATH="${PATH}:${H3XINFRA_FOLDER}/bin"
 
 ### Cluster Access Issues
 
-### Accessing Cluster Nodes
+### Access to Cluster Nodes
 
 ```bash
 ssh ansible@<node-ip-or-hostname>   # e.g. ssh ansible@node01.example.com
 ```
 
-### Checking Logs
+### Logs
 
 ```bash
 # On a cluster node
@@ -278,7 +278,7 @@ kubectl logs -n <namespace> <pod-name>
 
 ### Kubernetes Connection
 
-To connect to the cluster and optionally switch to a specific namespace:
+To connect to the cluster, run this command. You can also add a namespace substring to change to a specific namespace:
 
 ```bash
 kube-connect [namespace_substring]

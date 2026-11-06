@@ -1,122 +1,196 @@
 # Longhorn Resource Controls
 
-The Helm release and its defaults are owned by `standup.yml`. Longhorn owns
-the CSI Deployments/DaemonSet, instance-manager Pods, recurring CronJobs,
-engine-image DaemonSets, and share-manager Pods. Do not patch those generated
-objects as a substitute for a durable supported setting.
+`standup.yml` owns the Helm release and its defaults. Longhorn owns these
+generated objects:
+
+- The CSI Deployments/DaemonSet
+- The instance-manager Pods
+- The recurring CronJobs
+- The engine-image DaemonSets
+- The share-manager Pods.
+
+Do not patch these generated objects in place of a durable, supported setting.
 
 ## Declared Budgets
 
-The manager requests 1 CPU / 3Gi memory and is limited to 4 CPU / 8Gi.
-The sizing leaves headroom above the measured seven-day 2.1Gi p95 / 3.8Gi peak.
-Its DaemonSet update strategy allows only one unavailable manager at a time.
+The manager requests 1 CPU / 3Gi memory. Its limit is 4 CPU / 8Gi. This size
+gives headroom above the measured seven-day values (2.1Gi p95 / 3.8Gi peak).
+The DaemonSet update strategy of the manager lets only one manager be
+unavailable at a time.
 
-`defaultSettings.systemManagedCSIComponentsResourceLimits` is a JSON string
-mapping native component names to Kubernetes ResourceRequirements. It covers
-the attacher, provisioner, resizer, snapshotter, CSI plugin, node registrar,
-and liveness probe. Their ephemeral-storage requests/limits are 32Mi / 256Mi.
-The Longhorn 1.12.1 parser accepts Kubernetes ResourceRequirements, including
-ephemeral storage. The manager is not given an arbitrary disk cap here.
+`defaultSettings.systemManagedCSIComponentsResourceLimits` is a JSON string. It
+maps native component names to Kubernetes ResourceRequirements. It covers these
+components:
 
-The correct instance-manager key is `guaranteedInstanceManagerCPU`. The
-previous `guaranteedInstanceManagerCpu` spelling was ignored by the chart.
-The corrected key preserves live percentages: V1 12, V2 31. This is a CPU
-reservation, not a CPU limit. No instance-manager memory cap is imposed.
+- The attacher
+- The provisioner
+- The resizer
+- The snapshotter
+- The CSI plugin
+- The node registrar
+- The liveness probe.
 
-The resource controls leave drain, orphan-data retention, replica counts,
-disk free-space policies and engine versions unchanged.
+Their ephemeral-storage requests/limits are 32Mi / 256Mi. The Longhorn 1.12.1
+parser accepts Kubernetes ResourceRequirements, and these include ephemeral
+storage. This configuration does not give the manager an arbitrary disk limit.
+
+The correct instance-manager key is `guaranteedInstanceManagerCPU`. The chart
+ignored the previous spelling, `guaranteedInstanceManagerCpu`. The corrected key
+keeps the live percentages: V1 12, V2 31. This value is a CPU reservation. It is
+not a CPU limit. The configuration sets no memory limit for the instance manager.
+
+The resource controls do not change these items:
+
+- Drain
+- Orphan-data retention
+- Replica counts
+- Disk free-space policies
+- Engine versions.
 
 ## Attended Failure Recovery
 
-`nodeDownPodDeletionPolicy: do-nothing` disables Longhorn's automatic force
-deletion of Pods after node failure. Affected workloads may stay unavailable
-until an operator intervenes. This is not fencing: Node NotReady, cordoning,
-Pod deletion and watchdog activity do not prove that an old writer stopped.
-Require positive shutdown of the old writer or independent fencing before any
-forced deletion/detachment or replacement-writer recovery. Do not remove
+`nodeDownPodDeletionPolicy: do-nothing` disables the automatic force deletion of
+Pods by Longhorn after a node failure. Affected workloads can stay unavailable
+until an operator takes action.
+
+This policy is not fencing. These events do not prove that an old writer
+stopped:
+
+- Node NotReady
+- A node cordon
+- Pod deletion
+- Watchdog activity.
+
+Before any forced deletion/detachment or replacement-writer recovery, get a
+positive shutdown of the old writer or use independent fencing. Do not remove
 storage finalizers or replica data to bypass a stalled operation.
 
-RWX share-manager fast failover is unchanged and has separate failure semantics;
-this policy does not eliminate every possible dual-writer path. Drain policy
-and orphan-data preservation also remain unchanged. Automatic engine-upgrade
-concurrency is explicitly zero; upgrades are attended, backed up and serial.
+This policy does not change the RWX share-manager fast failover. That failover
+has separate failure semantics. This policy does not remove every possible
+dual-writer path. The drain policy and orphan-data preservation also stay the
+same. Automatic engine-upgrade concurrency is explicitly zero. Engine upgrades
+are attended, backed up, and serial.
 
-For a setting-only rollout, verify the exact current native settings and
-reconcile only the approved saved Helm values at the unchanged chart version.
-Require a ConfigMap-only rendered change and check unrelated native defaults
-for drift before applying. Do not run the full standup
-playbook as a shortcut. Verify the live setting, controller readiness and volume
-health after reconciliation. A rollback changes failure handling again and
-requires an explicit operational decision.
+For a setting-only rollout, do these steps:
+
+1. Verify the exact current native settings.
+2. Prepare to reconcile only the approved saved Helm values at the unchanged
+   chart version.
+3. Before you apply, make sure that the rendered change is ConfigMap-only.
+4. Before you apply, examine the unrelated native defaults for drift.
+5. Apply the reconciliation.
+6. Verify the live setting, the controller readiness, and the volume health.
+
+Do not run the full standup playbook as a shortcut. A rollback changes the
+failure handling again. A rollback requires an explicit operational decision.
 
 ## Unused V2 Engine
 
-V2 is off by default. At the 2026-09-19 audit there were no V2 volumes, no
-block disks, and no engine/replica processes in the three V2 managers. Those
-idle managers reserved 6.138 CPU each and ran SPDK polling loops despite every
-attached volume using V1.
+V2 is off by default. The audit on 2026-09-19 found no V2 volumes, no block
+disks, and no engine/replica processes in the three V2 managers. Each of those
+idle managers reserved 6.138 CPU and ran SPDK polling loops, although every
+attached volume used V1.
 
-Before disabling V2, the play refuses to proceed if any V2 volume exists or
-any V2 instance manager reports engine/replica processes. The checks are skipped
-only before the initial Longhorn CRD installation. Recheck immediately before
-a narrowly staged live setting update; do not create V2 volumes concurrently.
+Before the play disables V2, it does these checks:
 
-For a future intentional V2 deployment, set `longhorn_v2_data_engine: true`
-where both `k3s_cluster` and `k8s` inventory hosts receive it. This enables
-amd64 hugepage/module preparation as well as the Helm setting. Arm64 nodes
-remain excluded. Register suitable block disks and verify prerequisites first.
+- If a V2 volume exists, the play stops.
+- If a V2 instance manager reports engine/replica processes, the play stops.
 
-Disabling V2 removes unused V2 managers, but does not release the host's
-existing hugepage reservation or remove kernel module configuration. This
-change deliberately leaves those host settings intact.
+The play skips these checks only before the initial Longhorn CRD installation.
+Do these checks again immediately before a narrowly staged live setting update.
+Do not create V2 volumes at the same time.
+
+For a future intentional V2 deployment, do these steps:
+
+1. Register suitable block disks.
+2. Verify the prerequisites.
+3. Set `longhorn_v2_data_engine: true` where both `k3s_cluster` and `k8s`
+   inventory hosts receive it.
+
+This setting enables the amd64 hugepage/module preparation and the Helm setting.
+Arm64 nodes stay excluded.
+
+When you disable V2, the unused V2 managers are removed. But the host keeps its
+existing hugepage reservation and its kernel module configuration. This change
+intentionally does not change those host settings.
 
 ## Staged Online Rollout
 
-Do not run the whole playbook as a shorthand for a resource-only maintenance
-step: it can update the CLI, labels, secrets, chart defaults, CSI components,
-and ingress configuration. A full Helm update can start the manager rollout,
-CSI restarts, and V2 removal concurrently. Keep the deployed chart version
-fixed and compare protected saved release values without printing credentials.
+CAUTION: Do not run the whole playbook as a shorthand for a resource-only
+maintenance step. The playbook can update the CLI, labels, secrets, chart
+defaults, CSI components, and ingress configuration.
 
-1. Record attached volume health, RW replica counts, active rebuilds, manager
-   identities, current settings, and CSI readiness. Require all attached volumes
-   healthy with three RW replicas; preserve detached recovery volumes.
-2. Verify V2 remains unused. Set only `v2-data-engine=false` through its native
-   setting. Wait for unused V2 managers to disappear while V1 managers and all
-   attached volumes remain healthy. Never force-delete manager Pods.
-3. Roll manager resources with `maxUnavailable=1`. Wait for every manager to
-   have the declared resources and be Ready before the next stage.
-4. Apply the native CSI resource setting. This restarts affected CSI components;
-   provisioning, snapshots, expansion, and attach/detach operations may pause.
-   Existing mounted volumes remain usable. Do not run workload relocations or
-   node maintenance concurrently. Verify actual container resources and readiness.
-5. Recheck all attached volumes and replicas, CSI readiness, application I/O,
-   restart/OOM changes and memory/CPU metrics. Reconcile the canonical Helm values
-   so future Ansible runs preserve the final native settings.
+A full Helm update can start the manager rollout, the CSI restarts, and the V2
+removal at the same time. Keep the deployed chart version fixed. Compare the
+protected saved release values. Do not print credentials.
 
-Stop at any degraded volume, failed rollout, unexpected manager removal, or
-resource OOM. Retain the previous values and settings for a narrow rollback.
-Do not change failure timeouts, force-detach volumes, delete replica data,
-upgrade engines, or clean up referenced engine images to make a rollout finish.
+1. Record these items:
+   - Attached volume health
+   - RW replica counts
+   - Active rebuilds
+   - Manager identities
+   - Current settings
+   - CSI readiness.
+
+   Make sure that all attached volumes are healthy and have three RW replicas.
+   Keep the detached recovery volumes.
+2. Verify that V2 is still unused. Set only `v2-data-engine=false` through its
+   native setting. Wait until the unused V2 managers disappear. Make sure that
+   the V1 managers and all attached volumes stay healthy. Do not force-delete
+   manager Pods.
+3. Roll the manager resources with `maxUnavailable=1`. Wait until every manager
+   has the declared resources and is Ready. Then go to the next stage.
+4. Apply the native CSI resource setting. This setting restarts the affected CSI
+   components. Provisioning, snapshots, expansion, and attach/detach operations
+   can pause. Existing mounted volumes stay usable. Do not do workload
+   relocations or node maintenance at the same time. Verify the actual container
+   resources and readiness.
+5. Examine again all attached volumes and replicas, CSI readiness, application
+   I/O, restart/OOM changes, and memory/CPU metrics. Reconcile the canonical
+   Helm values so that future Ansible runs keep the final native settings.
+
+Stop if one of these conditions occurs:
+
+- A volume is degraded.
+- A rollout fails.
+- A manager is removed unexpectedly.
+- A resource OOM occurs.
+
+Keep the previous values and settings for a narrow rollback.
+
+Do not do these actions to make a rollout finish:
+
+- Change failure timeouts.
+- Force-detach volumes.
+- Delete replica data.
+- Upgrade engines.
+- Clean up referenced engine images.
 
 ## Explicit Gaps
 
-Longhorn 1.12.1 exposes no resource values for the manager's pre-pull sidecar,
-UI, driver deployer/init container, generated engine-image/share-manager Pods,
-or recurring-job containers. The RecurringJob and InstanceManager CRDs expose
-no generic resource requirements. Engine and replica processes share their
-instance-manager container. Blanket LimitRanges can unexpectedly cap active
-storage processes and are not used. These gaps need an explicitly supported
-extension or upstream change, not hidden live-only patches.
+Longhorn 1.12.1 gives no resource values for these items:
 
-All six installed engine-image generations still had references at audit time.
-They must not be deleted merely because the manager/chart version is newer.
+- The pre-pull sidecar of the manager
+- The UI
+- The driver deployer/init container
+- The generated engine-image/share-manager Pods
+- The recurring-job containers.
+
+The RecurringJob and InstanceManager CRDs give no generic resource requirements.
+Engine and replica processes share their instance-manager container. Blanket
+LimitRanges can unexpectedly limit active storage processes. This configuration
+does not use them. To close these gaps, use an explicitly supported extension or
+an upstream change. Do not use hidden live-only patches.
+
+At audit time, all six installed engine-image generations still had references.
+Do not delete them only because the manager/chart version is newer.
 
 ## Verification
 
-Run `python -m unittest discover -s playbooks/09-longhorn/tests -v` from the
-core repository. Set `LONGHORN_CHART_PATH` to an unpacked deployed-version chart
-to include native setting serialization and manager DaemonSet render checks.
+From the core repository, run
+`python -m unittest discover -s playbooks/09-longhorn/tests -v`. To include the
+native setting serialization checks and the manager DaemonSet render checks, set
+`LONGHORN_CHART_PATH` to an unpacked deployed-version chart.
 
 References: [Longhorn settings](https://longhorn.io/docs/1.12.1/references/settings/),
 [the 1.12.1 settings implementation](https://github.com/longhorn/longhorn-manager/blob/v1.12.1/types/setting.go).
