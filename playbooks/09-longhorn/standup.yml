@@ -358,6 +358,20 @@
           to all be set.
       when: (longhorn.auth.method | default('none')) == 'oauth2_proxy'
 
+    # The Helm task below runs with no_log, so it hides the chart guard
+    # message. Check the same rule here with a readable message.
+    - name: Validate Longhorn trusted_ips against the auth method
+      ansible.builtin.assert:
+        that:
+          - >-
+            (longhorn.auth.method | default('none')) == 'oauth2_proxy' or
+            (longhorn.trusted_ips | default([], true) | map('trim') | select('search', '/0$') | list | length == 0)
+        fail_msg: >-
+          longhorn.trusted_ips contains a world CIDR (0.0.0.0/0 or ::/0), but
+          longhorn.auth.method is not 'oauth2_proxy'. This publishes the
+          Longhorn UI without authentication. Set auth.method to
+          'oauth2_proxy' or use LAN CIDRs.
+
     - name: Deploy Longhorn configuration via Helm
       kubernetes.core.helm:
         name: "{{ longhorn.release_name_prefix }}-post"
