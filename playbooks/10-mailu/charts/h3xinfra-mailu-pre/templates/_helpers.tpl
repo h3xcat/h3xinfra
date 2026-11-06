@@ -60,3 +60,27 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Pod selector of the Mailu front Deployment (upstream chart labels).
+*/}}
+{{- define "h3xinfra-mailu-pre.frontSelector" -}}
+app.kubernetes.io/component: front
+app.kubernetes.io/instance: {{ .Values.mailuInstanceName | default "mailu" }}
+app.kubernetes.io/name: mailu
+{{- end }}
+
+{{/*
+Source CIDRs for the mail client ports (IMAPS, POP3S, ManageSieve), as a
+YAML list. The LoadBalancer loadBalancerSourceRanges (external-svc.yaml) and
+the Cilium policy fromCIDRSet rules (network-policy.yaml) both use this list.
+*/}}
+{{- define "h3xinfra-mailu-pre.clientSourceRanges" -}}
+- 10.0.0.0/8
+- 172.16.0.0/12
+- 192.168.0.0/16
+- fc00::/7
+{{- range .Values.networkPolicy.allowedIPv6Networks }}
+- {{ . | quote }}
+{{- end }}
+{{- end }}

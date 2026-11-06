@@ -1,9 +1,25 @@
+{{- /*
+Two LoadBalancer Services share the one pool address (MetalLB
+allow-shared-ip; sharing with externalTrafficPolicy Local needs the same
+selector). loadBalancerSourceRanges applies to all ports of a Service, so
+the client ports have their own Service.
+- SMTP (25) and submission (465) accept all sources. Other mail servers
+  deliver on 25. The Cilium policy also allows 465 from all sources. In-cluster
+  senders can submit on 465 through the public address, and the source
+  address of that hairpin traffic is not known.
+- IMAPS, POP3S and ManageSieve accept only the clientSourceRanges CIDRs.
+  The Cilium policy in network-policy.yaml uses the same helper.
+  The clients Service gets no NodePorts, because loadBalancerSourceRanges
+  does not apply to NodePorts. MetalLB L2 does not use NodePorts.
+Only the first Service carries the external-dns annotations.
+*/}}
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "h3xinfra-mailu-pre.fullname" . }}-external
   annotations:
     metallb.universe.tf/address-pool: {{ include "h3xinfra-mailu-pre.fullname" . }}-pool
+    metallb.universe.tf/allow-shared-ip: {{ include "h3xinfra-mailu-pre.fullname" . }}-external
     external-dns.alpha.kubernetes.io/hostname: {{ .Values.hostname }}
     external-dns.alpha.kubernetes.io/target: "{{ .Values.publicAddresses.ipv4 }},{{ .Values.publicAddresses.ipv6 }}"
   labels:
@@ -15,14 +31,6 @@ spec:
     - IPv6
   ipFamilyPolicy: PreferDualStack
   ports:
-  - name: pop3s
-    port: 995
-    protocol: TCP
-    targetPort: 995
-  - name: imaps
-    port: 993
-    protocol: TCP
-    targetPort: 993
   - name: smtp
     port: 25
     protocol: TCP
@@ -31,12 +39,39 @@ spec:
     port: 465
     protocol: TCP
     targetPort: 465
+  selector:
+    {{- include "h3xinfra-mailu-pre.frontSelector" . | nindent 4 }}
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "h3xinfra-mailu-pre.fullname" . }}-external-clients
+  annotations:
+    metallb.universe.tf/address-pool: {{ include "h3xinfra-mailu-pre.fullname" . }}-pool
+    metallb.universe.tf/allow-shared-ip: {{ include "h3xinfra-mailu-pre.fullname" . }}-external
+spec:
+  allocateLoadBalancerNodePorts: false
+  externalTrafficPolicy: Local
+  ipFamilies:
+    - IPv4
+    - IPv6
+  ipFamilyPolicy: PreferDualStack
+  loadBalancerSourceRanges:
+    {{- include "h3xinfra-mailu-pre.clientSourceRanges" . | nindent 4 }}
+  ports:
+  - name: pop3s
+    port: 995
+    protocol: TCP
+    targetPort: 995
+  - name: imaps
+    port: 993
+    protocol: TCP
+    targetPort: 993
   - name: sieve
     port: 4190
     protocol: TCP
     targetPort: 4190
   selector:
-    app.kubernetes.io/component: front
-    app.kubernetes.io/instance: {{ .Values.mailuInstanceName | default "mailu" }}
-    app.kubernetes.io/name: mailu
+    {{- include "h3xinfra-mailu-pre.frontSelector" . | nindent 4 }}
   type: LoadBalancer
