@@ -349,6 +349,20 @@
       command: update-grub
       when: grub_updated.changed and grub_exists.stat.exists
 
+    # Write the C-state reason into /etc/default/grub, directly above the
+    # value, so a person who edits the file on the node can see why the value
+    # is set. The fixed regexp updates the comment in place on reruns. A
+    # comment does not change the generated grub.cfg, so this task does not
+    # trigger update-grub.
+    - name: Document kernel cmdline rationale in /etc/default/grub
+      ansible.builtin.lineinfile:
+        path: /etc/default/grub
+        regexp: '^# h3xinfra: GRUB_CMDLINE_LINUX '
+        line: '# h3xinfra: GRUB_CMDLINE_LINUX caps CPU C-states to C1 (intel_idle.max_cstate=1 processor.max_cstate=1) to prevent silent freezes on some Intel SoCs. Source: h3xinfra/playbooks/00-prep/standup.yml'
+        insertbefore: '^GRUB_CMDLINE_LINUX='
+        firstmatch: true
+      when: grub_exists.stat.exists
+
     # Strip any legacy `hugepages=N` argument from the Pi kernel cmdline.
     # cmdline.txt is a single space-separated line; the replace below removes
     # the token plus any preceding whitespace, leaving the rest intact.
