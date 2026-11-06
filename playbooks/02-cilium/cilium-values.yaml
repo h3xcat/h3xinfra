@@ -85,7 +85,9 @@ enableIPv6Masquerade: false
 # Use eBPF-based masquerade for IPv4 for performance
 bpf:
   masquerade: true
-  disableExternalIPMitigation: true
+  # Keep the CVE-2020-8554 mitigation (the chart default). No Service in this
+  # stack sets spec.externalIPs. Set true only for a Service that needs them.
+  disableExternalIPMitigation: false
 
 kubeProxyReplacement: true
 
