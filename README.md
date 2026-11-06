@@ -1,27 +1,27 @@
 # H3x Infra Kubernetes Cluster
 
-A production-ready dual-stack (IPv4/IPv6) K3s cluster deployment and management project using Ansible automation.
+This project deploys and manages a production-ready dual-stack (IPv4/IPv6) K3s cluster with Ansible automation.
 
 ## Overview
 
-This project provides Ansible playbooks and configurations to deploy and manage a 3-node K3s Kubernetes cluster with:
+This project gives Ansible playbooks and configurations to deploy and manage a 3-node K3s Kubernetes cluster. The cluster has these items:
 
 - Dual-stack IPv4/IPv6 networking
 - Cilium CNI for networking with eBPF
 - MetalLB for load balancing
-- Cert-Manager for automated TLS certificates
-- External-DNS for automated DNS management
+- Cert-Manager for automatic TLS certificates
+- External-DNS for automatic DNS management
 - Envoy Gateway (Gateway API) for HTTP routing, TLS termination, and OIDC
 - Longhorn for persistent storage with CIFS backup
 - Mailu for self-hosted email services
 - Keycloak for identity and access management
 - Argo CD for GitOps delivery with native Keycloak SSO (opt-in)
-- Automated server preparation and updates
+- Automatic server preparation and updates
 
 ## Documentation
 
 - [Architecture](docs/architecture.md) - Detailed cluster architecture
-- [Operations](docs/operations.md) - Operational procedures
+- [Operations](docs/operations.md) - Operation procedures
 
 
 ## Project Structure
@@ -60,16 +60,26 @@ This project provides Ansible playbooks and configurations to deploy and manage 
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` validates every pull request and push to `main`
-without a cluster: `renovate-config-validator`, yamllint, `ansible-playbook
---syntax-check` against `inventory/production`, `helm lint`/`template` of the
-charts under `playbooks/*/charts`, and `terraform validate` for
-`playbooks/10-keycloak/terraform`. When the `H3XINFRA_PRIVATE_TOKEN` secret
-(fine-grained PAT, *Contents: read* on `h3xcat/h3xinfra-private`) is present,
-the full test suite from that repo's `tests/` directory runs instead (chart
-renders with production-shaped values, kubeconform, artifact existence checks,
-Renovate config invariants). Either way the single check to watch is `ci-ok`;
-Renovate's automerge waits for it. Tool versions are `env:` pins with
+`.github/workflows/ci.yml` validates every pull request and push to `main`.
+It does not need a cluster. It runs these checks:
+
+- `renovate-config-validator`
+- yamllint
+- `ansible-playbook --syntax-check` against `inventory/production`
+- `helm lint`/`template` of the charts under `playbooks/*/charts`
+- `terraform validate` for `playbooks/10-keycloak/terraform`
+
+The `H3XINFRA_PRIVATE_TOKEN` secret is a fine-grained PAT with *Contents: read* on `h3xcat/h3xinfra-private`.
+If this secret is present, the full test suite from the `tests/` directory of that repo runs instead.
+That suite includes these checks:
+
+- Chart renders with production-shaped values
+- kubeconform
+- Artifact existence checks
+- Renovate config invariants
+
+In both cases, the single check to monitor is `ci-ok`.
+The Renovate automerge waits for this check. The tool versions are `env:` pins with
 `# renovate:` markers at the top of the workflow.
 
 ## Maintenance
@@ -77,40 +87,40 @@ Renovate's automerge waits for it. Tool versions are `env:` pins with
 See the [Argo CD layer guide](playbooks/10-argocd/README.md) for Keycloak client
 configuration, deployment, access controls and recovery.
 
-See [Operations Guide](docs/operations.md) for detailed maintenance procedures.
+See the [Operations Guide](docs/operations.md) for detailed maintenance procedures.
 
 ## Requirements
 
-- SSH access to all nodes with user 'ansible'
-- Ansible installed on control node
+- SSH access to all nodes with the user 'ansible'
+- Ansible installed on the control node
 - kubectl and Helm for Kubernetes management
-- Properly configured inventory in `inventory/production/` (see `inventory/README.md`)
-- DNS provider API token (e.g., Cloudflare) for automated DNS management
-- Ansible Vault password file for encrypted secrets
+- A correctly configured inventory in `inventory/production/` (see `inventory/README.md`)
+- A DNS provider API token (for example, Cloudflare) for automatic DNS management
+- An Ansible Vault password file for encrypted secrets
 
 ## Development Environment
 
-This project includes a complete devcontainer setup for a consistent development experience.
+This project includes a complete devcontainer setup. The devcontainer gives the same development environment on all machines.
 
 ### Using the Devcontainer
 
-The devcontainer provides:
+The devcontainer gives these items:
 - **Ubuntu 22.04 (jammy)** base environment
 - **Pre-installed tools**: Ansible, kubectl, Helm, Docker CLI
 - **Integrated scripts**: All `bin/` scripts are available in PATH
 - **SSH key mounting**: Your host SSH keys are available at `/tmp/host-ssh`
-- **Persistent history**: Bash history is preserved across container rebuilds
+- **Persistent history**: The Bash history stays after a container rebuild
 
 ### Setup
 
-1. **Prerequisites**: Docker and VS Code with the Dev Containers extension
-2. **Open in container**: Use VS Code's "Reopen in Container" command
-3. **SSH setup**: The container automatically mounts your SSH keys from the host
-4. **Environment**: All infrastructure management commands are immediately available
+1. **Prerequisites**: Install Docker and VS Code with the Dev Containers extension.
+2. **Open in container**: In VS Code, use the "Reopen in Container" command.
+3. **SSH setup**: The container automatically mounts your SSH keys from the host.
+4. **Environment**: All infrastructure management commands are available immediately.
 
 ### Available Commands
 
-Once in the devcontainer, you can use these commands directly:
+In the devcontainer, you can use these commands directly:
 ```bash
 h3xinfra-deploy-stack      # Deploy complete infrastructure
 h3xinfra-update-servers    # Update all cluster nodes
@@ -121,8 +131,8 @@ h3xinfra-generate-token   # Generate new K3s token
 
 ## Quick Start
 
-1. **Configure Inventory**: Set up your inventory in `inventory/production/` (see `inventory/README.md` for structure details)
-2. **Set up secrets**: Configure encrypted variables in the `secrets/` directory  
+1. **Configure Inventory**: Set up your inventory in `inventory/production/`. For the structure, see `inventory/README.md`.
+2. **Set up secrets**: Configure the encrypted variables in the `secrets/` directory.
 3. **Deploy the complete stack**:
    ```bash
    h3xinfra-deploy-stack

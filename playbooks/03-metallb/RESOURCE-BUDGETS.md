@@ -1,39 +1,51 @@
 # MetalLB Resource Budgets
 
-`metallb-values.yaml` uses native chart settings for the controller, speaker,
-and active FRR-K8s backend. All eight rendered regular containers receive CPU,
-memory, and ephemeral-storage requests and limits. Images, networking,
-privileges, replicas, and rollout strategy remain unchanged. Both existing
+`metallb-values.yaml` uses native chart settings for the controller, the speaker,
+and the active FRR-K8s backend. All eight rendered regular containers receive
+CPU, memory, and ephemeral-storage requests and limits. Images, networking,
+privileges, replicas, and rollout strategy do not change. Both existing
 DaemonSets already roll with an effective `maxUnavailable: 1`.
 
 ## Upstream Limitations
 
-MetalLB 0.16.1's bundled FRR-K8s chart does not expose resource settings for
-these four init containers:
+The FRR-K8s chart that MetalLB 0.16.1 bundles does not give resource settings
+for these four init containers:
 
 - `cp-frr-files`
 - `cp-reloader`
 - `cp-metrics`
 - `cp-frr-status`
 
-They remain an explicit unsupported gap, covered by an exact-version render
-test. The similarly named `speaker.initContainers` values belong to the
-disabled legacy FRR backend and do not affect these containers. No ineffective
-values or production post-renderer are added to conceal that gap.
+These containers stay an explicit unsupported gap. An exact-version render test
+covers this gap. The `speaker.initContainers` values have a similar name. But
+they belong to the disabled legacy FRR backend, and they do not affect these
+containers. This configuration adds no ineffective values and no production
+post-renderer to conceal that gap.
 
-FRR-K8s's status-cleaner Deployment shares `frr-k8s.frrk8s.resources` with its
-controller. It inherits the larger controller budget; an independent
-status-cleaner budget is not supported by this chart.
+The status-cleaner Deployment of FRR-K8s shares `frr-k8s.frrk8s.resources` with
+its controller. It inherits the larger controller budget. This chart does not
+support an independent status-cleaner budget.
 
-For a resource-only maintenance update, pin the deployed chart and use
-`--reuse-values` with only the seven resource paths declared in this file.
-Compare a server dry run without exposing release values or Secret data.
+For a resource-only maintenance update, do these steps:
+
+1. Pin the deployed chart.
+2. Use `--reuse-values` with only the seven resource paths declared in this
+   file.
+3. Compare a server dry run. Do not expose release values or Secret data.
+4. Reject non-resource differences. The only exception is the `frr.conf`
+   difference that follows.
+
 The observed Helm rendering difference in the FRR startup ConfigMap is exactly
-one additional terminal LF in `frr.conf`; any exception must verify unchanged
-line content, a one-byte increase, and `new == old + "\n"`. Reject other
-non-resource differences.
+one more terminal LF in `frr.conf`. To accept this exception, verify these
+conditions:
 
-Focused offline tests:
+- The line content is unchanged.
+- The increase is one byte.
+- `new == old + "\n"`.
+
+Reject other non-resource differences.
+
+Run the focused offline tests:
 
 ```bash
 helm pull metallb/metallb --version 0.16.1 --untar --untardir /tmp/network-resource-charts
