@@ -26,8 +26,41 @@ database:
   port: 5432
   database: "keycloak"
   credentialsSecretName: ""
+  # CNPG Cluster name. Its pods carry the `cnpg.io/cluster: <name>` label.
+  # The network policy needs it; empty skips the database policy.
+  clusterName: ""
 
 resources: {}
+
+# Sources that can set X-Forwarded-* headers (Keycloak
+# proxy-trusted-addresses). Keycloak ignores these headers from all other
+# addresses. Set it to the pod CIDRs: the Envoy pods connect from there.
+# Empty keeps the upstream default (trust every source).
+proxyTrustedAddresses: []
+
+# CiliumNetworkPolicy for the Keycloak pods and the CNPG database pods.
+# When enabled, the chart also turns off the NetworkPolicy that the
+# Keycloak Operator renders by default: that policy allows the HTTP and
+# management ports from every source, and Cilium adds allow rules together,
+# so it would cancel the narrower rules here.
+networkPolicy:
+  enabled: false
+  # Shared Envoy Gateway. Only its data-plane pods can reach the HTTP port.
+  gateway:
+    name: ""
+    namespace: ""
+  # Namespace of the CloudNativePG operator (instance manager status port).
+  cnpgOperatorNamespace: "cnpg-system"
+  # Namespace of the Prometheus that scrapes the CNPG metrics port. Empty
+  # skips the rule.
+  prometheusNamespace: ""
+  # Egress rules are a separate step: enable them after you compare the
+  # live flows (Hubble) with the allow list in templates/networkpolicy.yaml.
+  egress:
+    enabled: false
+    # TCP ports of the realm SMTP server (world or in-cluster). Empty: no
+    # SMTP egress.
+    smtpPorts: []
 
 # Extra Keycloak --<option>=<value> args. List of {name, value} or
 # {name, secret: {name, key}} dicts; passed verbatim into the CR.
