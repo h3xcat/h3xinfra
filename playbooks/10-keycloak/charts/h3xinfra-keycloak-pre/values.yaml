@@ -20,6 +20,10 @@ postgres:
     repository: "ghcr.io/cloudnative-pg/postgresql"
     tag: "18.6"
   instances: 2
+  # CNPG pod anti-affinity across nodes (topologyKey kubernetes.io/hostname).
+  # `required` keeps the primary and the standby on different nodes.
+  # `preferred` lets them share a node when the scheduler finds no other node.
+  podAntiAffinityType: "required"
   database: "keycloak"
   username: "keycloak"
   password: ""
