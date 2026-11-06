@@ -108,6 +108,10 @@ keycloak:
     - "https://chat.app.example.com"
 ```
 
+If you do not set `web_origins`, a new client gets no CORS origins. To allow
+the origins of all `redirect_uris`, set `web_origins: ["+"]`. Terraform
+rejects `"*"`.
+
 Re-run `ansible-playbook playbooks/10-keycloak/standup.yml`. Terraform will
 converge only the delta. Consumers can then use:
 
