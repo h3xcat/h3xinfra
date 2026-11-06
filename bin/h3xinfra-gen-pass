@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import random
+import secrets
 import string
 import subprocess
 import os
@@ -9,7 +9,8 @@ import sys
 def generate_password(length=30):
     """Generate a random alphanumeric password with uppercase and lowercase letters and digits."""
     characters = string.ascii_letters + string.digits  # Letters (a-z, A-Z) and digits (0-9)
-    password = ''.join(random.choice(characters) for _ in range(length))
+    # secrets uses the operating system CSPRNG; random is predictable.
+    password = ''.join(secrets.choice(characters) for _ in range(length))
     return password
 
 def encrypt_with_ansible_vault(password):
