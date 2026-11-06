@@ -237,6 +237,32 @@ chmod 700 ~/.ssh
 chmod 600 ~/.ssh/id_*
 ```
 
+#### Host Key Changed
+
+Ansible checks node host keys against `~/.ssh/h3xinfra_known_hosts`. SSH adds the key of a new node on the first connection. SSH stops the connection when the key of a known node changes.
+
+To keep the keys after a devcontainer rebuild, do these steps:
+
+1. On the node console, show the fingerprint of the host key: `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`.
+2. In the devcontainer, show the fingerprint that SSH recorded for the node: `ssh-keygen -F <ansible_host> -l -f ~/.ssh/h3xinfra_known_hosts`.
+3. If the two fingerprints are not the same, stop. Do not copy the file.
+4. Do steps 1 to 3 for each node.
+5. Copy `~/.ssh/h3xinfra_known_hosts` to `/h3xinfra/state/secrets/ssh_known_hosts`.
+
+`h3xinfra-setup-ssh` installs that copy when you create or rebuild the devcontainer. A container restart does not install it again. After you change the copy on the share, run `bash "$H3XINFRA_FOLDER/scripts/h3xinfra-setup-ssh"`.
+
+If you reinstall a node, do these steps:
+
+1. On the node console, show the fingerprint of the host key: `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`.
+2. Remove the old entry: `ssh-keygen -f ~/.ssh/h3xinfra_known_hosts -R <ansible_host>`.
+3. Get the new key: `ssh-keyscan -t ed25519 <ansible_host> > /tmp/new_host_key`.
+4. Show the fingerprint of the new key: `ssh-keygen -lf /tmp/new_host_key`.
+5. If the two fingerprints are not the same, stop. Do not connect to the node.
+6. Add the new key: `cat /tmp/new_host_key >> ~/.ssh/h3xinfra_known_hosts`.
+7. If you keep a copy on the secrets share, copy the updated file to `/h3xinfra/state/secrets/ssh_known_hosts`.
+
+Do not set `host_key_checking=False` to bypass this error. If you do, Ansible can send credentials to a host that is not your node.
+
 #### Missing Environment Variables
 ```bash
 # Check environment setup
