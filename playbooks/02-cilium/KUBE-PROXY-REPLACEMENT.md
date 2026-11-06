@@ -32,6 +32,11 @@ agent nodes only. K3s servers that run the API server do not start it.
 the K3s configuration disables kube-proxy and `cilium.k8s_service_host` is
 not set.
 
+The check reads only the inventory. It does not make sure that Cilium in the
+cluster uses the address. `playbooks/stack-standup.yml` runs `01-k3s` before
+`02-cilium`. Thus, do not set the address and disable kube-proxy in the same
+change. Do the procedure steps in sequence.
+
 ## Procedure
 
 1. Choose the API server address.

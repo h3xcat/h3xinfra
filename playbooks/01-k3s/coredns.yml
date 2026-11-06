@@ -16,6 +16,9 @@
 #
 # stack-standup.yml runs it after 02-cilium: CoreDNS pods do not become ready
 # without the CNI, so 01-k3s/standup.yml does not import it.
+# If the new replicas do not become ready in 300 seconds, this play fails and
+# stack-standup.yml stops before 03-metallb. DNS continues to work with the
+# existing pod. Make sure that a second node can schedule a CoreDNS pod.
 # There is no teardown playbook: K3s owns CoreDNS. To go back to the K3s
 # default, set coredns.replicas to 1 in the inventory and run this playbook.
 # The budget does not block a drain when only one replica is set.

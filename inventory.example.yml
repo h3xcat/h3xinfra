@@ -114,6 +114,16 @@ all:
     cilium:
       namespace: "kube-system"
       release_name_prefix: "homeinfra-cilium"
+      # Optional. API server address for the Cilium agents and the operator.
+      # It must not use a Service. Set it before you disable the K3s
+      # kube-proxy: playbooks/02-cilium/KUBE-PROXY-REPLACEMENT.md.
+      # k8s_service_host: "k8s-api.example.com"
+      # k8s_service_port: 6443
+
+    # Optional. Number of K3s CoreDNS replicas (default 2). The replicas run
+    # on different nodes. Set 1 to go back to the K3s default.
+    # coredns:
+    #   replicas: 2
     
     metallb:
       namespace: "metallb-system"
@@ -160,6 +170,8 @@ all:
       # Optional. Hostnames of the web UI on the shared Gateway. If you do not
       # set it, the web UI uses all dns_names. Set it when a name in dns_names
       # is only for mail protocols (its DNS goes to the mail load balancer).
+      # If you use the OIDC gate, the OIDC host (oauth2.hostname, or the first
+      # name in dns_names) must be in this list. If not, the render fails.
       # web_hostnames:
       # - "mail.example.com"
       secret_key: !vault |
