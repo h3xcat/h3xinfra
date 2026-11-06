@@ -98,6 +98,10 @@
         state: restarted
       when: journald_conf_changed.changed
 
+    # Runs after the needrestart guard at the top of this play.
+    - name: Manage unattended-upgrades
+      ansible.builtin.import_tasks: tasks/unattended-upgrades.yml
+
     - name: Configure modprobe modules
       modprobe:
         name: "{{ item }}"
