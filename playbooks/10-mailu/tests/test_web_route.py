@@ -60,8 +60,18 @@ class MailuWebRouteTests(unittest.TestCase):
         self.assertEqual(certificate["spec"]["dnsNames"], DNS_NAMES)
 
     def test_oidc_host_outside_the_routes_fails(self):
-        with self.assertRaisesRegex(AssertionError, "oidcHostname"):
+        with self.assertRaisesRegex(AssertionError, "OIDC callback host"):
             render(hostnames=["mail.app.example.test"])
+
+    def test_common_name_callback_outside_the_routes_fails(self):
+        with self.assertRaisesRegex(AssertionError, "OIDC callback host"):
+            render(hostnames=["mail.example.test"], oidcHostname="")
+
+    def test_common_name_callback_inside_the_routes_renders(self):
+        docs = render(hostnames=["mail.app.example.test"], oidcHostname="")
+        policy = next(d for d in docs if d["kind"] == "SecurityPolicy")
+        self.assertEqual(policy["spec"]["oidc"]["redirectURL"],
+                         "https://mail.app.example.test/oauth2/callback")
 
     def test_standup_passes_inventory_web_hostnames(self):
         for play in yaml.safe_load((LAYER / "standup.yml").read_text()):

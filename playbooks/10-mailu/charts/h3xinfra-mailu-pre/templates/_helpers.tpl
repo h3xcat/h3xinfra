@@ -34,13 +34,15 @@ Create chart name and version as used by the chart label.
 Hostnames that the web HTTPRoutes attach to the shared Gateway, as a JSON
 list: gatewayRoute.hostnames, or certificate.dnsNames when it is empty.
 When the OIDC gate is on, the OIDC host must be in the list. If it is not,
-the OIDC callback does not go to the gated route.
+the OIDC callback does not go to the gated route. The OIDC host is
+gatewayRoute.oidcHostname, or certificate.commonName when it is empty. This is
+the same host that securitypolicy.yaml uses for the redirect URL.
 */}}
 {{- define "h3xinfra-mailu-pre.webHostnames" -}}
 {{- $hosts := .Values.gatewayRoute.hostnames | default .Values.certificate.dnsNames | default list -}}
-{{- $oidcHost := .Values.gatewayRoute.oidcHostname -}}
+{{- $oidcHost := .Values.gatewayRoute.oidcHostname | default .Values.certificate.commonName -}}
 {{- if and .Values.gatewayRoute.oidc.enabled $oidcHost (not (has $oidcHost $hosts)) -}}
-{{- fail (printf "gatewayRoute.oidcHostname %q must be one of the web route hostnames %v" $oidcHost $hosts) -}}
+{{- fail (printf "OIDC callback host %q (gatewayRoute.oidcHostname or certificate.commonName) must be one of the web route hostnames %v" $oidcHost $hosts) -}}
 {{- end -}}
 {{- toJson $hosts -}}
 {{- end }}
