@@ -193,6 +193,10 @@
                 hostname: "{{ gateway.listeners.httpsApp.hostname }}"
               httpsApex:
                 hostname: "{{ gateway.listeners.httpsApex.hostname }}"
+            # Removes client-supplied proxy headers on every listener. Set
+            # the inventory key to false to roll back.
+            clientTrafficPolicy:
+              enabled: "{{ gateway.client_traffic_policy.enabled | default(true) }}"
         set_values:
           - value: "wildcardCertificate.dnsNames={{ gateway.dns_names | to_json }}"
             value_type: json
@@ -214,3 +218,20 @@
         and (gw_status.resources[0].status.conditions | default([])
              | selectattr('type', 'equalto', 'Programmed')
              | selectattr('status', 'equalto', 'True') | list | length) > 0
+
+    - name: Wait for the ClientTrafficPolicy to be accepted
+      kubernetes.core.k8s_info:
+        api_version: gateway.envoyproxy.io/v1alpha1
+        kind: ClientTrafficPolicy
+        namespace: "{{ gateway.namespace }}"
+        name: "{{ gateway.release_name_prefix }}-pre-shared"
+      register: gw_ctp_status
+      retries: 30
+      delay: 10
+      until: >-
+        gw_ctp_status.resources | length > 0
+        and (gw_ctp_status.resources[0].status.ancestors | default([])
+             | map(attribute='conditions', default=[]) | flatten
+             | selectattr('type', 'equalto', 'Accepted')
+             | map(attribute='status') | unique | list) == ['True']
+      when: gateway.client_traffic_policy.enabled | default(true) | bool
