@@ -1,0 +1,87 @@
+---
+# kube-apiserver audit policy. apiserver-audit.yml copies it to
+# /etc/rancher/k3s/audit-policy.yaml on every server.
+#
+# The first rule that matches a request sets its level. The policy:
+#   - drops high-volume requests that have no audit value (probes, lease
+#     renewals, events, and reads by kubelets and control-plane components),
+#   - never records request or response bodies for objects that can hold
+#     credentials (Metadata level only),
+#   - records the request body of RBAC changes and of workload writes, so the
+#     log shows the granted rules and the submitted pod specs,
+#   - records everything else at Metadata level (who, what, when, result).
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - RequestReceived
+rules:
+  # Health, readiness, and version probes.
+  - level: None
+    nonResourceURLs:
+      - /healthz*
+      - /livez*
+      - /readyz*
+      - /version
+      - /metrics
+
+  # Node heartbeats and leader election renew leases several times a second.
+  - level: None
+    verbs: [get, update, watch]
+    resources:
+      - group: coordination.k8s.io
+        resources: [leases]
+
+  # Events are a separate, short-lived record.
+  - level: None
+    resources:
+      - group: ""
+        resources: [events]
+      - group: events.k8s.io
+        resources: [events]
+
+  # Objects and reviews that carry secret values or tokens: metadata only.
+  # This rule must stay above every rule that records bodies.
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: [secrets, configmaps, serviceaccounts/token]
+      - group: authentication.k8s.io
+        resources: [tokenreviews]
+      - group: certificates.k8s.io
+        resources: [certificatesigningrequests]
+
+  # Reads by the kubelets and the built-in control-plane components. They are
+  # frequent, they write to the same disk as etcd, and they show no user
+  # action. This rule is below the credential rule, so their Secret and
+  # ConfigMap reads are still recorded.
+  - level: None
+    verbs: [get, list, watch]
+    userGroups: ["system:nodes"]
+  - level: None
+    verbs: [get, list, watch]
+    users:
+      - system:kube-controller-manager
+      - system:kube-scheduler
+      - system:apiserver
+
+  # RBAC changes: record the request and the stored object.
+  - level: RequestResponse
+    verbs: [create, update, patch, delete, deletecollection]
+    resources:
+      - group: rbac.authorization.k8s.io
+
+  # Workload writes: record the submitted spec (status subresources are not
+  # matched, so kubelet and controller status updates stay at Metadata).
+  - level: Request
+    verbs: [create, update, patch]
+    resources:
+      - group: ""
+        resources: [pods, serviceaccounts]
+      - group: apps
+        resources: [daemonsets, deployments, statefulsets, replicasets]
+      - group: batch
+        resources: [jobs, cronjobs]
+      - group: admissionregistration.k8s.io
+
+  # Everything else, including pods/exec, pods/attach and pods/portforward.
+  - level: Metadata
