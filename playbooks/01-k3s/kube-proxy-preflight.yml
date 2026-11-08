@@ -1,0 +1,33 @@
+---
+# Cilium already replaces kube-proxy (kubeProxyReplacement: true), but the K3s
+# kube-proxy also runs. Without kube-proxy, a Cilium agent that starts can
+# only get to the API server through an address that does not need Service
+# translation (cilium.k8s_service_host). This check stops the K3s
+# configuration before any server restarts when the inventory disables the
+# K3s kube-proxy without that address. Rollout:
+# ../02-cilium/KUBE-PROXY-REPLACEMENT.md.
+#
+# Limit: this check reads only the inventory. It does not prove that
+# 02-cilium/standup.yml applied the address to the cluster. stack-standup.yml
+# runs 01-k3s before 02-cilium. Thus, do not set the address and disable
+# kube-proxy in the same change.
+- name: Check the kube-proxy replacement settings
+  hosts: server
+  gather_facts: false
+  vars:
+    k3s_kube_proxy_disabled: >-
+      {{ (((server_config_yaml | default('')) | from_yaml) or {}).get('disable-kube-proxy', false) | bool
+         or '--disable-kube-proxy' in (extra_server_args | default('')) }}
+    cilium_api_server_host: >-
+      {{ (hostvars['k8s']['cilium']['k8s_service_host'] | default('')) if 'k8s' in hostvars else '' }}
+  tasks:
+    - name: Refuse to disable kube-proxy before Cilium has an API server address
+      ansible.builtin.assert:
+        that: not (k3s_kube_proxy_disabled | bool) or (cilium_api_server_host | trim | length > 0)
+        fail_msg: >-
+          The K3s configuration disables kube-proxy, but cilium.k8s_service_host
+          is not set. Set it, run 02-cilium/standup.yml, and then run this
+          playbook again. This check reads only the inventory. It does not
+          make sure that Cilium in the cluster uses the address.
+          Procedure: playbooks/02-cilium/KUBE-PROXY-REPLACEMENT.md.
+        quiet: true

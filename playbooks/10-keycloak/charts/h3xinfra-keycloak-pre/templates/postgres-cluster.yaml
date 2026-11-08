@@ -1,4 +1,8 @@
 {{- if .Values.postgres.enabled }}
+{{- $antiAffinity := .Values.postgres.podAntiAffinityType | default "required" }}
+{{- if not (has $antiAffinity (list "preferred" "required")) }}
+{{- fail "postgres.podAntiAffinityType must be preferred or required" }}
+{{- end }}
 ---
 # CloudNativePG-managed Postgres cluster backing Keycloak.
 # Replaces the previous single-pod StatefulSet so a node failure does
@@ -13,10 +17,15 @@ metadata:
 spec:
   instances: {{ .Values.postgres.instances | default 2 }}
   imageName: {{ printf "%s:%s" .Values.postgres.image.repository (.Values.postgres.image.tag | toString) | quote }}
-  # Spread replicas across nodes. `preferred` so the cluster can still
-  # schedule when distinct-node placement is not possible (e.g. drain).
+  # Keep each instance on a different node. With `required` (the default),
+  # the primary and the standby never share a node, so one node failure
+  # cannot stop both. A drained instance normally finds a free node. These
+  # pods have no nodeSelector or toleration, so they can run on every agent
+  # node. The CNPG PostgreSQL images are multi-arch. Longhorn RWO volumes
+  # attach on any node. If no free node is available, the instance stays
+  # Pending. It does not share a node with the other instance (intended).
   affinity:
-    podAntiAffinityType: preferred
+    podAntiAffinityType: {{ $antiAffinity }}
     topologyKey: kubernetes.io/hostname
   bootstrap:
     initdb:

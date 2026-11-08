@@ -4,9 +4,12 @@
 # Order of precedence:
 #   1. $ANSIBLE_VAULT_PASSWORD environment variable (used by CI / runners)
 #   2. $H3XINFRA_VAULT_FILE (explicit override path)
-#   3. ${H3XINFRA_SECRETS_DIR:-/h3xinfra/state/secrets}/vault_pass.txt
+#   3. $H3XINFRA_SECRETS_DIR/vault_pass.txt (explicit directory, no fallback)
+#   4. /h3xinfra-secrets/vault_pass.txt, if the file exists (a read-only
+#      secrets mount that keeps the password off the shared state volume)
+#   5. /h3xinfra/state/secrets/vault_pass.txt (legacy location)
 #
-# This indirection exists because the vault password is stored on a CIFS
+# This indirection exists because the vault password can be stored on a CIFS
 # mount (/h3xinfra/state/secrets/) where mount options force file modes to
 # 0777 — Ansible would otherwise treat the password file itself as an
 # executable script and try to run it. By printing the file contents from
@@ -19,7 +22,14 @@ if [[ -n "${ANSIBLE_VAULT_PASSWORD:-}" ]]; then
     exit 0
 fi
 
-vault_file="${H3XINFRA_VAULT_FILE:-${H3XINFRA_SECRETS_DIR:-/h3xinfra/state/secrets}/vault_pass.txt}"
+if [[ -n "${H3XINFRA_SECRETS_DIR:-}" ]]; then
+    secrets_dir="$H3XINFRA_SECRETS_DIR"
+elif [[ -e /h3xinfra-secrets/vault_pass.txt ]]; then
+    secrets_dir=/h3xinfra-secrets
+else
+    secrets_dir=/h3xinfra/state/secrets
+fi
+vault_file="${H3XINFRA_VAULT_FILE:-$secrets_dir/vault_pass.txt}"
 
 if [[ ! -r "$vault_file" ]]; then
     echo "h3xinfra-vault-pass: cannot read vault password file: $vault_file" >&2
