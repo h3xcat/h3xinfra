@@ -35,8 +35,17 @@ spec:
   http:
     httpEnabled: true
   proxy:
-    # Honor X-Forwarded-* set by the Envoy Gateway listener.
+    # Honor X-Forwarded-* set by the Envoy Gateway listener. The gateway
+    # removes client-supplied copies first, and proxyTrustedAddresses
+    # limits which sources can set them.
     headers: xforwarded
+  {{- if .Values.networkPolicy.enabled }}
+  networkPolicy:
+    # templates/networkpolicy.yaml owns ingress for these pods. The
+    # operator policy allows the HTTP port from every pod and would
+    # cancel it (Cilium adds allow rules from all policies together).
+    enabled: false
+  {{- end }}
   bootstrapAdmin:
     user:
       secret: {{ required "bootstrapAdminSecretName is required" .Values.bootstrapAdminSecretName | quote }}
@@ -55,7 +64,13 @@ spec:
   resources:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- with .Values.additionalOptions }}
+  {{- if or .Values.additionalOptions .Values.proxyTrustedAddresses }}
   additionalOptions:
+    {{- with .Values.proxyTrustedAddresses }}
+    - name: proxy-trusted-addresses
+      value: {{ join "," . | quote }}
+    {{- end }}
+    {{- with .Values.additionalOptions }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
   {{- end }}

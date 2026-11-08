@@ -38,3 +38,13 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/name: {{ include "h3xinfra-keycloak-main.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Labels the Keycloak Operator puts on each Keycloak pod (the PDB uses the
+same set).
+*/}}
+{{- define "h3xinfra-keycloak-main.podSelectorLabels" -}}
+app: keycloak
+app.kubernetes.io/instance: {{ include "h3xinfra-keycloak-main.fullname" . }}
+app.kubernetes.io/managed-by: keycloak-operator
+{{- end }}
