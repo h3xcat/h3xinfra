@@ -32,15 +32,15 @@ concurrency:
 
 env:
   # renovate: datasource=github-releases depName=renovatebot/renovate
-  RENOVATE_VERSION: 44.186.1
+  RENOVATE_VERSION: 44.216.6
   # renovate 44.x needs node ^24.11
   # renovate: datasource=node-version depName=node
-  NODE_VERSION: 24.22.1
+  NODE_VERSION: 26.13.0
   # renovate: datasource=github-releases depName=helm/helm
   HELM_VERSION: v4.3.1
   # >= 1.16.2 is required by playbooks/10-keycloak/terraform/providers.tf
   # renovate: datasource=github-releases depName=hashicorp/terraform extractVersion=^v(?<version>.*)$
-  TERRAFORM_VERSION: 1.17.0
+  TERRAFORM_VERSION: 1.17.1
   # renovate: datasource=pypi depName=yamllint
   YAMLLINT_VERSION: 1.38.0
   # the devcontainer's ansible-core line (syntax-check only needs a parser)
@@ -178,6 +178,9 @@ jobs:
       - name: Test Keycloak CNPG anti-affinity
         working-directory: h3xinfra
         run: python -m unittest discover -s playbooks/10-keycloak/tests -v
+      - name: Test teardown confirmation guard
+        working-directory: h3xinfra
+        run: python -m unittest discover -s playbooks/99-utils/tests -v
       - name: tests/run-all.sh (submodule mode)
         env:
           RENOVATE_VALIDATOR_OK: "1"
@@ -264,6 +267,8 @@ jobs:
         run: python -m unittest discover -s playbooks/10-argocd/tests -v
       - name: Test Keycloak CNPG anti-affinity
         run: python -m unittest discover -s playbooks/10-keycloak/tests -v
+      - name: Test teardown confirmation guard
+        run: python -m unittest discover -s playbooks/99-utils/tests -v
       - name: terraform validate playbooks/10-keycloak/terraform
         working-directory: playbooks/10-keycloak/terraform
         run: |

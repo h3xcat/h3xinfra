@@ -13,7 +13,8 @@ longhornIngress:
     name: ""
     namespace: ""
 
-  # List of trusted IP ranges that can access the Longhorn UI
+  # List of trusted IP ranges that can access the Longhorn UI. A world CIDR
+  # (0.0.0.0/0 or ::/0) is accepted only when oidc.enabled is true.
   trustedIPs: []
 
   # OIDC SecurityPolicy configuration (handled by Envoy Gateway, replaces oauth2-proxy).

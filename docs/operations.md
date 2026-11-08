@@ -123,8 +123,12 @@ ansible-playbook playbooks/stack-standup.yml
 
 ### Tear Down Cluster
 
+Every teardown playbook stops at the start unless you give the confirmation phrase `-e confirm_destroy=yes-destroy-data`.
+
+> **WARNING:** Do not set `confirm_destroy` in the inventory. If you do, every teardown can start without confirmation and delete volume data.
+
 ```bash
-ansible-playbook playbooks/stack-teardown.yml
+ansible-playbook playbooks/stack-teardown.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ## Individual Component Management
@@ -139,77 +143,77 @@ ansible-playbook playbooks/00-prep/standup.yml
 
 ```bash
 ansible-playbook playbooks/01-k3s/standup.yml
-ansible-playbook playbooks/01-k3s/teardown.yml
+ansible-playbook playbooks/01-k3s/teardown.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ### Cilium Deployment/Removal
 
 ```bash
 ansible-playbook playbooks/02-cilium/standup.yml
-ansible-playbook playbooks/02-cilium/teardown.yml
+ansible-playbook playbooks/02-cilium/teardown.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ### MetalLB Deployment/Removal
 
 ```bash
 ansible-playbook playbooks/03-metallb/standup.yml
-ansible-playbook playbooks/03-metallb/teardown.yml
+ansible-playbook playbooks/03-metallb/teardown.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ### Health Endpoints Configuration
 
 ```bash
 ansible-playbook playbooks/04-health/standup.yml
-ansible-playbook playbooks/04-health/teardown.yml
+ansible-playbook playbooks/04-health/teardown.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ### Certificate Manager Deployment/Removal
 
 ```bash
 ansible-playbook playbooks/05-certmanager/standup.yml
-ansible-playbook playbooks/05-certmanager/teardown.yml
+ansible-playbook playbooks/05-certmanager/teardown.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ### External DNS Deployment/Removal
 
 ```bash
 ansible-playbook playbooks/06-externaldns/standup.yml
-ansible-playbook playbooks/06-externaldns/teardown.yml
+ansible-playbook playbooks/06-externaldns/teardown.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ### Envoy Gateway Deployment/Removal
 
 ```bash
 ansible-playbook playbooks/07-gateway/standup.yml
-ansible-playbook playbooks/07-gateway/teardown.yml
+ansible-playbook playbooks/07-gateway/teardown.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ### SMB/CIFS CSI Driver Deployment/Removal
 
 ```bash
 ansible-playbook playbooks/08-smb/standup.yml
-ansible-playbook playbooks/08-smb/teardown.yml
+ansible-playbook playbooks/08-smb/teardown.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ### Longhorn Storage Deployment/Removal
 
 ```bash
 ansible-playbook playbooks/09-longhorn/standup.yml
-ansible-playbook playbooks/09-longhorn/teardown.yml
+ansible-playbook playbooks/09-longhorn/teardown.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ### Mailu Email Server Deployment/Removal
 
 ```bash
 ansible-playbook playbooks/10-mailu/standup.yml
-ansible-playbook playbooks/10-mailu/teardown.yml
+ansible-playbook playbooks/10-mailu/teardown.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ### Keycloak Identity Management Deployment/Removal
 
 ```bash
 ansible-playbook playbooks/10-keycloak/standup.yml
-ansible-playbook playbooks/10-keycloak/teardown.yml
+ansible-playbook playbooks/10-keycloak/teardown.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ## Troubleshooting
