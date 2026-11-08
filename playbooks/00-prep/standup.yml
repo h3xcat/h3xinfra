@@ -30,6 +30,8 @@
         state: started
         enabled: true
     
+    # UFW stays off. For node ingress filtering, use the Cilium host firewall
+    # (cilium.host_firewall, see playbooks/02-cilium/HOST-FIREWALL.md).
     - name: Disable UFW
       service:
         name: ufw
