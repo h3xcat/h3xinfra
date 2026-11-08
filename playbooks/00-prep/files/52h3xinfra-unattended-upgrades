@@ -1,0 +1,4 @@
+// Managed by h3xinfra 00-prep. Loaded after 50unattended-upgrades.
+// Kured owns node reboots: it drains the node and reboots one node at a time
+// when /var/run/reboot-required exists. unattended-upgrades must not reboot.
+Unattended-Upgrade::Automatic-Reboot "false";
