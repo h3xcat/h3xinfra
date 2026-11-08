@@ -77,6 +77,12 @@
       "allowedVersions": "<1.39.0"
     },
     {
+      "description": "ansible-core 2.22 requires Python >= 3.13, but the CI jobs (PYTHON_VERSION) and the private suite run on Python 3.12. Raise the ceiling together with PYTHON_VERSION",
+      "matchDatasources": ["pypi"],
+      "matchPackageNames": ["ansible-core"],
+      "allowedVersions": "<2.22.0"
+    },
+    {
       "description": "Group Cilium updates into one Monday-morning PR: a CNI bump disrupts every node and is applied in the same window as k3s. Regex form for parity with the Kubernetes rule",
       "groupName": "Cilium",
       "schedule": ["* 0-9 * * 1"],
@@ -106,9 +112,10 @@
       "enabled": false
     },
     {
-      "description": "One PR for all GitHub Actions digest/version bumps (helpers:pinGitHubActionDigests keeps the SHA + '# vX.Y.Z' comment current); separate PRs per action would eat the prConcurrentLimit",
+      "description": "One PR for all GitHub Actions digest/version bumps (helpers:pinGitHubActionDigests keeps the SHA + '# vX.Y.Z' comment current); separate PRs per action would eat the prConcurrentLimit. Never automerge: a moved upstream tag arrives as a digest update and its new code runs in CI, so a person reviews every action bump. Placed after the patch/pin/digest automerge rule so this automerge: false wins",
       "matchManagers": ["github-actions"],
-      "groupName": "GitHub Actions"
+      "groupName": "GitHub Actions",
+      "automerge": false
     },
     {
       "description": "One PR for CI tooling: tests/tool-versions.env tool pins, tests/requirements.txt python pins and any env pins in workflows. Last rule so it wins over the datasource groups for files under tests/; matchManagers keeps the github-actions group separate",

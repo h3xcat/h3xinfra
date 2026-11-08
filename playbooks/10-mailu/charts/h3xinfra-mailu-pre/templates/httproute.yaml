@@ -21,7 +21,7 @@ spec:
       port: {{ .Values.gatewayRoute.gateway.port | default 443 }}
       {{- end }}
   hostnames:
-    {{- range .Values.certificate.dnsNames }}
+    {{- range include "h3xinfra-mailu-pre.webHostnames" . | fromJsonArray }}
     - {{ . | quote }}
     {{- end }}
   rules:
@@ -77,7 +77,7 @@ spec:
       port: {{ .Values.gatewayRoute.gateway.port | default 443 }}
       {{- end }}
   hostnames:
-    {{- range .Values.certificate.dnsNames }}
+    {{- range include "h3xinfra-mailu-pre.webHostnames" . | fromJsonArray }}
     - {{ . | quote }}
     {{- end }}
   rules:

@@ -1,4 +1,13 @@
 ---
+{{- /*
+The same value is the HTTPRoute hostname in the pre-chart, so it must be a
+bare lowercase DNS name: no scheme, port, path or wildcard. A label can
+have a maximum of 63 characters, and the name a maximum of 253.
+*/}}
+{{- $hostname := required "hostname is required" .Values.hostname }}
+{{- if or (gt (len $hostname) 253) (not (regexMatch "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)*$" $hostname)) }}
+{{- fail (printf "hostname %q must be a bare lowercase DNS name without scheme, port, path or wildcard, with a maximum of 63 characters for each label and 253 in total" $hostname) }}
+{{- end }}
 # Keycloak instance managed by the Keycloak Operator
 # (k8s.keycloak.org/v2alpha1). The operator owns the StatefulSet, the
 # Service, anti-affinity, the PDB, JGroups KUBE_PING discovery for
@@ -14,17 +23,29 @@ spec:
   image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
   startOptimized: false
   hostname:
-    # Public hostname Keycloak advertises. TLS is terminated at the
-    # Envoy Gateway, so Keycloak speaks plain HTTP internally and the
-    # CR points at the public https URL only for issuer / redirect URI
-    # building.
-    hostname: {{ required "hostname is required" .Values.hostname | quote }}
-    strict: false
+    # Public hostname Keycloak advertises for the issuer and redirect
+    # URIs. TLS is terminated at the Envoy Gateway, so Keycloak speaks
+    # plain HTTP internally.
+    hostname: {{ $hostname | quote }}
+    # strict (the Keycloak default) makes Keycloak fail at startup if no
+    # hostname is set. Without strict mode and without a hostname,
+    # Keycloak takes the hostname from request headers. With the fixed
+    # hostname above, the issuer does not change.
+    strict: true
   http:
     httpEnabled: true
   proxy:
-    # Honor X-Forwarded-* set by the Envoy Gateway listener.
+    # Honor X-Forwarded-* set by the Envoy Gateway listener. The gateway
+    # removes client-supplied copies first, and proxyTrustedAddresses
+    # limits which sources can set them.
     headers: xforwarded
+  {{- if .Values.networkPolicy.enabled }}
+  networkPolicy:
+    # templates/networkpolicy.yaml owns ingress for these pods. The
+    # operator policy allows the HTTP port from every pod and would
+    # cancel it (Cilium adds allow rules from all policies together).
+    enabled: false
+  {{- end }}
   bootstrapAdmin:
     user:
       secret: {{ required "bootstrapAdminSecretName is required" .Values.bootstrapAdminSecretName | quote }}
@@ -43,7 +64,13 @@ spec:
   resources:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- with .Values.additionalOptions }}
+  {{- if or .Values.additionalOptions .Values.proxyTrustedAddresses }}
   additionalOptions:
+    {{- with .Values.proxyTrustedAddresses }}
+    - name: proxy-trusted-addresses
+      value: {{ join "," . | quote }}
+    {{- end }}
+    {{- with .Values.additionalOptions }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
   {{- end }}

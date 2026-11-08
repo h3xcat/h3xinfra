@@ -10,4 +10,10 @@ ipPool:
       ipv6: "2001:db8:face:1::/96"
   l2Advertisement:
     annotations: {}
-  autoAssign: true
+  # Do not give addresses from this pool to a LoadBalancer Service that does
+  # not name the pool. The IPv6 range can be routable from the internet. A
+  # Service that needs this pool must set the metallb.universe.tf/address-pool
+  # annotation. MetalLB keeps the addresses that it assigned before this value
+  # became false. This value does not stop a Service that names this pool or
+  # requests a specific address from this pool.
+  autoAssign: false

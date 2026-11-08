@@ -65,6 +65,7 @@
     register: kubeconf_raw
     ignore_errors: true  # Don't fail if K3s is already removed
     when: not skip_config
+    no_log: true  # The k3s admin kubeconfig holds the cluster-admin client key
 
   - name: "kube-connect: Display kubeconfig fetch result"
     debug:
@@ -86,6 +87,7 @@
     delegate_to: localhost
     register: new_kubeconfig
     when: not skip_config and kubeconf_raw is succeeded and not ansible_check_mode
+    no_log: true
 
   - name: "kube-connect: Extract original server URL from kubeconfig"
     shell: kubectl config view -o jsonpath='{.clusters[0].cluster.server}'
