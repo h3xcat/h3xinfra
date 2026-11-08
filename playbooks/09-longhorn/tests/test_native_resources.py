@@ -47,6 +47,13 @@ def v2_enabled(context=None):
 
 
 class LonghornNativeResourceTests(unittest.TestCase):
+    def test_cli_download_is_checksum_verified(self):
+        play = next(play for play in plays() if play.get("name", "").startswith("Setup Longhorn CLI"))
+        download = next(task for task in play["tasks"] if task["name"] == "Download Longhorn CLI")["get_url"]
+        self.assertEqual(download["url"], "{{ longhorn_cli_url }}")
+        self.assertEqual(download["checksum"], "sha256:{{ longhorn_cli_url }}.sha256")
+        self.assertTrue(play["vars"]["longhorn_cli_url"].startswith("https://github.com/longhorn/cli/releases/download/"))
+
     def test_manager_budget_and_serial_rollout(self):
         manager = helm_values()["longhornManager"]
         self.assertEqual(manager["resources"], MANAGER)
@@ -153,6 +160,31 @@ class LonghornNativeResourceTests(unittest.TestCase):
             self.assertEqual(task["delay"], 5)
             self.assertNotIn("ignore_errors", task)
             self.assertNotIn("failed_when", task)
+
+    def test_auth_method_guard_runs_first_and_accepts_only_supported_methods(self):
+        tasks = next(play for play in plays() if play.get("name") == "Deploy Longhorn via Helm")["tasks"]
+        names = [task["name"] for task in tasks]
+        self.assertEqual(names[0], "Validate Longhorn auth method")
+        self.assertLess(names.index("Validate Longhorn auth method"), names.index("Deploy Longhorn via Helm"))
+        self.assertLess(names.index("Validate Longhorn auth method"),
+                        names.index("Deploy Longhorn configuration via Helm"))
+        guard = tasks[0]
+        self.assertNotIn("when", guard)
+        self.assertNotIn("ignore_errors", guard)
+        that = guard["ansible.builtin.assert"]["that"]
+        self.assertEqual(that, ["(longhorn.auth.method | default('none')) in ['none', 'oauth2_proxy']"])
+        check = Environment(undefined=ChainableUndefined).compile_expression(that[0])
+        for context in (
+            {"longhorn": {"auth": {"method": "oauth2_proxy"}}},
+            {"longhorn": {"auth": {"method": "none"}}},
+            {"longhorn": {"auth": {}}},
+            {"longhorn": {}},
+        ):
+            with self.subTest(context=context):
+                self.assertTrue(check(**context))
+        for method in ("basic", "oauth2-proxy", "OAUTH2_PROXY", ""):
+            with self.subTest(method=method):
+                self.assertFalse(check(longhorn={"auth": {"method": method}}))
 
 
 @unittest.skipUnless(CHART, "Set LONGHORN_CHART_PATH to the deployed Longhorn chart")

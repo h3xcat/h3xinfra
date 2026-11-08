@@ -1,4 +1,4 @@
-"""Verify native MetalLB budgets and explicitly identify upstream init gaps."""
+"""Verify native MetalLB budgets, including the frr-k8s init containers."""
 
 import copy
 import os
@@ -19,8 +19,14 @@ PATHS = {
     "frr-k8s.frrk8s.frrMetrics.resources": ("50m", "64Mi", "500m", "256Mi", "256Mi"),
     "frr-k8s.frrk8s.frrStatus.resources": ("25m", "64Mi", "250m", "256Mi", "256Mi"),
     "frr-k8s.frrk8s.reloader.resources": ("10m", "16Mi", "100m", "64Mi", "256Mi"),
+    # frr-k8s 0.0.27 (MetalLB 0.16.2) exposes the init container resources.
+    "frr-k8s.frrk8s.initContainers.cpFrrFiles.resources": ("10m", "16Mi", "100m", "64Mi", "64Mi"),
+    "frr-k8s.frrk8s.initContainers.cpReloader.resources": ("10m", "16Mi", "100m", "64Mi", "64Mi"),
+    "frr-k8s.frrk8s.initContainers.cpMetrics.resources": ("10m", "16Mi", "100m", "64Mi", "64Mi"),
+    "frr-k8s.frrk8s.initContainers.cpFrrStatus.resources": ("10m", "16Mi", "100m", "64Mi", "64Mi"),
 }
-UNSUPPORTED_INIT = {"cp-frr-files", "cp-reloader", "cp-metrics", "cp-frr-status"}
+INIT_CONTAINERS = {"cp-frr-files", "cp-reloader", "cp-metrics", "cp-frr-status"}
+CHART_VERSION = "0.16.2"
 
 
 def get_path(value, path):
@@ -62,20 +68,19 @@ class MetalLBBudgetDefaultsTests(unittest.TestCase):
                     "limits": {"cpu": cpu_limit, "memory": memory_limit, "ephemeral-storage": ephemeral_limit},
                 })
 
-    def test_no_unsupported_init_keys_or_backend_changes(self):
+    def test_no_backend_changes(self):
         values = yaml.safe_load(VALUES.read_text())
         self.assertFalse(values["speaker"]["frr"]["enabled"])
-        self.assertNotIn("initContainers", values["frr-k8s"]["frrk8s"])
         self.assertNotIn("frrk8s", values)
 
 
-@unittest.skipUnless(CHART, "Set METALLB_CHART_PATH to a local MetalLB 0.16.1 chart")
+@unittest.skipUnless(CHART, f"Set METALLB_CHART_PATH to a local MetalLB {CHART_VERSION} chart")
 class MetalLBResourceRenderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         metadata = yaml.safe_load((Path(CHART) / "Chart.yaml").read_text())
-        if metadata["version"] != "0.16.1":
-            raise AssertionError("Expected exact MetalLB chart 0.16.1")
+        if metadata["version"] != CHART_VERSION:
+            raise AssertionError(f"Expected exact MetalLB chart {CHART_VERSION}")
         values = yaml.safe_load(VALUES.read_text())
         cls.after = cls.render(values)
         for path in PATHS:
@@ -91,9 +96,9 @@ class MetalLBResourceRenderTests(unittest.TestCase):
         )
         return [doc for doc in yaml.safe_load_all(result.stdout) if doc]
 
-    def test_all_regular_containers_and_only_known_init_gaps(self):
+    def test_all_regular_and_init_containers_have_budgets(self):
         regular = 0
-        gaps = set()
+        init = set()
         for document in self.after:
             if document["kind"] not in {"Deployment", "DaemonSet", "StatefulSet", "Job"}:
                 continue
@@ -106,10 +111,13 @@ class MetalLBResourceRenderTests(unittest.TestCase):
                             self.assertTrue(container.get("resources", {}).get(category, {}).get(resource))
             for container in spec.get("initContainers", []):
                 self.assertEqual(document["metadata"]["name"], "h3xinfra-metallb-main-frr-k8s")
-                self.assertFalse(container.get("resources"))
-                gaps.add(container["name"])
+                with self.subTest(workload=document["metadata"]["name"], init=container["name"]):
+                    for category in ("requests", "limits"):
+                        for resource in ("cpu", "memory", "ephemeral-storage"):
+                            self.assertTrue(container.get("resources", {}).get(category, {}).get(resource))
+                init.add(container["name"])
         self.assertEqual(regular, 8)
-        self.assertEqual(gaps, UNSUPPORTED_INIT)
+        self.assertEqual(init, INIT_CONTAINERS)
 
     def test_statuscleaner_inherits_the_controller_budget(self):
         cleaner = next(doc for doc in self.after
