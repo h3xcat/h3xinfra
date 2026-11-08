@@ -3,10 +3,12 @@
 #
 #   1. Copy the host's ~/.ssh into the container (~/.ssh is read-only from
 #      the host mount at /tmp/host-ssh, so we copy + fix ownership/perms).
-#   2. Stage the ansible managed-node private key from the CIFS-mounted
-#      secrets share into ~/.ssh with strict 0600 perms. CIFS forces
-#      uid/gid/mode on the source (openssh refuses loose modes, and under
-#      rootless podman the forced host uid appears as container root).
+#   2. Stage the ansible managed-node private key from the secrets directory
+#      into ~/.ssh with strict 0600 perms. The directory is the read-only
+#      /h3xinfra-secrets mount if it holds the key, else the CIFS-mounted
+#      share. CIFS forces uid/gid/mode on the source (openssh refuses loose
+#      modes, and under rootless podman the forced host uid appears as
+#      container root).
 #   3. Maintain a managed block in ~/.ssh/config so interactive `ssh`
 #      to the h3xinfra managed nodes uses the same key, the same user,
 #      and the same ControlMaster socket as ansible.
@@ -45,7 +47,18 @@ fi
 # share forces ownership to the host uid (= container root under rootless
 # podman) and ignores chown, so fall back to sudo for reads; the copies in
 # ~/.ssh are chowned back to the container user.
-ANSIBLE_KEY_SRC="${H3XINFRA_SECRETS_DIR:-/h3xinfra/state/secrets}/ansible_ssh_privatekey"
+# Key directory, first match: $H3XINFRA_SECRETS_DIR (no fallback), then
+# /h3xinfra-secrets if it holds the key (a read-only mount that keeps the key
+# off the shared state volume), then the legacy /h3xinfra/state/secrets.
+if [ -n "${H3XINFRA_SECRETS_DIR:-}" ]; then
+    SECRETS_DIR="$H3XINFRA_SECRETS_DIR"
+elif [ -e /h3xinfra-secrets/ansible_ssh_privatekey ] || { [ -d /h3xinfra-secrets ] \
+    && sudo -n test -e /h3xinfra-secrets/ansible_ssh_privatekey 2>/dev/null; }; then
+    SECRETS_DIR=/h3xinfra-secrets
+else
+    SECRETS_DIR=/h3xinfra/state/secrets
+fi
+ANSIBLE_KEY_SRC="$SECRETS_DIR/ansible_ssh_privatekey"
 ANSIBLE_KEY_DST="$HOME/.ssh/h3xinfra_ansible_id"
 SUDO=""
 if [ ! -r "$ANSIBLE_KEY_SRC" ]; then
