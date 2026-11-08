@@ -167,13 +167,21 @@
         force_update: true
       changed_when: false
 
+    # Pod Security: privileged. longhorn-manager and the instance managers
+    # are privileged and mount /dev, /proc and /var/lib/longhorn from the host.
     - name: Create Longhorn namespace
       kubernetes.core.k8s:
-        api_version: v1
-        kind: Namespace
-        name: "{{ longhorn.namespace }}"
         state: present
         wait: true
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ longhorn.namespace }}"
+            labels:
+              pod-security.kubernetes.io/enforce: privileged
+              pod-security.kubernetes.io/audit: restricted
+              pod-security.kubernetes.io/warn: restricted
 
     - name: Deploy Longhorn pre-configuration via Helm
       kubernetes.core.helm:

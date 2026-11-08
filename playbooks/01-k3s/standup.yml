@@ -102,3 +102,7 @@
 # Enable kube-apiserver OIDC trust (Keycloak) once the cluster is up. serial: 1
 # with a per-node readiness gate, so a bad config only affects one server.
 - import_playbook: apiserver-oidc.yml
+
+# Set the cluster-wide Pod Security Admission defaults. serial: 1 with a
+# per-node readiness gate, so a bad config only affects one server.
+- import_playbook: apiserver-admission.yml

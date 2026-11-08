@@ -13,13 +13,22 @@
       force_update: true
     changed_when: false
 
+  # Pod Security: every Mailu pod passes baseline. The Mailu containers do not
+  # set the restricted securityContext fields (runAsNonRoot, seccompProfile,
+  # capabilities.drop), so restricted needs chart changes first.
   - name: Create Mailu namespace
     kubernetes.core.k8s:
-      api_version: v1
-      kind: Namespace
-      name: "{{ mailu.namespace }}"
       state: present
       wait: true
+      definition:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: "{{ mailu.namespace }}"
+          labels:
+            pod-security.kubernetes.io/enforce: "{{ mailu.pod_security_enforce | default('baseline') }}"
+            pod-security.kubernetes.io/audit: restricted
+            pod-security.kubernetes.io/warn: restricted
 
   - name: Deploy Mailu configuration via Helm
     kubernetes.core.helm:
