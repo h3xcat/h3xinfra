@@ -113,3 +113,4 @@
         state: present
         wait: true
         timeout: "120s"
+      no_log: true

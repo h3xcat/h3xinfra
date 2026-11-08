@@ -4,6 +4,15 @@
 {{- if not (or .Values.longhornIngress.trustedIPs .Values.longhornIngress.oidc.enabled) -}}
 {{- fail "longhornIngress: at least one of `trustedIPs` or `oidc.enabled` must be set; refusing to render an unauthenticated HTTPRoute." -}}
 {{- end -}}
+{{- /* A world CIDR (prefix length 0) in trustedIPs removes the source-IP
+       gate. Accept it only when OIDC also gates the route. */ -}}
+{{- if not .Values.longhornIngress.oidc.enabled -}}
+{{- range .Values.longhornIngress.trustedIPs -}}
+{{- if hasSuffix "/0" (trim .) -}}
+{{- fail (printf "longhornIngress.trustedIPs: world CIDR %s requires oidc.enabled; refusing to render an unauthenticated HTTPRoute." .) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- $gwName := required "longhornIngress.gateway.name is required" .Values.longhornIngress.gateway.name -}}
 ---
 apiVersion: gateway.networking.k8s.io/v1

@@ -1,0 +1,80 @@
+---
+# Cluster DNS with more than one pod.
+#
+# K3s deploys CoreDNS from its packaged manifest
+# (/var/lib/rancher/k3s/server/manifests/coredns.yaml) as a plain AddOn, not
+# as a HelmChart, so a HelmChartConfig cannot change it. K3s rewrites the file
+# at each server start; this play does not edit it, add a .skip marker or use
+# --disable (see RESOURCE-BUDGETS.md).
+#
+# The packaged Deployment does not set spec.replicas. The API server gives it
+# 1, and K3s applies the manifest like `kubectl apply`, so it does not reset a
+# count that this play sets. The packaged pod template already has a
+# topologySpreadConstraint on kubernetes.io/hostname with DoNotSchedule, so the
+# replicas always run on different nodes. This play only sets the count and
+# adds a PodDisruptionBudget, which the manifest does not have.
+#
+# stack-standup.yml runs it after 02-cilium: CoreDNS pods do not become ready
+# without the CNI, so 01-k3s/standup.yml does not import it.
+# If the new replicas do not become ready in 300 seconds, this play fails and
+# stack-standup.yml stops before 03-metallb. DNS continues to work with the
+# existing pod. Make sure that a second node can schedule a CoreDNS pod.
+# There is no teardown playbook: K3s owns CoreDNS. To go back to the K3s
+# default, set coredns.replicas to 1 in the inventory and run this playbook.
+# The budget does not block a drain when only one replica is set.
+- name: Connect to the cluster
+  import_playbook: ../99-utils/kube-connect.yml
+
+- name: Run CoreDNS with more than one replica
+  hosts: k8s
+  gather_facts: false
+
+  vars:
+    coredns_settings: "{{ coredns | default({}) }}"
+    coredns_replicas: "{{ coredns_settings.replicas | default(2) }}"
+
+  tasks:
+    - name: Validate the CoreDNS replica count
+      ansible.builtin.assert:
+        that:
+          - coredns_replicas | string is match('^[0-9]+$')
+          - coredns_replicas | int >= 1
+        fail_msg: "coredns.replicas must be a whole number of 1 or more, not {{ coredns_replicas }}"
+        quiet: true
+
+    # The budget makes a drain wait until the other replica is ready, so a
+    # drain never removes the last ready DNS pod. maxUnavailable (not
+    # minAvailable) does not block a drain when only one replica is set.
+    # AlwaysAllow lets a drain evict a pod that is not ready (for example a
+    # pod on a node that is down). Then the budget holds a kured drain only
+    # until the replacement pod is ready, not until the dead node comes back.
+    # (The Envoy proxies have no budget for that dead-node reason; see
+    # 07-gateway gatewayclass.yaml.)
+    - name: Define the CoreDNS PodDisruptionBudget
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: policy/v1
+          kind: PodDisruptionBudget
+          metadata:
+            name: h3xinfra-coredns
+            namespace: kube-system
+            labels:
+              app.kubernetes.io/managed-by: h3xinfra
+              app.kubernetes.io/part-of: h3xinfra-coredns
+          spec:
+            maxUnavailable: 1
+            unhealthyPodEvictionPolicy: AlwaysAllow
+            selector:
+              matchLabels:
+                k8s-app: kube-dns
+
+    - name: Scale the K3s CoreDNS Deployment
+      kubernetes.core.k8s_scale:
+        api_version: apps/v1
+        kind: Deployment
+        name: coredns
+        namespace: kube-system
+        replicas: "{{ coredns_replicas | int }}"
+        wait: true
+        wait_timeout: 300

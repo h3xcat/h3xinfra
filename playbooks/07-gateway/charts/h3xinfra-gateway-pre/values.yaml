@@ -58,6 +58,19 @@ gateway:
   # Allowed namespaces that can attach HTTPRoutes to the Gateway.
   # Use "All" to permit any namespace (relies on per-route hostnames for isolation).
   allowedRoutesFrom: "All"
+  # Client-supplied proxy headers to remove on every listener before Envoy
+  # sets its own; see templates/clienttrafficpolicy.yaml.
+  clientTrafficPolicy:
+    enabled: true
+    removeRequestHeaders:
+      - Forwarded
+      - X-Forwarded-For
+      - X-Forwarded-Host
+      - X-Forwarded-Port
+      - X-Forwarded-Prefix
+      - X-Forwarded-Proto
+      - X-Original-Forwarded-For
+      - X-Real-IP
   # Telemetry plumbed into the EnvoyProxy resource referenced by the
   # GatewayClass. Prometheus is enabled by default in Envoy Gateway; `matches`
   # can be used to opt-in additional histograms / per-endpoint stats. Leave

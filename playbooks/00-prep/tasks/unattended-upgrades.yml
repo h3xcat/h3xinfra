@@ -1,0 +1,36 @@
+---
+# Security updates come from unattended-upgrades on every node. Import this
+# file after tasks/needrestart.yml: an apt run can start needrestart, and the
+# guard keeps it from restarting K3s. Package selection stays with the
+# distribution defaults in 50unattended-upgrades.
+- name: Install unattended-upgrades
+  ansible.builtin.apt:
+    name: unattended-upgrades
+    state: present
+
+- name: Enable the daily package list refresh and unattended upgrade
+  ansible.builtin.copy:
+    src: 20auto-upgrades
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/bin/apt-config -c %s dump
+
+- name: Leave node reboots to Kured
+  ansible.builtin.copy:
+    src: 52h3xinfra-unattended-upgrades
+    dest: /etc/apt/apt.conf.d/52h3xinfra-unattended-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/bin/apt-config -c %s dump
+
+- name: Enable the apt timers that start unattended-upgrades
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - apt-daily.timer
+    - apt-daily-upgrade.timer

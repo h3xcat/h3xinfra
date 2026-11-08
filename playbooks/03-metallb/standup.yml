@@ -50,6 +50,9 @@
       create_namespace: false
       values:
         fullnameOverride: "{{ metallb.release_name_prefix }}-post"
+        ipPool:
+          # Opt-in. Keep false so that only annotated Services get an address.
+          autoAssign: "{{ metallb.auto_assign | default(false) | bool }}"
       set_values:
       - value: "ipPool.ipAddressPools.addresses.ipv4={{ metallb.loadbalancer_pools.ipv4 }}"
         value_type: string

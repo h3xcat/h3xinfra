@@ -149,11 +149,30 @@
             port: 5432
             database: "{{ keycloak.postgresql.auth.database | default('keycloak') }}"
             credentialsSecretName: "{{ keycloak.release_name_prefix }}-pre-postgres-credentials"
+            clusterName: "{{ keycloak.release_name_prefix }}-pre-postgres"
           resources: "{{ keycloak.resources | default({}) }}"
+          # Envoy pods connect from the pod CIDRs. Set the inventory value
+          # to [] to trust every source again.
+          proxyTrustedAddresses: "{{ keycloak.proxy_trusted_addresses | default([cluster_cidr.ipv4, cluster_cidr.ipv6]) }}"
+          # Opt-in: see the README "Network policy" section for the rollout.
+          networkPolicy:
+            enabled: "{{ keycloak.network_policy.enabled | default(false) }}"
+            gateway:
+              name: "{{ gateway.release_name_prefix }}-pre-shared"
+              namespace: "{{ gateway.namespace }}"
+            cnpgOperatorNamespace: "{{ keycloak.network_policy.cnpg_operator_namespace | default('cnpg-system') }}"
+            prometheusNamespace: "{{ keycloak.network_policy.prometheus_namespace | default('') }}"
+            egress:
+              enabled: "{{ keycloak.network_policy.egress | default(false) }}"
+              smtpPorts: "{{ [keycloak.realm.smtp.port] if (keycloak.realm.smtp.enabled | default(false)) else [] }}"
         state: present
         wait: true
         timeout: "300s"
 
+    # Right after a CR change, the CR still shows Ready=True from the old
+    # pods. Wait until the operator reads the new generation. Then wait
+    # until the StatefulSet replaces every pod, so the issuer check below
+    # reaches the new pods.
     - name: Wait for Keycloak instance to reach Ready condition
       kubernetes.core.k8s_info:
         api_version: k8s.keycloak.org/v2alpha1
@@ -163,11 +182,49 @@
       register: kc_instance
       until: >-
         kc_instance.resources | length > 0
+        and (kc_instance.resources[0].status.observedGeneration | default(-1))
+            == kc_instance.resources[0].metadata.generation
         and (kc_instance.resources[0].status.conditions | default([])
              | selectattr('type', 'eq', 'Ready')
              | selectattr('status', 'eq', 'True') | list | length) > 0
       retries: 90
       delay: 10
+
+    # The operator names the StatefulSet after the Keycloak CR.
+    - name: Wait for the Keycloak StatefulSet rollout to finish
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: StatefulSet
+        namespace: "{{ keycloak.namespace }}"
+        name: "{{ keycloak.release_name_prefix }}-main"
+      register: kc_statefulset
+      until: >-
+        kc_statefulset.resources | length > 0
+        and (kc_statefulset.resources[0].status.observedGeneration | default(-1))
+            == kc_statefulset.resources[0].metadata.generation
+        and (kc_statefulset.resources[0].status.updatedReplicas | default(0))
+            == kc_statefulset.resources[0].spec.replicas
+        and (kc_statefulset.resources[0].status.readyReplicas | default(0))
+            == kc_statefulset.resources[0].spec.replicas
+        and (kc_statefulset.resources[0].status.currentRevision | default(''))
+            == (kc_statefulset.resources[0].status.updateRevision | default('none'))
+      retries: 90
+      delay: 10
+
+    # With networkPolicy.enabled the CR turns off the operator NetworkPolicy.
+    # That policy allows port 8080 from every pod, and Cilium adds it to the
+    # chart policy. Stop the run if the operator does not remove it.
+    - name: Wait for the Keycloak Operator to remove its NetworkPolicy
+      kubernetes.core.k8s_info:
+        api_version: networking.k8s.io/v1
+        kind: NetworkPolicy
+        namespace: "{{ keycloak.namespace }}"
+        name: "{{ keycloak.release_name_prefix }}-main-network-policy"
+      register: kc_operator_netpol
+      until: kc_operator_netpol.resources | length == 0
+      retries: 30
+      delay: 10
+      when: keycloak.network_policy.enabled | default(false) | bool
 
     - name: Wait for Keycloak admin endpoint to answer
       ansible.builtin.uri:
@@ -180,6 +237,32 @@
       retries: 30
       delay: 10
       until: keycloak_ready.status == 200
+
+    # Envoy spreads the requests over the replicas, so usually each replica
+    # answers some of them.
+    - name: Read the master realm issuer from the Keycloak replicas
+      ansible.builtin.uri:
+        url: "{{ keycloak.issuer_url_base }}/realms/master/.well-known/openid-configuration"
+        method: GET
+        status_code: 200
+        return_content: false
+        validate_certs: true
+      register: keycloak_issuers
+      loop: "{{ range(3 * (keycloak.replicas | default(2) | int)) | list }}"
+      loop_control:
+        label: "request {{ item }}"
+
+    # Keycloak ignores X-Forwarded-Proto from sources outside
+    # proxyTrustedAddresses and then builds http:// URLs. Every OIDC client
+    # (the apiserver too) rejects that issuer, so stop the run here.
+    - name: Verify Keycloak advertises the public issuer URL
+      ansible.builtin.assert:
+        that:
+          - (keycloak_issuers.results | map(attribute='json.issuer', default='') | unique | list) == [keycloak.issuer_url_base ~ '/realms/master']
+        fail_msg: >-
+          Keycloak advertises
+          {{ keycloak_issuers.results | map(attribute='json.issuer', default='no issuer') | unique | join(', ') }}.
+          Check keycloak.proxy_trusted_addresses against the Envoy pod addresses.
 
 # -----------------------------------------------------------------------------
 # Phase 2: Configure realm + clients via Terraform.

@@ -1,4 +1,8 @@
 ---
+# Stops here unless run with -e confirm_destroy=yes-destroy-data.
+- name: Require confirmation before teardown
+  import_playbook: ../99-utils/confirm-destroy.yml
+
 - import_playbook: ../99-utils/kube-connect.yml
 
 - name: Remove Argo CD controllers while retaining GitOps objects

@@ -30,6 +30,8 @@
         state: started
         enabled: true
     
+    # UFW stays off. For node ingress filtering, use the Cilium host firewall
+    # (cilium.host_firewall, see playbooks/02-cilium/HOST-FIREWALL.md).
     - name: Disable UFW
       service:
         name: ufw
@@ -97,6 +99,10 @@
         name: systemd-journald
         state: restarted
       when: journald_conf_changed.changed
+
+    # Runs after the needrestart guard at the top of this play.
+    - name: Manage unattended-upgrades
+      ansible.builtin.import_tasks: tasks/unattended-upgrades.yml
 
     - name: Configure modprobe modules
       modprobe:

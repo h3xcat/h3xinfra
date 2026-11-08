@@ -2,6 +2,12 @@
 # Master playbook to orchestrate the complete K3s cluster teardown
 # using the component-based directory structure
 
+# Stops here unless run with -e confirm_destroy=yes-destroy-data. The guard
+# must stay unconditional: the layer imports below carry `when:` conditions,
+# which also apply to the guard play that each layer teardown imports.
+- name: Require confirmation before teardown
+  import_playbook: 99-utils/confirm-destroy.yml
+
 - name: Prepare for Kubernetes teardown
   hosts: localhost
   gather_facts: false

@@ -824,6 +824,10 @@ mkdir -p playbooks/XX-servicename/charts
 **`teardown.yml`:**
 ```yaml
 ---
+# Stops here unless run with -e confirm_destroy=yes-destroy-data.
+- name: Require confirmation before teardown
+  import_playbook: ../99-utils/confirm-destroy.yml
+
 - import_playbook: ../99-utils/kube-connect.yml
 
 - name: Teardown NewService deployment
@@ -940,7 +944,7 @@ ansible-playbook playbooks/XX-servicename/standup.yml -i inventory/production/ho
 
 ### Teardown Single Layer
 ```bash
-ansible-playbook playbooks/XX-servicename/teardown.yml -i inventory/production/hosts.yml
+ansible-playbook playbooks/XX-servicename/teardown.yml -i inventory/production/hosts.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ### Deploy Full Stack

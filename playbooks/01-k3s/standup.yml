@@ -90,6 +90,10 @@
       - 99-resource-reservations.yaml
       - 99-image-gc.yaml
 
+# Stop before K3s restarts if kube-proxy is disabled too early.
+- name: Check the kube-proxy replacement settings
+  import_playbook: kube-proxy-preflight.yml
+
 # Import the main k3s orchestration playbook
 - import_playbook: k3s.orchestration.site
 
