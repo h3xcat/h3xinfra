@@ -8,7 +8,9 @@
 #      /h3xinfra-secrets mount if it holds the key, else the CIFS-mounted
 #      share. CIFS forces uid/gid/mode on the source (openssh refuses loose
 #      modes, and under rootless podman the forced host uid appears as
-#      container root).
+#      container root). A pinned known_hosts file in the same directory, if
+#      present, is staged as ~/.ssh/h3xinfra_known_hosts (the file
+#      ansible.cfg checks).
 #   3. Maintain a managed block in ~/.ssh/config so interactive `ssh`
 #      to the h3xinfra managed nodes uses the same key, the same user,
 #      and the same ControlMaster socket as ansible.
@@ -79,6 +81,19 @@ if $SUDO test -r "${ANSIBLE_KEY_SRC}.pub"; then
     sudo chown "$(id -u):$(id -g)" "${ANSIBLE_KEY_DST}.pub"
 fi
 
+# Host keys of the managed nodes. ansible.cfg and the fragment below check
+# only this file, with StrictHostKeyChecking=accept-new: a new host is
+# recorded on first contact and a changed key stops the connection. A copy
+# on the secrets share is the reviewed source and replaces the local file.
+# Without it, the file fills on first use.
+KNOWN_HOSTS_SRC="$SECRETS_DIR/ssh_known_hosts"
+KNOWN_HOSTS_DST="$HOME/.ssh/h3xinfra_known_hosts"
+if $SUDO test -r "$KNOWN_HOSTS_SRC" && ! $SUDO cmp -s "$KNOWN_HOSTS_SRC" "$KNOWN_HOSTS_DST" 2>/dev/null; then
+    $SUDO install -m 0600 "$KNOWN_HOSTS_SRC" "$KNOWN_HOSTS_DST"
+    sudo chown "$(id -u):$(id -g)" "$KNOWN_HOSTS_DST"
+    log "Staged pinned host keys at $KNOWN_HOSTS_DST"
+fi
+
 # 3. Maintain an Include fragment for h3xinfra managed nodes. Using SSH's
 # native Include keeps re-runs simple: we just overwrite the fragment.
 # Host patterns come from $H3XINFRA_SSH_HOST_PATTERNS (set per-deployment to
@@ -97,6 +112,9 @@ Host $SSH_HOST_PATTERNS
     User ansible
     IdentityFile $ANSIBLE_KEY_DST
     IdentitiesOnly yes
+    UserKnownHostsFile $KNOWN_HOSTS_DST
+    StrictHostKeyChecking accept-new
+    HashKnownHosts no
     ControlMaster auto
     ControlPersist 600s
     ControlPath /tmp/.ansible-ssh-%h-%p-%r
