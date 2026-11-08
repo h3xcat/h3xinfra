@@ -63,7 +63,9 @@ variable "clients" {
     pkce_code_challenge_method = optional(string, "")
     root_url                   = optional(string, "")
     redirect_uris              = list(string)
-    web_origins                = optional(list(string), [])
+    # CORS origins. Empty (the default) allows none. "+" allows the
+    # origins of redirect_uris. "*" is rejected.
+    web_origins = optional(list(string), [])
     # Client roles to create on this client for app-level RBAC (e.g. Open
     # WebUI's `admin`/`user`). When non-empty, a protocol mapper is also added
     # that flattens these client roles into a top-level `roles` claim (id token
@@ -96,5 +98,10 @@ variable "clients" {
   validation {
     condition     = alltrue([for client in var.clients : contains(["", "S256"], client.pkce_code_challenge_method)])
     error_message = "PKCE must be unset or S256; plain challenges are not supported."
+  }
+
+  validation {
+    condition     = alltrue([for client in var.clients : !contains(client.web_origins, "*")])
+    error_message = "web_origins must not contain \"*\"; list explicit origins or use \"+\" for the redirect URI origins."
   }
 }
