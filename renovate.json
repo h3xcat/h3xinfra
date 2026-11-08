@@ -77,6 +77,12 @@
       "allowedVersions": "<1.39.0"
     },
     {
+      "description": "ansible-core 2.22 requires Python >= 3.13, but the CI jobs (PYTHON_VERSION) and the private suite run on Python 3.12. Raise the ceiling together with PYTHON_VERSION",
+      "matchDatasources": ["pypi"],
+      "matchPackageNames": ["ansible-core"],
+      "allowedVersions": "<2.22.0"
+    },
+    {
       "description": "Group Cilium updates into one Monday-morning PR: a CNI bump disrupts every node and is applied in the same window as k3s. Regex form for parity with the Kubernetes rule",
       "groupName": "Cilium",
       "schedule": ["* 0-9 * * 1"],
