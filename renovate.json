@@ -112,9 +112,10 @@
       "enabled": false
     },
     {
-      "description": "One PR for all GitHub Actions digest/version bumps (helpers:pinGitHubActionDigests keeps the SHA + '# vX.Y.Z' comment current); separate PRs per action would eat the prConcurrentLimit",
+      "description": "One PR for all GitHub Actions digest/version bumps (helpers:pinGitHubActionDigests keeps the SHA + '# vX.Y.Z' comment current); separate PRs per action would eat the prConcurrentLimit. Never automerge: a moved upstream tag arrives as a digest update and its new code runs in CI, so a person reviews every action bump. Placed after the patch/pin/digest automerge rule so this automerge: false wins",
       "matchManagers": ["github-actions"],
-      "groupName": "GitHub Actions"
+      "groupName": "GitHub Actions",
+      "automerge": false
     },
     {
       "description": "One PR for CI tooling: tests/tool-versions.env tool pins, tests/requirements.txt python pins and any env pins in workflows. Last rule so it wins over the datasource groups for files under tests/; matchManagers keeps the github-actions group separate",
