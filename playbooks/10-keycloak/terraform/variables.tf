@@ -80,6 +80,15 @@ variable "clients" {
     # audience. Used by the Kubernetes MCP server (STS client = openwebui) to
     # mint an `aud=kubernetes` token for the kube-apiserver. Defaults off.
     standard_token_exchange_enabled = optional(bool, false)
+    # Client IDs to add to this client's ACCESS token audience (one audience
+    # mapper each). A resource server that checks `aud` (for example an MCP
+    # server, or an Envoy JWT gate) can then accept this client's tokens.
+    audiences = optional(list(string), [])
+    # When set, the complete list of OPTIONAL client scopes of this client
+    # (replaces the realm defaults). Use it to keep a public client from
+    # requesting scopes it must not get, for example a cluster-credential
+    # scope. null (the default) keeps the realm's optional scopes.
+    optional_scopes = optional(list(string))
   }))
   default = []
 
@@ -103,5 +112,15 @@ variable "clients" {
   validation {
     condition     = alltrue([for client in var.clients : !contains(client.web_origins, "*")])
     error_message = "web_origins must not contain \"*\"; list explicit origins or use \"+\" for the redirect URI origins."
+  }
+
+  validation {
+    condition     = alltrue([for client in var.clients : alltrue([for aud in client.audiences : aud != client.name])])
+    error_message = "audiences must not contain the client's own name; Keycloak already sets azp to it."
+  }
+
+  validation {
+    condition     = alltrue([for client in var.clients : client.optional_scopes == null || !contains(["openwebui", "k8s-mcp"], client.name)])
+    error_message = "kubernetes_oidc.tf manages the optional scopes of openwebui and k8s-mcp; do not set optional_scopes on them."
   }
 }
