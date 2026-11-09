@@ -1,7 +1,7 @@
 ---
 # K3s cluster configuration
 # renovate: datasource=github-releases depName=k3s-io/k3s versioning=regex:^v(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)\+k3s(?<build>\d+)$
-k3s_version: v1.37.1+k3s1
+k3s_version: v1.37.2+k3s1
 # Agents join with a separate agent token when k3s_agent_token is set (servers
 # get it as agent-token below). Servers always use the server token.
 token: "{{ k3s_agent_token if (k3s_agent_token is defined and inventory_hostname not in groups['server']) else k3s_token }}"
