@@ -128,10 +128,12 @@ class SecretsEncryptionPreconditionTests(unittest.TestCase):
         self.conditions = [that] if isinstance(that, str) else that
         self.env = jinja2.Environment()
 
-    def passes(self, binary_exists, status=None):
+    def passes(self, binary_exists, status=None, config_exists=False, annotation=None):
         context = {
             "k3s_secrets_encrypt_binary": {"stat": {"exists": binary_exists}},
+            "k3s_secrets_encrypt_config": {"stat": {"exists": config_exists}},
             "k3s_secrets_encrypt_status": status if status is not None else {"skipped": True},
+            "k3s_secrets_encrypt_annotation": annotation if annotation is not None else {"skipped": True},
         }
         return all(bool(self.env.compile_expression(c)(**context)) for c in self.conditions)
 
@@ -156,6 +158,24 @@ class SecretsEncryptionPreconditionTests(unittest.TestCase):
         ]:
             with self.subTest(status=status):
                 self.assertFalse(self.passes(True, status))
+
+    STATUS_ERROR = {"rc": 1, "stdout": "", "stderr": "level=fatal msg=\"Error: see server log for details: "
+                    "Internal error occurred: secret-encrypt error ID 27199\""}
+
+    def test_enabled_before_restart_passes(self):
+        # After `k3s secrets-encrypt enable`, status fails until the servers
+        # restart with secrets-encryption (the restart this play allows).
+        self.assertTrue(self.passes(True, self.STATUS_ERROR, config_exists=True,
+                                    annotation={"rc": 0, "stdout": ""}))
+
+    def test_status_error_without_configuration_fails(self):
+        self.assertFalse(self.passes(True, self.STATUS_ERROR, config_exists=False,
+                                     annotation={"rc": 0, "stdout": ""}))
+
+    def test_status_error_with_annotation_or_unreadable_node_fails(self):
+        for annotation in [{"rc": 0, "stdout": "start-abc123"}, {"rc": 1, "stdout": ""}, {"skipped": True}]:
+            with self.subTest(annotation=annotation):
+                self.assertFalse(self.passes(True, self.STATUS_ERROR, config_exists=True, annotation=annotation))
 
     def test_status_runs_only_when_binary_exists(self):
         status_task = next(t for t in self.play["tasks"] if t.get("register") == "k3s_secrets_encrypt_status")
