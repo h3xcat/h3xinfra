@@ -6,8 +6,11 @@
 # restarts every server, so this play fails closed: it passes only when k3s is
 # not installed on the first server (a new cluster), or when
 # `k3s secrets-encrypt status` succeeds and reports an encryption
-# configuration. Any other result (no configuration file, k3s down, an error)
-# stops the run before a server restarts.
+# configuration, or when `k3s secrets-encrypt enable` already wrote the
+# encryption configuration and the server has not restarted with
+# secrets-encryption yet (status fails, and the node has no
+# k3s.io/encryption-config-hash annotation). Any other result (no configuration
+# file, k3s down, another error) stops the run before a server restarts.
 - name: Check the secrets encryption precondition
   hosts: server
   gather_facts: false
@@ -25,6 +28,19 @@
       delegate_to: "{{ groups['server'][0] }}"
       when: k3s_secrets_encryption_requested | bool
 
+    # `k3s secrets-encrypt enable` writes this file. Until the servers restart
+    # with secrets-encryption, `status` fails ("missing annotation on node" in
+    # the server log): the node has no k3s.io/encryption-config-hash yet.
+    - name: Check for the encryption configuration on the first server
+      ansible.builtin.stat:
+        path: /var/lib/rancher/k3s/server/cred/encryption-config.json
+      register: k3s_secrets_encrypt_config
+      run_once: true
+      delegate_to: "{{ groups['server'][0] }}"
+      when:
+        - k3s_secrets_encryption_requested | bool
+        - k3s_secrets_encrypt_binary.stat.exists
+
     - name: Read the secrets encryption status on the first server
       ansible.builtin.command:
         argv: ["{{ k3s_secrets_encryption_binary }}", secrets-encrypt, status]
@@ -37,6 +53,21 @@
         - k3s_secrets_encryption_requested | bool
         - k3s_secrets_encrypt_binary.stat.exists
 
+    - name: Read the encryption hash annotation of the first server node
+      ansible.builtin.shell: >-
+        {{ k3s_secrets_encryption_binary }} kubectl get node "$(hostname)"
+        -o jsonpath='{.metadata.annotations.k3s\.io/encryption-config-hash}'
+      register: k3s_secrets_encrypt_annotation
+      changed_when: false
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ groups['server'][0] }}"
+      when:
+        - k3s_secrets_encryption_requested | bool
+        - k3s_secrets_encrypt_binary.stat.exists
+        - k3s_secrets_encrypt_config.stat.exists | default(false)
+        - k3s_secrets_encrypt_status.rc | default(0) != 0
+
     - name: Refuse to restart an existing cluster with secrets encryption before `k3s secrets-encrypt enable`
       ansible.builtin.assert:
         that: >-
@@ -46,6 +77,12 @@
             and 'Encryption Status:' in (k3s_secrets_encrypt_status.stdout | default(''))
             and 'no configuration file found' not in
               ((k3s_secrets_encrypt_status.stdout | default('')) ~ (k3s_secrets_encrypt_status.stderr | default('')))
+          )
+          or (
+            (k3s_secrets_encrypt_config.stat.exists | default(false))
+            and k3s_secrets_encrypt_status.rc | default(0) != 0
+            and k3s_secrets_encrypt_annotation.rc | default(1) == 0
+            and (k3s_secrets_encrypt_annotation.stdout | default('x') | trim) == ''
           )
         fail_msg: >-
           server_config_yaml sets secrets-encryption, but `k3s secrets-encrypt status`
