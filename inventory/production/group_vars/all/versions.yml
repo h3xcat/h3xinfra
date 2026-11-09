@@ -10,7 +10,7 @@ chart_versions:
   # renovate: datasource=helm depName=cilium registryUrl=https://helm.cilium.io
   cilium: "1.20.4"
   # renovate: datasource=helm depName=metallb registryUrl=https://metallb.github.io/metallb
-  metallb: "0.16.1"
+  metallb: "0.16.2"
   # Envoy Gateway controller (replaces ingress-nginx).
   # renovate: datasource=docker depName=envoyproxy/gateway-helm registryUrl=https://docker.io versioning=helm
   envoy_gateway: "1.9.3"
@@ -28,7 +28,7 @@ chart_versions:
   # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
   cert_manager: "v1.21.3"
   # renovate: datasource=docker depName=quay.io/keycloak/keycloak
-  keycloak: "26.8.1"
+  keycloak: "26.8.2"
 
   # Infrastructure - Storage
   # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
@@ -38,7 +38,7 @@ chart_versions:
 
   # Infrastructure - Lifecycle
   # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-  argocd: "10.11.6"
+  argocd: "10.14.0"
   # Kubernetes Reboot Daemon — orchestrates rolling node reboots when
   # /var/run/reboot-required is set (e.g. after kernel updates).
   # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts

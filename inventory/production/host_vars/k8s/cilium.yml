@@ -2,6 +2,20 @@
 cilium:
   namespace: "kube-system"
   release_name_prefix: "h3xinfra-cilium"
+
+  # Optional host firewall (playbooks/02-cilium/HOST-FIREWALL.md). Off by
+  # default. Turn it on in stages: enabled first, then one node at a time.
+  host_firewall:
+    enabled: false
+    # Kubernetes node names that enforce the host policy.
+    enforce_nodes: []
+    # Site ranges to trust in addition to private and link-local ranges.
+    # The global IPv6 prefix of the node network is required before a node
+    # gets the label. Add other trusted LAN prefixes too.
+    extra_trusted_cidrs:
+      ipv4: []
+      ipv6:
+        - "2001:db8:7c20:a470::/60"
   
   # Cilium configuration
   config:

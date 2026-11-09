@@ -90,6 +90,50 @@ frr-k8s:
           cpu: 100m
           memory: 64Mi
           ephemeral-storage: 256Mi
+    # frr-k8s 0.0.27 (MetalLB 0.16.2) exposes resources for its init containers.
+    # They only copy the FRR, reloader, metrics and status files, so they get the
+    # reloader-sized budget. Earlier frr-k8s versions ignore this block.
+    initContainers:
+      cpFrrFiles:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+            ephemeral-storage: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+            ephemeral-storage: 64Mi
+      cpReloader:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+            ephemeral-storage: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+            ephemeral-storage: 64Mi
+      cpMetrics:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+            ephemeral-storage: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+            ephemeral-storage: 64Mi
+      cpFrrStatus:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+            ephemeral-storage: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+            ephemeral-storage: 64Mi
 
 rbac:
   create: true

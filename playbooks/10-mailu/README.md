@@ -1,5 +1,25 @@
 # Mailu Operations
 
+## Load Balancer Services
+
+The pre-chart publishes the mail ports on two LoadBalancer Services. The two
+Services share one MetalLB address.
+
+- `<fullname>-external` publishes SMTP (25) and submission (465). All sources
+  can connect. The external-dns records come from this Service.
+- `<fullname>-external-clients` publishes IMAPS (993), POP3S (995), and
+  ManageSieve (4190). Its `loadBalancerSourceRanges` holds the RFC 1918
+  ranges, `fc00::/7`, and `networkPolicy.allowedIPv6Networks`. The Cilium
+  policy uses the same CIDRs on these ports. This Service has no NodePorts,
+  because `loadBalancerSourceRanges` does not apply to NodePorts.
+
+Helm 4 `--wait` does not wait for a LoadBalancer address. After the pre-chart
+deploys, `standup.yml` waits until each of the two Services has an address.
+If the two Services do not share one address, the play stops with an error.
+
+To let a network connect to the client ports, add its CIDR to
+`mailu.network_policy.allowed_ipv6_networks` in the inventory.
+
 ## Resource Budgets
 
 The main Helm task declares CPU and memory requests and limits for the nine

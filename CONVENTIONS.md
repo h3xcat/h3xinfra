@@ -168,14 +168,20 @@ XX-servicename/
         repo_url: https://{repo-url}
         state: present
 
-    # 4. Create namespace
+    # 4. Create namespace with Pod Security labels (see playbooks/01-k3s/README.md)
     - name: Create {Service} namespace
       kubernetes.core.k8s:
-        api_version: v1
-        kind: Namespace
-        name: "{{ servicename.namespace }}"
         state: present
         wait: true
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ servicename.namespace }}"
+            labels:
+              pod-security.kubernetes.io/enforce: "{{ servicename.pod_security_enforce | default('restricted') }}"
+              pod-security.kubernetes.io/audit: restricted
+              pod-security.kubernetes.io/warn: restricted
 
     # 5. Deploy pre-configuration (optional)
     - name: Deploy {Service} configuration via Helm
@@ -822,6 +828,10 @@ mkdir -p playbooks/XX-servicename/charts
 **`teardown.yml`:**
 ```yaml
 ---
+# Stops here unless run with -e confirm_destroy=yes-destroy-data.
+- name: Require confirmation before teardown
+  import_playbook: ../99-utils/confirm-destroy.yml
+
 - import_playbook: ../99-utils/kube-connect.yml
 
 - name: Teardown NewService deployment
@@ -938,7 +948,7 @@ ansible-playbook playbooks/XX-servicename/standup.yml -i inventory/production/ho
 
 ### Teardown Single Layer
 ```bash
-ansible-playbook playbooks/XX-servicename/teardown.yml -i inventory/production/hosts.yml
+ansible-playbook playbooks/XX-servicename/teardown.yml -i inventory/production/hosts.yml -e confirm_destroy=yes-destroy-data
 ```
 
 ### Deploy Full Stack

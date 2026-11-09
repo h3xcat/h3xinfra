@@ -1,9 +1,78 @@
 ---
+# Secrets encryption cannot simply be switched on for a running cluster: k3s
+# needs `k3s secrets-encrypt enable` on the first server BEFORE the servers
+# restart with `secrets-encryption: true` (docs.k3s.io/cli/secrets-encrypt,
+# "Enable Secrets Encryption on an Existing Cluster"). The orchestration below
+# restarts every server, so this play fails closed: it passes only when k3s is
+# not installed on the first server (a new cluster), or when
+# `k3s secrets-encrypt status` succeeds and reports an encryption
+# configuration. Any other result (no configuration file, k3s down, an error)
+# stops the run before a server restarts.
+- name: Check the secrets encryption precondition
+  hosts: server
+  gather_facts: false
+  become: true
+  vars:
+    k3s_secrets_encryption_requested: >-
+      {{ (server_config_yaml | default('{}') | from_yaml).get('secrets-encryption', false) | bool }}
+    k3s_secrets_encryption_binary: /usr/local/bin/k3s
+  tasks:
+    - name: Check for the k3s binary on the first server
+      ansible.builtin.stat:
+        path: "{{ k3s_secrets_encryption_binary }}"
+      register: k3s_secrets_encrypt_binary
+      run_once: true
+      delegate_to: "{{ groups['server'][0] }}"
+      when: k3s_secrets_encryption_requested | bool
+
+    - name: Read the secrets encryption status on the first server
+      ansible.builtin.command:
+        argv: ["{{ k3s_secrets_encryption_binary }}", secrets-encrypt, status]
+      register: k3s_secrets_encrypt_status
+      changed_when: false
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ groups['server'][0] }}"
+      when:
+        - k3s_secrets_encryption_requested | bool
+        - k3s_secrets_encrypt_binary.stat.exists
+
+    - name: Refuse to restart an existing cluster with secrets encryption before `k3s secrets-encrypt enable`
+      ansible.builtin.assert:
+        that: >-
+          not k3s_secrets_encrypt_binary.stat.exists
+          or (
+            k3s_secrets_encrypt_status.rc | default(1) == 0
+            and 'Encryption Status:' in (k3s_secrets_encrypt_status.stdout | default(''))
+            and 'no configuration file found' not in
+              ((k3s_secrets_encrypt_status.stdout | default('')) ~ (k3s_secrets_encrypt_status.stderr | default('')))
+          )
+        fail_msg: >-
+          server_config_yaml sets secrets-encryption, but `k3s secrets-encrypt status`
+          on {{ groups['server'][0] }} did not report an encryption configuration
+          (rc={{ k3s_secrets_encrypt_status.rc | default('n/a') }}:
+          {{ ((k3s_secrets_encrypt_status.stdout | default('')) ~ ' ' ~ (k3s_secrets_encrypt_status.stderr | default(''))) | trim | truncate(300) }}).
+          If k3s is down on that server, repair it first. If the status says
+          "no configuration file found", run `k3s secrets-encrypt enable` on
+          {{ groups['server'][0] }}. Then run this playbook again.
+      run_once: true
+      when: k3s_secrets_encryption_requested | bool
+
 # Create kubelet configuration before K3s installation
 - name: Create kubelet configuration
   hosts: k3s_cluster
   gather_facts: false
   become: true
+  vars:
+    # Values that the kubelet expects when protectKernelDefaults is set. With
+    # the flag the kubelet does not change them; it refuses to start instead.
+    kubelet_kernel_defaults:
+      - {name: vm.overcommit_memory, value: "1"}
+      - {name: vm.panic_on_oom, value: "0"}
+      - {name: kernel.panic, value: "10"}
+      - {name: kernel.panic_on_oops, value: "1"}
+      - {name: kernel.keys.root_maxkeys, value: "1000000"}
+      - {name: kernel.keys.root_maxbytes, value: "25000000"}
   tasks:
     - name: Create kubelet config directory
       ansible.builtin.file:
@@ -81,6 +150,77 @@
         owner: root
         group: root
 
+    # Kubelet hardening, both opt-in (default false):
+    #   kubelet_seccomp_default: containers without a seccomp profile get the
+    #     container runtime's default profile instead of Unconfined. Only
+    #     containers created after the kubelet restart are affected, and a
+    #     workload that needs a blocked syscall fails, so enable it on one node
+    #     first and recreate that node's pods before enabling it everywhere.
+    #   kubelet_protect_kernel_defaults: the kubelet stops at start when a
+    #     kernel tunable differs from kubelet_kernel_defaults, instead of
+    #     silently changing it. The values are pinned in a sysctl.d file that
+    #     sorts after every other file (so a boot cannot apply a different
+    #     value) and are checked before the kubelet restarts.
+    - name: Pin the kernel tunables that protectKernelDefaults requires
+      ansible.posix.sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_file: /etc/sysctl.d/zz-h3xinfra-kubelet.conf
+        state: present
+        sysctl_set: true
+        reload: true
+      loop: "{{ kubelet_kernel_defaults }}"
+      when: kubelet_protect_kernel_defaults | default(false) | bool
+
+    # Rollback: remove the pin file. The live values stay as they are (they
+    # are the values that the kubelet sets without protectKernelDefaults).
+    - name: Remove the kernel tunable pin file when protectKernelDefaults is off
+      ansible.builtin.file:
+        path: /etc/sysctl.d/zz-h3xinfra-kubelet.conf
+        state: absent
+      when: not (kubelet_protect_kernel_defaults | default(false) | bool)
+
+    - name: Read the live kernel tunables
+      ansible.builtin.command:
+        argv: "{{ ['sysctl', '-n'] + (kubelet_kernel_defaults | map(attribute='name') | list) }}"
+      register: kubelet_kernel_live
+      changed_when: false
+      when: kubelet_protect_kernel_defaults | default(false) | bool
+
+    - name: Refuse protectKernelDefaults when a live tunable differs from the kubelet value
+      ansible.builtin.assert:
+        that: kubelet_kernel_live.stdout_lines == (kubelet_kernel_defaults | map(attribute='value') | list)
+        fail_msg: >-
+          Live values {{ kubelet_kernel_live.stdout_lines }} do not match
+          {{ kubelet_kernel_defaults }}. The kubelet would not start.
+      when: kubelet_protect_kernel_defaults | default(false) | bool
+
+    # Only options set to true are written: a "false" here would override the
+    # k3s protect-kernel-defaults option in 00-k3s-defaults.conf. With both
+    # options off, the file is removed.
+    - name: Create kubelet configuration file for hardening options
+      ansible.builtin.copy:
+        content: |
+          apiVersion: kubelet.config.k8s.io/v1beta1
+          kind: KubeletConfiguration
+          {% if kubelet_seccomp_default | default(false) | bool %}
+          seccompDefault: true
+          {% endif %}
+          {% if kubelet_protect_kernel_defaults | default(false) | bool %}
+          protectKernelDefaults: true
+          {% endif %}
+        dest: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-hardening.conf
+        mode: '0644'
+        owner: root
+        group: root
+      when: (kubelet_seccomp_default | default(false) | bool) or (kubelet_protect_kernel_defaults | default(false) | bool)
+
+    - name: Remove kubelet hardening file when both options are off
+      ansible.builtin.file:
+        path: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-hardening.conf
+        state: absent
+      when: not (kubelet_seccomp_default | default(false) | bool) and not (kubelet_protect_kernel_defaults | default(false) | bool)
+
     - name: Remove ignored .yaml kubelet drop-ins (kubelet only reads .conf)
       ansible.builtin.file:
         path: "/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/{{ item }}"
@@ -90,6 +230,10 @@
       - 99-resource-reservations.yaml
       - 99-image-gc.yaml
 
+# Stop before K3s restarts if kube-proxy is disabled too early.
+- name: Check the kube-proxy replacement settings
+  import_playbook: kube-proxy-preflight.yml
+
 # Import the main k3s orchestration playbook
 - import_playbook: k3s.orchestration.site
 
@@ -98,3 +242,11 @@
 # Enable kube-apiserver OIDC trust (Keycloak) once the cluster is up. serial: 1
 # with a per-node readiness gate, so a bad config only affects one server.
 - import_playbook: apiserver-oidc.yml
+
+# Set the cluster-wide Pod Security Admission defaults. serial: 1 with a
+# per-node readiness gate, so a bad config only affects one server.
+- import_playbook: apiserver-admission.yml
+
+# Enable kube-apiserver audit logging, with the same serial: 1 readiness gate.
+- name: Enable kube-apiserver audit logging
+  import_playbook: apiserver-audit.yml

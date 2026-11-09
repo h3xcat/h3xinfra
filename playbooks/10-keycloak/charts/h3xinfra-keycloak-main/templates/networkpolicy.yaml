@@ -1,0 +1,175 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $gatewayName := required "networkPolicy requires networkPolicy.gateway.name" .Values.networkPolicy.gateway.name }}
+{{- $gatewayNamespace := required "networkPolicy requires networkPolicy.gateway.namespace" .Values.networkPolicy.gateway.namespace }}
+{{- $egress := .Values.networkPolicy.egress.enabled }}
+---
+# Keycloak pods. Only the Envoy Gateway data plane reaches the HTTP port, so
+# a pod cannot skip the gateway and send its own X-Forwarded-* headers.
+# In-cluster OIDC consumers (the apiserver, the Envoy OIDC filter, apps) use
+# the public issuer URL, so their requests also arrive from the Envoy pods.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "h3xinfra-keycloak-main.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-keycloak-main.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "h3xinfra-keycloak-main.podSelectorLabels" . | nindent 6 }}
+  enableDefaultDeny:
+    ingress: true
+    egress: {{ $egress }}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ $gatewayNamespace | quote }}
+            gateway.envoyproxy.io/owning-gateway-name: {{ $gatewayName | quote }}
+            gateway.envoyproxy.io/owning-gateway-namespace: {{ $gatewayNamespace | quote }}
+      toPorts:
+        - ports:
+            - {port: "8080", protocol: TCP}
+    # JGroups data and failure detection between the Keycloak replicas (the
+    # same ports as the operator's own NetworkPolicy).
+    - fromEndpoints:
+        - matchLabels:
+            {{- include "h3xinfra-keycloak-main.podSelectorLabels" . | nindent 12 }}
+      toPorts:
+        - ports:
+            - {port: "7800", protocol: TCP}
+            - {port: "57800", protocol: TCP}
+    # The Keycloak Operator in this namespace. The operator's own
+    # NetworkPolicy also let it reach these ports.
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: keycloak-operator
+      toPorts:
+        - ports:
+            - {port: "8080", protocol: TCP}
+            - {port: "9000", protocol: TCP}
+    # Kubelet probes. The operator points all probes (started, live, ready)
+    # at the management port 9000, so this rule does not open port 8080.
+    # Host traffic can use the cilium_host address, which is in the pod
+    # CIDR, so proxyTrustedAddresses does not reliably exclude the host.
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - {port: "9000", protocol: TCP}
+  {{- if $egress }}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - {port: "53", protocol: UDP}
+            - {port: "53", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            {{- include "h3xinfra-keycloak-main.podSelectorLabels" . | nindent 12 }}
+      toPorts:
+        - ports:
+            - {port: "7800", protocol: TCP}
+            - {port: "57800", protocol: TCP}
+    {{- with .Values.database.clusterName }}
+    - toEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: {{ . | quote }}
+      toPorts:
+        - ports:
+            - port: {{ $.Values.database.port | default 5432 | quote }}
+              protocol: TCP
+    {{- end }}
+    {{- with .Values.networkPolicy.egress.smtpPorts }}
+    # Realm mail. The SMTP host can resolve to a public address (world) or
+    # to a LoadBalancer VIP that Cilium maps to an in-cluster pod (cluster).
+    - toEntities:
+        - world
+        - cluster
+      toPorts:
+        - ports:
+            {{- range . }}
+            - port: {{ . | quote }}
+              protocol: TCP
+            {{- end }}
+    {{- end }}
+  {{- end }}
+{{- with .Values.database.clusterName }}
+---
+# CNPG database pods: Keycloak, the CNPG operator, the other instances and
+# the metrics scraper. The nightly logical backup uses pods/exec and does
+# not need a network path.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "h3xinfra-keycloak-main.fullname" $ }}-postgres
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-keycloak-main.labels" $ | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      cnpg.io/cluster: {{ . | quote }}
+  enableDefaultDeny:
+    ingress: true
+    egress: {{ $egress }}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            {{- include "h3xinfra-keycloak-main.podSelectorLabels" $ | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: {{ $.Values.database.port | default 5432 | quote }}
+              protocol: TCP
+    # Replication, join jobs and instance manager calls between instances.
+    - fromEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: {{ . | quote }}
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ required "networkPolicy requires networkPolicy.cnpgOperatorNamespace" $.Values.networkPolicy.cnpgOperatorNamespace | quote }}
+            app.kubernetes.io/name: cloudnative-pg
+      toPorts:
+        - ports:
+            - {port: "8000", protocol: TCP}
+    {{- with $.Values.networkPolicy.prometheusNamespace }}
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ . | quote }}
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - {port: "9187", protocol: TCP}
+    {{- end }}
+    # Kubelet probes (instance manager on port 8000).
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - {port: "8000", protocol: TCP}
+  {{- if $egress }}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - {port: "53", protocol: UDP}
+            - {port: "53", protocol: TCP}
+    # The instance manager watches its Cluster and Pods.
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - {port: "443", protocol: TCP}
+            - {port: "6443", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: {{ . | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}

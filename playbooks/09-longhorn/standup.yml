@@ -8,11 +8,17 @@
   vars:
     longhorn_cli_version: "{{ cli_versions.longhorn_cli }}"
     longhorn_cli_arch: "{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }}"
-  serial: 1 
+    longhorn_cli_url: "https://github.com/longhorn/cli/releases/download/{{ longhorn_cli_version }}/longhornctl-linux-{{ longhorn_cli_arch }}"
+  serial: 1
   tasks:
+    # The binary runs as root on every node: verify it against the .sha256
+    # file that upstream publishes next to each release asset. The checksum
+    # also makes get_url replace an existing binary of another version
+    # (without it, an existing dest is never downloaded again).
     - name: Download Longhorn CLI
       get_url:
-        url: "https://github.com/longhorn/cli/releases/download/{{ longhorn_cli_version }}/longhornctl-linux-{{ longhorn_cli_arch }}"
+        url: "{{ longhorn_cli_url }}"
+        checksum: "sha256:{{ longhorn_cli_url }}.sha256"
         dest: "/usr/local/bin/longhornctl"
         mode: '0755'
         owner: root
@@ -70,6 +76,19 @@
   gather_facts: true
   vars:
   tasks:
+    # The post chart renders only the OIDC filter and the IP allowlist. An
+    # unknown method (for example the old "basic") would render no
+    # authentication. This check is the first task, so a bad value stops the
+    # play before it changes the cluster.
+    - name: Validate Longhorn auth method
+      ansible.builtin.assert:
+        that:
+          - (longhorn.auth.method | default('none')) in ['none', 'oauth2_proxy']
+        fail_msg: >-
+          longhorn.auth.method must be "oauth2_proxy" or "none"
+          (got "{{ longhorn.auth.method | default('none') }}").
+          Basic auth is not supported.
+
     - name: Check whether Longhorn volume CRDs already exist
       kubernetes.core.k8s_info:
         api_version: apiextensions.k8s.io/v1
@@ -148,13 +167,21 @@
         force_update: true
       changed_when: false
 
+    # Pod Security: privileged. longhorn-manager and the instance managers
+    # are privileged and mount /dev, /proc and /var/lib/longhorn from the host.
     - name: Create Longhorn namespace
       kubernetes.core.k8s:
-        api_version: v1
-        kind: Namespace
-        name: "{{ longhorn.namespace }}"
         state: present
         wait: true
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ longhorn.namespace }}"
+            labels:
+              pod-security.kubernetes.io/enforce: privileged
+              pod-security.kubernetes.io/audit: restricted
+              pod-security.kubernetes.io/warn: restricted
 
     - name: Deploy Longhorn pre-configuration via Helm
       kubernetes.core.helm:
@@ -357,6 +384,20 @@
           longhorn.auth.oauth2_proxy.{oidc_issuer_url,client_id,client_secret}
           to all be set.
       when: (longhorn.auth.method | default('none')) == 'oauth2_proxy'
+
+    # The Helm task below runs with no_log, so it hides the chart guard
+    # message. Check the same rule here with a readable message.
+    - name: Validate Longhorn trusted_ips against the auth method
+      ansible.builtin.assert:
+        that:
+          - >-
+            (longhorn.auth.method | default('none')) == 'oauth2_proxy' or
+            (longhorn.trusted_ips | default([], true) | map('trim') | select('search', '/0$') | list | length == 0)
+        fail_msg: >-
+          longhorn.trusted_ips contains a world CIDR (0.0.0.0/0 or ::/0), but
+          longhorn.auth.method is not 'oauth2_proxy'. This publishes the
+          Longhorn UI without authentication. Set auth.method to
+          'oauth2_proxy' or use LAN CIDRs.
 
     - name: Deploy Longhorn configuration via Helm
       kubernetes.core.helm:

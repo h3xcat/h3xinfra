@@ -63,7 +63,11 @@ The standup playbook does these steps:
    `terraform init` + `apply` against the new instance. This creates the
    configured realm + OIDC clients.
 
-### Teardown (`ansible-playbook playbooks/10-keycloak/teardown.yml`)
+### Teardown (`ansible-playbook playbooks/10-keycloak/teardown.yml -e confirm_destroy=yes-destroy-data`)
+
+The playbook stops at the start unless you give
+`-e confirm_destroy=yes-destroy-data`. The teardown deletes the realm, the
+CNPG PVCs, and the namespace. You cannot recover this data.
 
 The teardown playbook removes the items in reverse order: `terraform destroy` → main Helm release → pre Helm
 release → namespace.
@@ -114,6 +118,10 @@ To add a client, do these steps:
        - "https://chat.app.example.com"
    ```
 
+   If you do not set `web_origins`, a new client gets no CORS origins. To
+   allow the origins of all `redirect_uris`, set `web_origins: ["+"]`.
+   Terraform rejects `"*"`.
+
 2. Run `ansible-playbook playbooks/10-keycloak/standup.yml` again. Terraform
    converges only the delta.
 
@@ -122,6 +130,64 @@ Consumers can then use this value:
 ```
 oidc_issuer_url: "{{ keycloak.issuer_url_base }}/realms/{{ keycloak.realm.name }}"
 ```
+
+### Proxy headers
+
+The main chart sets the Keycloak `proxy-trusted-addresses` option to the pod
+CIDRs (`cluster_cidr.ipv4` and `cluster_cidr.ipv6`). The Envoy pods connect
+from these CIDRs. Keycloak ignores `X-Forwarded-*` headers from all other
+sources. To trust all sources again, set `keycloak.proxy_trusted_addresses: []`.
+All other pods also use these CIDRs. Host traffic can also use them (the
+`cilium_host` address). Thus the main controls are the gateway header removal
+and the network policy.
+
+The shared gateway removes the client copies of these headers before Envoy
+sets its own values (`ClientTrafficPolicy` in `h3xinfra-gateway-pre`). To
+turn off this policy, set `gateway.client_traffic_policy.enabled: false` and
+run `playbooks/07-gateway/standup.yml`.
+
+After the deploy, the playbook waits until the StatefulSet replaces all
+Keycloak pods. Then it sends `3 * keycloak.replicas` requests to
+`/realms/master/.well-known/openid-configuration` and reads the issuer from
+each response. Envoy spreads these requests over the pods, so usually each
+pod answers some of them. If Keycloak does not trust the Envoy pods,
+the issuer starts with `http://` and the playbook stops.
+
+### Network policy
+
+The main chart can render a `CiliumNetworkPolicy` for the Keycloak pods and a
+second one for the CNPG database pods. These policies are off by default.
+When you enable them, the chart turns off the `NetworkPolicy` of the Keycloak
+Operator. That policy allows port 8080 from all pods. The playbook stops if
+the operator does not remove its policy.
+
+| Inventory key | Default | Effect |
+|---------------|---------|--------|
+| `keycloak.network_policy.enabled` | `false` | Ingress rules. Port 8080 accepts only the Envoy Gateway pods and the Keycloak Operator. Kubelet probes use port 9000. The database accepts Keycloak, its own instances, the CNPG operator, Prometheus and kubelet probes. |
+| `keycloak.network_policy.egress` | `false` | Egress rules. Keycloak can reach DNS, the other Keycloak pods, the database and the realm SMTP port. The database can reach DNS, the API server and its own instances. |
+| `keycloak.network_policy.cnpg_operator_namespace` | `cnpg-system` | Namespace of the CloudNativePG operator. |
+| `keycloak.network_policy.prometheus_namespace` | `""` | Namespace of the Prometheus that scrapes the CNPG metrics port. An empty value removes the rule. |
+
+Enable the ingress rules first and the egress rules second:
+
+1. Set `keycloak.network_policy.enabled: true`.
+2. Run `ansible-playbook playbooks/10-keycloak/standup.yml`.
+3. Log in to one application through the gateway OIDC flow.
+4. Run one `kubectl` command as an OIDC user.
+5. Run `kubectl -n keycloak get networkpolicy`.
+6. Make sure that `<release_name_prefix>-main-network-policy` is not in the list.
+7. Run `hubble observe --namespace keycloak --verdict DROPPED`.
+8. Make sure that Hubble shows no dropped flow from a known client.
+9. Run `hubble observe --from-namespace keycloak --traffic-direction egress`.
+10. Compare the destinations with the egress rules in
+    `charts/h3xinfra-keycloak-main/templates/networkpolicy.yaml`.
+11. Set `keycloak.network_policy.egress: true`.
+12. Run the playbook again.
+13. Send a test email from the realm email settings.
+14. Do steps 3 to 8 again.
+
+To roll back, set the key to `false` and run the playbook. The Keycloak
+Operator then creates its default `NetworkPolicy` again.
 
 ## Terraform state
 

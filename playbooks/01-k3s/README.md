@@ -69,3 +69,99 @@ The watchdog never starts a stopped K3s service. Keep the state during
 maintenance so that the recovery budget stays intact. This watchdog does not fence
 storage. It also does not prove that API heartbeats and workload reconciliation
 advance.
+
+# Hardening Options
+
+These inventory variables control the hardening options of this layer. Each
+option is off when its variable is not set.
+
+| Variable | Effect |
+| --- | --- |
+| `apiserver_audit.enabled` | `apiserver-audit.yml` writes an audit policy and an audit log on each server. It restarts one server at a time and waits for `/readyz`. |
+| `kubelet_protect_kernel_defaults` | The kubelet stops at start if a kernel tunable is not the kubelet value. `standup.yml` sets and checks the six values first. |
+| `kubelet_seccomp_default` | Containers without a seccomp profile get the runtime default profile. |
+| `secrets-encryption: true` in `server_config_yaml` | k3s encrypts Secrets in the datastore. |
+
+Enable `kubelet_seccomp_default` on one node first. Then recreate the pods on
+that node and make sure that they start. A workload that needs a blocked
+syscall fails.
+
+To enable secrets encryption on a cluster that already runs, follow
+"Enable Secrets Encryption on an Existing Cluster" in the
+[k3s secrets-encrypt documentation](https://docs.k3s.io/cli/secrets-encrypt).
+Run `k3s secrets-encrypt enable` on the first server before you deploy the
+changed `server_config_yaml`. If you do not, `standup.yml` stops before it
+restarts the servers. `standup.yml` also stops if it cannot read the
+encryption status on the first server, for example when k3s does not run.
+
+The audit log stays on each server. A root user on the server can change it.
+To keep a copy that is safe from changes, send the log to a central log store.
+
+# Pod Security Admission
+
+`apiserver-admission.yml` sets the cluster-wide Pod Security Admission
+defaults. It writes an `AdmissionConfiguration` to
+`/etc/rancher/k3s/pod-security-admission.yaml` and a
+`config.yaml.d/20-pod-security.yaml` drop-in on each server. Then it restarts
+K3s on one server at a time and waits for `/readyz`. The `apiserver_pod_security`
+inventory variable controls the play. If `enabled` is `false` or not set, the
+play removes both files.
+
+The defaults apply only to namespaces that have no
+`pod-security.kubernetes.io/*` labels. Namespaces in
+`exemptions.namespaces` (by default `kube-system`) skip all checks. Kubernetes
+also writes no audit annotations and shows no warnings for pods in an exempt
+namespace. Each layer
+playbook labels its own namespace with `audit` and `warn` set to `restricted`
+and `enforce` set to the strictest level that its pods pass:
+
+| Namespace variable | `enforce` | Reason |
+| --- | --- | --- |
+| `cilium.namespace` | `privileged` | hostNetwork, hostPath, host ports, a privileged init container, NET_ADMIN/SYS_ADMIN |
+| `metallb.namespace` | `privileged` | hostNetwork, NET_RAW/NET_ADMIN/SYS_ADMIN |
+| `certmanager.namespace` | `restricted` | All pods pass `restricted`. |
+| `externaldns.namespace` | `restricted` | All pods pass `restricted`. |
+| `gateway.namespace` | `privileged` (opt-in `restricted`) | The controller generates the Envoy proxy pods. |
+| `longhorn.namespace` | `privileged` | Privileged containers, hostPath `/dev`, `/proc`, `/var/lib/longhorn` |
+| `argocd.namespace` | `restricted` | All pods pass `restricted`. |
+| `keycloak.namespace` | `privileged` (opt-in `baseline`) | The operators generate the Keycloak and Postgres pods. |
+| `kured.namespace` | `privileged` | Privileged container, hostPID |
+| `mailu.namespace` | `baseline` | The containers do not set the `restricted` fields. |
+| `default`, `kube-public`, `kube-node-lease` | `restricted` | No pods run in these namespaces. `04-health` sets the labels. |
+
+The `privileged` level of the Cilium, MetalLB, Longhorn and kured namespaces
+is fixed. For the other namespaces, set `<service>.pod_security_enforce` in the
+service inventory to change the `enforce` level.
+For `default`, `kube-public` and `kube-node-lease`, use
+`health.pod_security_enforce`.
+
+`kubectl debug node/<node>` creates a pod with host access in the current
+namespace. The `restricted` level in `default` rejects this pod. Add
+`-n kube-system` to the command.
+
+The labels and the defaults use the `latest` policy version. A K3s upgrade
+can add new Pod Security checks. Then Kubernetes can reject new pods in an
+enforced namespace. Before you upgrade K3s, read the Pod Security Standards
+changes in the Kubernetes release notes.
+
+To make an opt-in level active, do these steps:
+
+1. Make sure that the layer is deployed and that its pods run.
+2. Run a server-side dry run of the new label:
+
+   ```sh
+   kubectl label --dry-run=server --overwrite namespace keycloak \
+     pod-security.kubernetes.io/enforce=baseline
+   ```
+
+3. If the command shows a warning for a pod, do not continue. Fix the pod first.
+4. Set `keycloak.pod_security_enforce: baseline` in the inventory.
+5. Run the layer playbook again.
+
+The warnings show only the pods that exist at that time. A controller can
+create other pods later, for example during an upgrade.
+
+Do not set `defaults.enforce` higher than `privileged` until each namespace
+has its labels. If you do, a namespace without labels gets the stricter
+level. Then Kubernetes rejects new privileged pods in that namespace, for
+example after a node drain.

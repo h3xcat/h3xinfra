@@ -54,6 +54,11 @@ gatewayRoute:
     # Name of the Mailu chart's front Service (terminates TLS on 443).
     name: ""
     port: 443
+  # Hostnames of the web routes on the shared Gateway. Empty means
+  # certificate.dnsNames. Set it to the browser hostnames only when other
+  # names in certificate.dnsNames are for mail protocols. Then the Gateway
+  # does not serve the web UI for these protocol names.
+  hostnames: []
   # SNI/hostname used when validating the upstream TLS connection.
   # Defaults to certificate.commonName when unset.
   tlsHostname: ""
@@ -86,4 +91,6 @@ networkPolicy:
   
   # Additional IPv6 networks to allow access to restricted ports (IMAPS, POP3S, Sieve)
   # These are in addition to RFC 1918 private networks and ULA ranges
+  # The chart also adds these networks to loadBalancerSourceRanges of the
+  # client-port Service (external-svc.yaml), also when the policy is disabled.
   allowedIPv6Networks: []

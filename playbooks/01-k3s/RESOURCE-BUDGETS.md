@@ -8,6 +8,10 @@ change intentionally does not do these actions for these components:
 - Create `.skip` markers
 - Pass `--disable`
 
+Exception: `coredns.yml` sets the replica count of the CoreDNS Deployment
+through the scale subresource. It also adds a separate PodDisruptionBudget.
+It does not change the K3s manifest. K3s continues to own CoreDNS.
+
 ## Verified State
 
 The production inventory and the live control-plane labels agree. The K3s servers

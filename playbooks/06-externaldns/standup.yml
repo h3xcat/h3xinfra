@@ -14,13 +14,20 @@
         force_update: true
       changed_when: false
 
+    # Pod Security: the ExternalDNS pod passes restricted.
     - name: Create ExternalDNS namespace
       kubernetes.core.k8s:
-        api_version: v1
-        kind: Namespace
-        name: "{{ externaldns.namespace }}"
         state: present
         wait: true
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ externaldns.namespace }}"
+            labels:
+              pod-security.kubernetes.io/enforce: "{{ externaldns.pod_security_enforce | default('restricted') }}"
+              pod-security.kubernetes.io/audit: restricted
+              pod-security.kubernetes.io/warn: restricted
 
     - name: Deploy ExternalDNS configuration via Helm chart
       kubernetes.core.helm:
@@ -35,6 +42,7 @@
         state: present
         wait: true
         timeout: "120s"
+      no_log: true
     
     - name: Deploy ExternalDNS via Helm
       kubernetes.core.helm:

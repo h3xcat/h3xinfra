@@ -2,7 +2,9 @@
 # K3s cluster configuration
 # renovate: datasource=github-releases depName=k3s-io/k3s versioning=regex:^v(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)\+k3s(?<build>\d+)$
 k3s_version: v1.37.1+k3s1
-token: "{{ k3s_token }}"
+# Agents join with a separate agent token when k3s_agent_token is set (servers
+# get it as agent-token below). Servers always use the server token.
+token: "{{ k3s_agent_token if (k3s_agent_token is defined and inventory_hostname not in groups['server']) else k3s_token }}"
 
 # K3s server configuration
 server_config_yaml: |
@@ -14,6 +16,13 @@ server_config_yaml: |
   flannel-backend: none
   disable-network-policy: true
   disable-kube-proxy: false
+  # Encrypt Secrets at rest. This line suits a new cluster. For a cluster
+  # that already runs without it, do "Enable Secrets Encryption on an Existing
+  # Cluster" (docs.k3s.io/cli/secrets-encrypt) first: run
+  # `k3s secrets-encrypt enable` on the first server before you deploy this
+  # line. If you do not, 01-k3s/standup.yml stops before it restarts a server.
+  secrets-encryption: true
+  {{ ('agent-token: ' ~ (k3s_agent_token | to_json)) if k3s_agent_token is defined else '' }}
   node-taint:
   - "CriticalAddonsOnly=true:NoSchedule"      
   disable:
@@ -22,3 +31,21 @@ server_config_yaml: |
   kube-apiserver-arg:
   - "anonymous-auth=true"
   - "enable-aggregator-routing=true"
+
+# kube-apiserver audit logging (playbooks/01-k3s/apiserver-audit.yml).
+apiserver_audit:
+  enabled: true
+  max_size_mb: 100
+  max_backups: 10
+  max_age_days: 30
+
+# Kubelet hardening (playbooks/01-k3s/standup.yml). Both default to false.
+# protect_kernel_defaults: the playbook pins and checks the kernel values that
+# the kubelet expects before the kubelet restarts.
+kubelet_protect_kernel_defaults: true
+# seccomp_default: it changes the seccomp profile of every new container that
+# does not set one. Do a staged rollout:
+#   1. Set it to true in the host_vars of one node.
+#   2. Run 01-k3s on that node and recreate its pods.
+#   3. Make sure that the pods start. Then set it to true here.
+kubelet_seccomp_default: false
