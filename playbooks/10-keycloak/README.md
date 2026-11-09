@@ -100,6 +100,33 @@ The mapper puts short group names in ID tokens, access tokens and userinfo. The 
 false, and this setting does not change existing clients. With short names, subgroups that have the same name
 under different parents give the same group name. Thus, use unique names for RBAC bindings.
 
+`audiences` is a list of other client IDs. For each one, the layer adds an
+audience mapper, so the access tokens of this client carry that client in
+`aud`. A resource server that checks the audience (for example an MCP server or
+an Envoy Gateway JWT policy) can then accept the tokens. ID tokens do not get
+the audience.
+
+`optional_scopes`, when set, is the complete list of optional client scopes of
+the client. It replaces the realm defaults. Use it on a public client to keep
+it from requesting a scope that it must not get. Do not set it on `openwebui`
+or `k8s-mcp`: `terraform/kubernetes_oidc.tf` manages their optional scopes.
+
+Example: a public PKCE client for MCP clients on a workstation (RFC 8252). For
+an `http` loopback redirect (`localhost`, `127.0.0.1`, `[::1]`), Keycloak
+ignores the port, so one entry accepts every port:
+
+```yaml
+- name: "mcp-clients"
+  access_type: "PUBLIC"
+  pkce_code_challenge_method: "S256"
+  redirect_uris:
+  - "http://localhost/callback"
+  - "http://127.0.0.1/callback"
+  groups_claim: true
+  audiences: ["k8s-mcp"]
+  optional_scopes: ["offline_access"]
+```
+
 To add a client, do these steps:
 
 1. Append an entry to `keycloak.clients` in the inventory file:

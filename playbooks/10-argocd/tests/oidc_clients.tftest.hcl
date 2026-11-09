@@ -85,3 +85,57 @@ run "reject_plain_pkce" {
   }
   expect_failures = [var.clients]
 }
+
+run "client_audiences_and_optional_scopes" {
+  command = plan
+  variables {
+    clients = [
+      {
+        name                       = "mcp-clients"
+        access_type                = "PUBLIC"
+        pkce_code_challenge_method = "S256"
+        groups_claim               = true
+        redirect_uris              = ["http://localhost/callback", "http://127.0.0.1/callback"]
+        audiences                  = ["k8s-mcp"]
+        optional_scopes            = ["offline_access"]
+      },
+      {
+        name          = "k8s-mcp"
+        client_secret = "FAKE_EXCHANGER_SECRET"
+        redirect_uris = ["https://mcp.example.com/oauth2/callback"]
+      },
+    ]
+  }
+  assert {
+    condition = (
+      keys(keycloak_openid_audience_protocol_mapper.client_audiences) == ["mcp-clients:k8s-mcp"] &&
+      keycloak_openid_audience_protocol_mapper.client_audiences["mcp-clients:k8s-mcp"].included_client_audience == "k8s-mcp" &&
+      keycloak_openid_audience_protocol_mapper.client_audiences["mcp-clients:k8s-mcp"].add_to_access_token &&
+      !keycloak_openid_audience_protocol_mapper.client_audiences["mcp-clients:k8s-mcp"].add_to_id_token
+    )
+    error_message = "Each listed audience must get one access-token-only audience mapper on its client."
+  }
+  assert {
+    condition = (
+      keys(keycloak_openid_client_optional_scopes.clients) == ["mcp-clients"] &&
+      toset(keycloak_openid_client_optional_scopes.clients["mcp-clients"].optional_scopes) == toset(["offline_access"])
+    )
+    error_message = "Only a client with optional_scopes may get an explicit optional-scope set."
+  }
+}
+
+run "reject_self_audience" {
+  command = plan
+  variables {
+    clients = [{ name = "app", client_secret = "FAKE", redirect_uris = ["https://app.example.com/cb"], audiences = ["app"] }]
+  }
+  expect_failures = [var.clients]
+}
+
+run "reject_optional_scopes_on_kubernetes_oidc_clients" {
+  command = plan
+  variables {
+    clients = [{ name = "openwebui", client_secret = "FAKE", redirect_uris = ["https://chat.example.com/cb"], optional_scopes = ["offline_access"] }]
+  }
+  expect_failures = [var.clients]
+}

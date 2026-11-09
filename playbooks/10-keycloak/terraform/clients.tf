@@ -5,6 +5,15 @@ locals {
   # Clients that define their own (client-scoped) roles for app-level RBAC.
   clients_with_roles = { for k, c in local.clients_by_name : k => c if length(c.client_roles) > 0 }
 
+  # Flattened (client, audience) pairs: one audience mapper each.
+  client_audience_pairs = {
+    for pair in flatten([
+      for k, c in local.clients_by_name : [
+        for a in c.audiences : { key = "${k}:${a}", client = k, audience = a }
+      ]
+    ]) : pair.key => pair
+  }
+
   # Flattened (client, role) pairs so each client role is its own resource.
   client_role_pairs = {
     for pair in flatten([
@@ -108,4 +117,31 @@ resource "keycloak_openid_user_client_role_protocol_mapper" "client_roles" {
   add_to_userinfo     = true
 
   depends_on = [keycloak_role.client_roles]
+}
+
+# Put other clients in this client's access token audience (`audiences`).
+# Only the access token: an ID token is for the client itself.
+resource "keycloak_openid_audience_protocol_mapper" "client_audiences" {
+  for_each = local.client_audience_pairs
+
+  realm_id  = keycloak_realm.main.id
+  client_id = keycloak_openid_client.clients[each.value.client].id
+  name      = "audience-${each.value.audience}"
+
+  included_client_audience = each.value.audience
+  add_to_id_token          = false
+  add_to_access_token      = true
+
+  # The audience must name an existing client.
+  depends_on = [keycloak_openid_client.clients]
+}
+
+# Explicit optional scopes (`optional_scopes`). This resource manages the
+# client's full optional-scope set, so the realm defaults no longer apply.
+resource "keycloak_openid_client_optional_scopes" "clients" {
+  for_each = { for name, client in local.clients_by_name : name => client if client.optional_scopes != null }
+
+  realm_id        = keycloak_realm.main.id
+  client_id       = keycloak_openid_client.clients[each.key].id
+  optional_scopes = each.value.optional_scopes
 }
