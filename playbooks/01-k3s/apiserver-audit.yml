@@ -1,0 +1,110 @@
+---
+# =============================================================================
+# Enable kube-apiserver audit logging.
+#
+# Deploys (per control-plane / server node):
+#   /etc/rancher/k3s/audit-policy.yaml                  - audit Policy
+#       (files/apiserver-audit-policy.yaml)
+#   /var/lib/rancher/k3s/server/logs/audit.log          - the log, rotated by
+#       the apiserver (size, count and age limits below)
+#   /etc/rancher/k3s/config.yaml.d/20-apiserver-audit.yaml - appends the
+#       audit kube-apiserver-arg entries (drop-in, so the collection-managed
+#       config.yaml is left untouched).
+#
+# serial: 1 + a per-node /readyz gate, as in apiserver-oidc.yml: a bad policy
+# can only take down ONE server and the play halts before the next node.
+# Rollback: set apiserver_audit.enabled to false and run this playbook again
+# (it removes the drop-in and restarts k3s), or delete the drop-in and restart
+# k3s by hand.
+#
+# Driven by the `apiserver_audit` inventory var (group_vars/k3s_cluster):
+#   enabled          (default false)
+#   max_size_mb      (default 100)  size of one log file before rotation
+#   max_backups      (default 10)   rotated files to keep (gzip-compressed)
+#   max_age_days     (default 30)   age limit for rotated files
+# =============================================================================
+- name: Enable kube-apiserver audit logging
+  hosts: server
+  become: true
+  serial: 1
+  gather_facts: false
+
+  vars:
+    apiserver_audit_dropin: /etc/rancher/k3s/config.yaml.d/20-apiserver-audit.yaml
+    apiserver_audit_log_dir: /var/lib/rancher/k3s/server/logs
+
+  tasks:
+    - name: Configure apiserver audit logging
+      when: apiserver_audit.enabled | default(false)
+      block:
+        - name: Ensure k3s config.yaml.d drop-in directory exists
+          ansible.builtin.file:
+            path: /etc/rancher/k3s/config.yaml.d
+            state: directory
+            owner: root
+            group: root
+            mode: "0700"
+
+        # The log records who read which Secret; keep it root-only.
+        - name: Ensure the audit log directory exists
+          ansible.builtin.file:
+            path: "{{ apiserver_audit_log_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0700"
+
+        - name: Deploy the audit policy
+          ansible.builtin.copy:
+            src: files/apiserver-audit-policy.yaml
+            dest: /etc/rancher/k3s/audit-policy.yaml
+            owner: root
+            group: root
+            mode: "0600"
+          register: audit_policy_file
+
+        - name: Deploy kube-apiserver-arg drop-in (append audit flags)
+          ansible.builtin.copy:
+            dest: "{{ apiserver_audit_dropin }}"
+            owner: root
+            group: root
+            mode: "0600"
+            content: |
+              kube-apiserver-arg+:
+              - "audit-policy-file=/etc/rancher/k3s/audit-policy.yaml"
+              - "audit-log-path={{ apiserver_audit_log_dir }}/audit.log"
+              - "audit-log-maxsize={{ apiserver_audit.max_size_mb | default(100) | int }}"
+              - "audit-log-maxbackup={{ apiserver_audit.max_backups | default(10) | int }}"
+              - "audit-log-maxage={{ apiserver_audit.max_age_days | default(30) | int }}"
+              - "audit-log-compress=true"
+          register: audit_dropin
+
+    - name: Remove apiserver audit logging
+      when: not (apiserver_audit.enabled | default(false))
+      ansible.builtin.file:
+        path: "{{ apiserver_audit_dropin }}"
+        state: absent
+      register: audit_dropin_removed
+
+    # The apiserver reads the policy only at start, so a policy change also
+    # needs a restart.
+    - name: Restart k3s to apply the apiserver audit config
+      ansible.builtin.systemd:
+        name: k3s
+        state: restarted
+      when: >-
+        audit_policy_file.changed | default(false) or
+        audit_dropin.changed | default(false) or
+        audit_dropin_removed.changed | default(false)
+
+    - name: Wait for the local kube-apiserver to report ready
+      ansible.builtin.command: k3s kubectl get --raw=/readyz
+      register: audit_readyz
+      changed_when: false
+      retries: 40
+      delay: 5
+      until: audit_readyz.rc == 0 and 'ok' in audit_readyz.stdout
+      when: >-
+        audit_policy_file.changed | default(false) or
+        audit_dropin.changed | default(false) or
+        audit_dropin_removed.changed | default(false)
