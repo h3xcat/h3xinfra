@@ -2,25 +2,33 @@
 
 Ansible owns the `h3xinfra-argocd-main` release of the upstream
 [`argo-cd` chart](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd).
-The version lives in `chart_versions.argocd` and is tracked by Renovate.
-Argo CD initially manages no applications. Existing Ansible and Terraform
-resources keep their current owners; migrate ownership explicitly before
-adding them to an Argo CD Application.
+The chart version is in `chart_versions.argocd`, and Renovate tracks it.
+At the start, Argo CD manages no applications. Existing Ansible and Terraform
+resources keep their current owners. Before you add one of these resources to an
+Argo CD Application, explicitly move its ownership to Argo CD.
 
 ## Prerequisites and configuration
 
-Requires K3s, Cilium, the `h3xinfra-platform-critical` PriorityClass, and the
-shared Envoy Gateway with its wildcard certificate and external DNS. Native
-Keycloak OIDC must be provisioned before enabling the layer. Dex is disabled.
+This layer requires these items:
 
-Copy `inventory/production/host_vars/k8s/argocd.yml` into your environment's
-inventory. Set the hostname, HTTPS Gateway listener, issuer, client ID and
-group-to-role policy. Argo CD uses a public OIDC client with PKCE S256 for both
-browser and CLI login; no OIDC client secret is required. The example disables stack deployment
-until `argocd.enabled: true` is set. Direct layer deployment validates configuration
-regardless of that stack toggle.
+- K3s
+- Cilium
+- The `h3xinfra-platform-critical` PriorityClass
+- The shared Envoy Gateway with its wildcard certificate and external DNS
 
-Append this entry to your existing `keycloak.clients` list (keep other clients):
+Provision native Keycloak OIDC before you enable the layer. Dex is disabled.
+
+Argo CD uses a public OIDC client with PKCE S256 for browser login and for CLI login.
+An OIDC client secret is not necessary. The example disables stack deployment
+until you set `argocd.enabled: true`. A direct layer deployment validates the
+configuration, independently of that stack toggle.
+
+To configure the layer, do these steps:
+
+1. Copy `inventory/production/host_vars/k8s/argocd.yml` into the inventory of your environment.
+2. Set the hostname, the HTTPS Gateway listener, the issuer, and the client ID.
+3. Set the group-to-role policy.
+4. Append this entry to your existing `keycloak.clients` list. Keep the other clients.
 
 ```yaml
 - name: argocd
@@ -36,35 +44,41 @@ Append this entry to your existing `keycloak.clients` list (keep other clients):
   groups_claim: true
 ```
 
-The localhost callback supports `argocd login --sso` on the operator's machine;
-`/pkce/verify` supports browser login. Argo CD sets `enablePKCEAuthentication: true`,
-and Keycloak enforces S256 code challenges. Existing Keycloak clients still
-default to `CONFIDENTIAL` and retain their secrets unless explicitly changed.
-The Keycloak Terraform layer creates the public client and an
-opt-in group membership mapper. It emits short group names in ID/access tokens
-and userinfo, without requiring a realm-wide `groups` client scope. Create the
-`argocd-admins` and `argocd-readonly` groups in Keycloak and assign users as
-appropriate, or use existing groups in `argocd.rbac.policy_csv`.
+The localhost callback supports `argocd login --sso` on the machine of the operator.
+The `/pkce/verify` callback supports browser login. Argo CD sets `enablePKCEAuthentication: true`,
+and Keycloak enforces S256 code challenges. Existing Keycloak clients
+continue to use `CONFIDENTIAL` as the default. They keep their secrets if you do not explicitly change them.
 
-The mapper uses `full_path = false`: identically named subgroups under different
-parents produce the same claim and match the same RBAC line. Use unique group
+The Keycloak Terraform layer creates the public client and an
+opt-in group membership mapper. The mapper puts short group names in ID/access tokens
+and in userinfo. It does not require a realm-wide `groups` client scope. Do one of these two steps:
+
+- Create the `argocd-admins` and `argocd-readonly` groups in Keycloak, and assign the applicable users to them.
+- Use existing groups in `argocd.rbac.policy_csv`.
+
+The mapper uses `full_path = false`. Thus, subgroups that have the same name under different
+parents give the same claim and match the same RBAC line. Use unique group
 names across the realm for these bindings.
 
 The built-in admin and anonymous access are disabled. Authenticated users have
-no default access; only explicitly mapped groups receive privileges. The chart
-still creates `argocd-secret` for Argo CD's own signing material, but no OIDC
-client secret is supplied. Restrict access to namespace Secrets. Provider TLS
-verification remains enabled. See the upstream
+no default access. Only explicitly mapped groups get privileges. The chart
+still creates `argocd-secret` for the signing material of Argo CD, but the release supplies no OIDC
+client secret. Restrict access to namespace Secrets. Provider TLS
+verification stays enabled. Refer to the upstream
 [Keycloak integration guide](https://argo-cd.readthedocs.io/en/stable/operator-manual/user-management/keycloak/).
 
-When migrating an existing confidential Argo CD client, remove its inventory
-secret, set the public/S256 options and add `/pkce/verify`. Apply Keycloak before
-Argo CD and start a fresh browser session for the new authentication flow.
+To migrate an existing confidential Argo CD client, do these steps:
+
+1. Remove its inventory secret.
+2. Set the public/S256 options.
+3. Add `/pkce/verify`.
+4. Apply Keycloak before Argo CD.
+5. Start a new browser session for the new authentication flow.
 
 ## Deployment and verification
 
-Run from the public repo with your inventory path (use `h3xinfra/playbooks/...`
-when running from the private parent repo):
+Run these commands from the public repo with your inventory path. If you run them
+from the private parent repo, use `h3xinfra/playbooks/...`.
 
 ```bash
 ansible-playbook -i /path/to/inventory playbooks/10-keycloak/standup.yml
@@ -75,52 +89,66 @@ argocd login argocd.app.example.com --sso --grpc-web --skip-test-tls
 
 The public stack imports this layer conditionally. A downstream stack that
 imports individual public layers must add this play after `10-keycloak`.
-The public stack does not provision Keycloak itself; on first bootstrap, deploy
-Keycloak and its client before opting in to Argo CD.
+The public stack does not provision Keycloak. On the first bootstrap, deploy
+Keycloak and its client before you opt in to Argo CD.
 
-Check that the HTTPRoute reports `Accepted` and `ResolvedRefs`, the certificate
-matches the hostname, SSO works, administrators can manage applications, and
-unmapped users cannot access applications. Use `--grpc-web` for the CLI over
-the same HTTPRoute. No separate gRPC endpoint is exposed. The CLI's initial
-TLS-detection probe uses native gRPC even with `--grpc-web` and can time out
-behind this HTTPRoute. `--skip-test-tls` skips that probe; HTTPS certificate
-verification remains enabled. Do not substitute `--insecure` or `--plaintext`.
+Do these checks:
+
+1. Make sure that the HTTPRoute reports `Accepted` and `ResolvedRefs`.
+2. Make sure that the certificate matches the hostname.
+3. Make sure that SSO works.
+4. Make sure that administrators can manage applications.
+5. Make sure that unmapped users cannot access applications.
+
+Use `--grpc-web` for the CLI over the same HTTPRoute. There is no separate gRPC endpoint. The initial
+TLS-detection probe of the CLI uses native gRPC, also when you use `--grpc-web`. Thus, the probe can time out
+behind this HTTPRoute. The `--skip-test-tls` flag skips that probe. HTTPS certificate
+verification stays enabled.
+
+Do not use `--insecure` or `--plaintext` as a replacement.
 
 ## Networking and storage
 
 The HTTPRoute attaches only to the selected HTTPS listener. The shared Gateway
-handles HTTP redirects and TLS. Its backend uses HTTP on port 8080, confined
-by NetworkPolicy to Envoy pods in the configured Gateway namespace. The server
-Service is ClusterIP. Native Argo CD authentication applies to UI and API calls;
-there is no Gateway OIDC policy. Metrics are not exposed through the HTTPRoute.
+does the HTTP redirects and the TLS. The backend uses HTTP on port 8080. A NetworkPolicy
+allows access to the backend only from Envoy pods in the configured Gateway namespace. The server
+Service is ClusterIP. Native Argo CD authentication applies to UI and API calls.
+There is no Gateway OIDC policy. The HTTPRoute does not expose metrics.
 
-The chart's server allow-all NetworkPolicy is disabled; the release supplies
-a replacement Gateway-only policy. Other components use upstream ingress
-policies, plus namespace-wide default-deny ingress. Egress remains unrestricted
+The chart has an allow-all NetworkPolicy for the server. This policy is disabled. The release supplies
+a replacement policy that allows only the Gateway. Other components use upstream ingress
+policies and a namespace-wide default-deny ingress policy. Egress stays unrestricted
 for DNS, Keycloak HTTPS, Git/Helm sources and Kubernetes APIs. Upstream component
 policies permit cluster-internal metrics access. Service IPs prefer dual stack.
 
-This is a single-replica installation with bounded CPU, memory and temporary
-storage, including init containers and the Redis credential hook. Redis and
-repository caches are disposable, so no PVC or Longhorn volume is needed.
-Application, ApplicationSet and AppProject objects, repository/cluster Secrets
-and configuration in Kubernetes are the durable state. Back these up securely
-before removal; protect the cluster's datastore backups as well. Keep desired
-application definitions in Git and provision repository credentials separately.
+This installation has a single replica with limits for CPU, memory and temporary
+storage. The limits include init containers and the Redis credential hook. The Redis and
+repository caches are disposable, so no PVC or Longhorn volume is necessary.
+The durable state is in Kubernetes. It includes the Application, ApplicationSet and AppProject objects, the repository/cluster Secrets,
+and the configuration.
+
+Before removal, make a secure backup of this durable state. Also protect the backups of the cluster datastore.
+Keep the desired application definitions in Git. Provision repository credentials separately.
 
 ## Removal and recovery
 
 `teardown.yml` uninstalls the Helm release, including its Argo CD Secret and
-HTTPRoute, but retains the namespace, CRDs and GitOps custom resources.
-Existing managed workloads remain running without reconciliation. This layer
-is deliberately absent from automatic stack teardown. Deleting its namespace,
-CRDs or Applications separately can cascade to managed workloads through
-Application finalizers; those deletions are not part of this playbook.
+HTTPRoute. It keeps the namespace, CRDs and GitOps custom resources.
+Existing managed workloads continue to run without reconciliation. The automatic stack teardown
+does not include this layer. This is intentional.
 
-Restore retained application definitions and separately managed Secrets as
-needed, then rerun standup with the same release name, namespace and public
-OIDC client. Retained Applications resume reconciliation, including any configured
-automated sync/prune. Review their source revisions and policies before restart.
+You can delete the namespace, the CRDs or the Applications of this layer separately.
+If you do, Application finalizers can cascade these deletions to the managed workloads.
+This playbook does not do these deletions.
+
+To recover the layer, do these steps:
+
+1. Restore the retained application definitions and the separately managed Secrets, as necessary.
+2. Review the source revisions and policies of the retained Applications.
+3. Run standup again with the same release name, namespace and public OIDC client.
+
+The retained Applications start reconciliation again. This includes any configured
+automated sync/prune. Thus, do step 2 before you restart.
 
 ## Validation
 
@@ -128,13 +156,14 @@ automated sync/prune. Review their source revisions and policies before restart.
 python3 -m unittest discover -s playbooks/10-argocd/tests -v
 ```
 
-Tests download the pinned upstream chart into a temporary directory and render
-the actual playbook values using example hosts and a public client. Set `ARGOCD_CHART_DIR` to an
-already-downloaded chart for offline runs. Render checks cover HTTPS routing,
+The tests download the pinned upstream chart into a temporary directory. They render
+the actual playbook values with example hosts and a public client. For offline runs, set `ARGOCD_CHART_DIR` to a
+chart that you downloaded before. Render checks cover HTTPS routing,
 PKCE configuration, RBAC, ingress isolation, resources and CRD retention.
-Additional tests exercise friendly Ansible validation failures and mocked
-Terraform plans for public PKCE and existing confidential clients. Terraform
-tests copy only the client module definitions into a temporary directory and
-never load deployment state or generated tfvars. Helm, Ansible and Terraform
-are required. Cluster admission and actual browser/CLI logins still require
+
+More tests check the friendly Ansible validation failures. They also check mocked
+Terraform plans for public PKCE clients and existing confidential clients. The Terraform
+tests copy only the client module definitions into a temporary directory. They
+never load deployment state or generated tfvars. The tests require Helm, Ansible and Terraform.
+Cluster admission and actual browser/CLI logins still require
 deployment checks.

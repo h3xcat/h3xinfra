@@ -1,6 +1,6 @@
 # H3xInfra Conventions and Patterns
 
-This document describes the architectural patterns, naming conventions, and structural standards used in the h3xinfra core infrastructure deployment framework.
+This document describes the architecture patterns, the naming conventions, and the structure standards of the h3xinfra framework. This framework deploys the core infrastructure.
 
 ## Table of Contents
 - [Overview](#overview)
@@ -19,13 +19,13 @@ This document describes the architectural patterns, naming conventions, and stru
 
 ## Overview
 
-H3xInfra is a declarative, Helm-based infrastructure framework for deploying production-ready Kubernetes clusters with a comprehensive platform stack. The framework emphasizes:
+H3xInfra is a declarative infrastructure framework that uses Helm. It deploys Kubernetes clusters for production use, with a full platform stack. The framework has these primary properties:
 
-- **Layered Architecture**: Ordered deployment of dependent components
-- **Dual-Stack Networking**: Full IPv4/IPv6 support throughout
-- **GitOps-Ready**: All configuration as code with Ansible and Helm
-- **Extensible Design**: Clear patterns for adding custom services
-- **Security-First**: Vault encryption, network policies, TLS automation
+- **Layered Architecture**: The framework deploys dependent components in a set order.
+- **Dual-Stack Networking**: All parts of the stack have full IPv4/IPv6 support.
+- **GitOps-Ready**: All configuration is code, with Ansible and Helm.
+- **Extensible Design**: Clear patterns show how to add custom services.
+- **Security-First**: Vault encryption, network policies, and TLS automation.
 
 ---
 
@@ -76,29 +76,29 @@ h3xinfra/
 
 ### Layer Numbering System
 
-Layers are numbered to enforce deployment order and dependency relationships:
+Each layer has a number. The numbers set the deployment order and the dependency relations:
 
 #### Core Infrastructure (00-09)
-- **00-prep**: Server preparation, system configuration, package installation
-- **01-k3s**: K3s Kubernetes cluster deployment
-- **01-priorityclasses**: Custom `PriorityClass` definitions (`h3xinfra-platform-critical`, `h3xinfra-app-background`) used by downstream layers to control eviction order
-- **02-cilium**: Cilium CNI with eBPF networking
-- **03-metallb**: MetalLB load balancer for bare metal
-- **04-health**: Health check endpoints and monitoring
-- **05-certmanager**: Cert-manager for automated TLS certificates
-- **06-externaldns**: External-DNS for automated DNS management
-- **07-gateway**: Envoy Gateway controller + shared Gateway with wildcard TLS
-- **08-smb**: SMB/CIFS CSI driver for network storage
-- **09-longhorn**: Longhorn distributed block storage
+- **00-prep**: Server preparation, system configuration, and package installation.
+- **01-k3s**: Deploys the K3s Kubernetes cluster.
+- **01-priorityclasses**: Custom `PriorityClass` definitions (`h3xinfra-platform-critical`, `h3xinfra-app-background`). Downstream layers use these classes to control the eviction order.
+- **02-cilium**: Cilium CNI with eBPF networking.
+- **03-metallb**: MetalLB load balancer for bare metal.
+- **04-health**: Health check endpoints and monitoring.
+- **05-certmanager**: Cert-manager for automated TLS certificates.
+- **06-externaldns**: External-DNS for automated DNS management.
+- **07-gateway**: The Envoy Gateway controller and a shared Gateway with wildcard TLS.
+- **08-smb**: SMB/CIFS CSI driver for network storage.
+- **09-longhorn**: Longhorn distributed block storage.
 
 #### Platform Services (10-19)
-- **10-kured**: Kubernetes Reboot Daemon — rolling node reboots when `/var/run/reboot-required` is set (unattended-upgrades kernel updates, etc.)
-- **10-mailu**: Self-hosted email server (Mailu)
-- **10-keycloak**: Identity provider (Keycloak Operator + CloudNativePG, Terraform-managed realm/clients)
-- **10-argocd**: Opt-in GitOps controller with native Keycloak SSO; existing resources retain their current owners
+- **10-kured**: Kubernetes Reboot Daemon. It does rolling reboots of the nodes when `/var/run/reboot-required` is set. For example, kernel updates from unattended-upgrades set this file.
+- **10-mailu**: Self-hosted email server (Mailu).
+- **10-keycloak**: Identity provider (Keycloak Operator + CloudNativePG). Terraform manages the realm/clients.
+- **10-argocd**: GitOps controller with native Keycloak SSO. It is opt-in: it is off until you enable it. Existing resources keep their current owners.
 
 #### Utilities (99)
-- **99-utils**: Shared utilities (kube-connect, apt updates, etc.)
+- **99-utils**: Shared utilities, for example kube-connect and apt updates.
 
 ### Dependency Flow
 ```
@@ -134,7 +134,7 @@ Layers are numbered to enforce deployment order and dependency relationships:
 ## Playbook Patterns
 
 ### Standard Layer Structure
-Every numbered layer follows this consistent structure:
+All numbered layers use this structure:
 
 ```
 XX-servicename/
@@ -280,16 +280,16 @@ XX-servicename/
 ## Naming Conventions
 
 ### Release Naming Pattern
-All Helm releases follow this strict naming convention:
+All Helm releases must use this naming convention:
 
 ```
 h3xinfra-{service}-{phase}
 ```
 
 **Components:**
-- `h3xinfra-`: Fixed prefix for all releases
-- `{service}`: Service name (lowercase, no hyphens within name)
-- `{phase}`: Deployment phase (`pre`, `main`, or `post`)
+- `h3xinfra-`: The fixed prefix for all releases.
+- `{service}`: The service name. Use lowercase letters. Do not use hyphens in the name.
+- `{phase}`: The deployment phase: `pre`, `main`, or `post`.
 
 **Examples:**
 ```
@@ -303,25 +303,25 @@ h3xinfra-longhorn-post
 ### Phase Definitions
 
 #### `pre` Phase
-- Creates prerequisites before main deployment
-- Typical resources: Secrets, ConfigMaps, CRDs, ServiceAccounts
+- Creates the prerequisites before the main deployment.
+- Typical resources: Secrets, ConfigMaps, CRDs, ServiceAccounts.
 - Examples:
-  - External-DNS: Cloudflare API token secret
-  - Cert-Manager: Cloudflare DNS solver secret
-  - Envoy Gateway: shared wildcard `Certificate` + MetalLB `IPAddressPool` + `Gateway` listener (rendered by `h3xinfra-gateway-pre`)
-  - Longhorn: RecurringJob CRDs, backup secrets
+  - External-DNS: Cloudflare API token secret.
+  - Cert-Manager: Cloudflare DNS solver secret.
+  - Envoy Gateway: shared wildcard `Certificate` + MetalLB `IPAddressPool` + `Gateway` listener. `h3xinfra-gateway-pre` renders these resources.
+  - Longhorn: RecurringJob CRDs, backup secrets.
 
 #### `main` Phase
-- Primary application deployment
-- Usually references external Helm chart or custom chart
-- Always uses: `fullnameOverride: "{{ service.release_name_prefix }}-main"`
+- The primary application deployment.
+- It usually references an external Helm chart or a custom chart.
+- It always uses: `fullnameOverride: "{{ service.release_name_prefix }}-main"`
 
 #### `post` Phase
-- Post-deployment configuration
-- Typical resources: ClusterIssuers, additional integrations
+- Configuration after the deployment.
+- Typical resources: ClusterIssuers and other integrations.
 - Examples:
-  - Cert-Manager: Let's Encrypt ClusterIssuer
-  - Longhorn: RecurringJob instances
+  - Cert-Manager: Let's Encrypt ClusterIssuer.
+  - Longhorn: RecurringJob instances.
 
 ### Namespace Conventions
 
@@ -402,7 +402,7 @@ chart_ref: "{{ playbook_dir }}/charts/h3xinfra-certmanager-post"
 
 ### Pattern 3: Fully Custom Chart
 
-**Used by:** Custom applications, complex configurations
+**Used by:** Custom applications and complex configurations
 
 **Structure:**
 ```yaml
@@ -464,7 +464,7 @@ set_values:
 
 ### Virtual Host Pattern
 
-All Kubernetes service configurations use a **virtual `k8s` host** to cleanly separate infrastructure from service configuration.
+All Kubernetes service configurations use a **virtual `k8s` host**. This host keeps the infrastructure configuration clearly separate from the service configuration.
 
 **In `inventory/production/hosts.yml`:**
 ```yaml
@@ -513,7 +513,7 @@ inventory/production/
 
 ### Service Variable Structure
 
-Each service file in `host_vars/k8s/` follows this pattern:
+Each service file in `host_vars/k8s/` uses this pattern:
 
 ```yaml
 ---
@@ -578,7 +578,7 @@ storage_password: !vault |
   ...
 ```
 
-**Service-specific secrets in service files:**
+**Service-specific secrets in the service files:**
 ```yaml
 servicename:
   admin_password: !vault |
@@ -596,11 +596,12 @@ servicename:
 
 ### TLS/Certificate Strategy
 
-All HTTP routing is provided by a single shared **Envoy Gateway** Gateway
-(`{{ gateway.release_name_prefix }}-pre-shared` in namespace
-`{{ gateway.namespace }}`). The Gateway terminates TLS using one wildcard
-certificate that covers every internal/external hostname; per-app charts
-render Gateway-API resources rather than `Ingress` objects.
+One shared **Envoy Gateway** Gateway does all HTTP routing. The name of
+this Gateway is `{{ gateway.release_name_prefix }}-pre-shared`, in the
+namespace `{{ gateway.namespace }}`. The Gateway terminates TLS with one
+wildcard certificate. This certificate covers all internal/external
+hostnames. The chart of each app renders Gateway-API resources, not
+`Ingress` objects.
 
 #### Standard chart `ingress` schema
 ```yaml
@@ -633,32 +634,32 @@ ingress:
 | Upstream TLS verify | `gateway.networking.k8s.io/v1alpha3 BackendTLSPolicy` |
 
 #### Public Services
-The shared wildcard certificate covers all hostnames; no per-app
-`Certificate` is provisioned. This is a deliberate privacy choice — a
-per-host certificate is published to public **Certificate Transparency
-logs**, making the existence of every service trivially discoverable
-through CT search engines (crt.sh, etc.). A wildcard (`*.app.example.com`)
-only exposes the wildcard label itself; the specific subdomains behind
-it never appear in CT. external-dns publishes a record pointing at the
-Gateway's MetalLB IP via labels on the Gateway service.
+The shared wildcard certificate covers all hostnames. The charts do not
+provision a `Certificate` for each app. This is an intentional privacy
+decision. A certificate for one host goes into the public **Certificate
+Transparency logs**. Then anyone can easily find each service with CT
+search engines, for example crt.sh. A wildcard (`*.app.example.com`)
+shows only the wildcard label. The specific subdomains behind it never
+appear in CT. external-dns uses labels on the Gateway service to publish
+a record. This record points to the MetalLB IP of the Gateway.
 
 #### Internal Services
-Services restricted to internal networks combine `trustedIPs` with the
-`oidc.enabled: false` block. The chart renders a `SecurityPolicy` with
-`authorization.{defaultAction: Deny, rules:[{action: Allow,
-principal.clientCIDRs: <trustedIPs>}]}`. This replaces the previous
+A service that only internal networks can access uses `trustedIPs`
+together with the `oidc.enabled: false` block. The chart renders a
+`SecurityPolicy` with `authorization.{defaultAction: Deny, rules:[{action: Allow,
+principal.clientCIDRs: <trustedIPs>}]}`. This policy replaces the previous
 `nginx.ingress.kubernetes.io/whitelist-source-range` annotation.
 
 #### Pre-Provisioned / Upstream HTTPS Backends
-Backends that themselves serve HTTPS (e.g. Home Assistant via
-nginxproxy) get a `BackendTLSPolicy` from the chart, targeting the
-backing `Service` with `validation.{caCertificateRefs |
-wellKnownCACertificates, hostname, subjectAltNames}`. Self-signed
-backends require a `ConfigMap` with key `ca.crt`.
+Some backends serve HTTPS themselves, for example Home Assistant through
+nginxproxy. For these backends, the chart renders a `BackendTLSPolicy`.
+This policy targets the backing `Service` with `validation.{caCertificateRefs |
+wellKnownCACertificates, hostname, subjectAltNames}`. A self-signed
+backend must have a `ConfigMap` with the key `ca.crt`.
 
 ### Network Policy Pattern
 
-Services requiring network isolation (example: Mailu):
+Use this pattern for services that must have network isolation (for example, Mailu):
 
 ```yaml
 networkPolicy:
@@ -668,7 +669,7 @@ networkPolicy:
   - "fd00::/8"
 ```
 
-### IP Whitelisting Standard
+### IP Allowlist Standard
 
 ```yaml
 trusted_ips:
@@ -682,49 +683,52 @@ trusted_ips:
 
 ## Node Scheduling
 
-### Dedicated control-plane via `CriticalAddonsOnly` taint
+### Dedicated control-plane with the `CriticalAddonsOnly` taint
 
-Server nodes (k3s control-plane + etcd) carry the taint
-`CriticalAddonsOnly=true:NoSchedule`. This keeps stateful workloads off
-the quorum-bearing nodes so:
+Server nodes (k3s control-plane + etcd) have the taint
+`CriticalAddonsOnly=true:NoSchedule`. This taint keeps stateful
+workloads off the nodes that hold the quorum. The results are:
 
-- A misbehaving app can't OOM `kube-apiserver` / `etcd` / `kubelet` on a
-  node whose loss would affect quorum
-- Server reboots only affect control-plane availability, not storage
-- Longhorn replicas, CNPG Postgres data, *arr SQLite DBs etc. all live
-  on agent nodes
+- An app with a fault cannot cause an OOM of `kube-apiserver` / `etcd` /
+  `kubelet` on a node whose loss would affect quorum.
+- A server reboot affects only the control-plane availability. It does
+  not affect the storage.
+- Longhorn replicas, CNPG Postgres data, *arr SQLite DBs, and other
+  stateful data all live on agent nodes.
 
 ### When to add `tolerations: [{operator: Exists}]`
 
-A chart's DaemonSet (or other workload) needs the universal toleration
-**only if it must run on every node, including the tainted servers**.
-Examples in this repo:
+A chart DaemonSet (or other workload) needs the universal toleration
+**only if it must run on all nodes, also on the tainted servers**.
+Examples in this repository:
 
 | Pattern | Tolerate `CriticalAddonsOnly`? | Why |
 |---|---|---|
-| CNI agent (Cilium) | yes | networking must be present on every node |
-| Reboot daemon (kured) | yes | a node without a kured pod won't auto-reboot |
-| Node-local CSI plugin (csi-driver-smb) | yes | mounts happen wherever pods land |
-| Longhorn manager / engine-image / csi-plugin DaemonSets | **no** (intentionally) | storage is a workload tier — servers stay storage-free |
-| App workloads (Plex, *arr, qbittorrent, Keycloak, Mailu, …) | **no** | should never land on a server node |
+| CNI agent (Cilium) | yes | networking must be available on every node |
+| Reboot daemon (kured) | yes | a node without a kured pod does not reboot automatically |
+| Node-local CSI plugin (csi-driver-smb) | yes | mounts occur on the node where the pod runs |
+| Longhorn manager / engine-image / csi-plugin DaemonSets | **no** (intentionally) | storage is a workload tier. Servers do not hold storage. |
+| App workloads (Plex, *arr, qbittorrent, Keycloak, Mailu, …) | **no** | never run on a server node |
 
-In a chart's `values.yaml` or playbook `helm.values`, the idiomatic form is:
+In the `values.yaml` of a chart or in the `helm.values` of a playbook, use this form:
 
 ```yaml
 tolerations:
 - operator: Exists       # tolerate any taint — system DaemonSet pattern
 ```
 
-Setting `tolerations` in helm values **replaces** the chart's defaults
-rather than appending. If the upstream chart already tolerates
-`node-role.kubernetes.io/control-plane` etc., note that the universal
-toleration above subsumes those.
+If you set `tolerations` in the helm values, your value **replaces** the
+default tolerations of the chart. It does not add to them. The upstream
+chart can already tolerate `node-role.kubernetes.io/control-plane` or
+other taints. If it does, the universal toleration above includes all of
+those tolerations.
 
 ### When NOT to add it
 
-For ordinary apps (single-replica or multi-replica workloads that aren't
-node-local), do not add the universal toleration. Let the scheduler
-filter them to the agent pool — that's the point of the taint.
+Do not add the universal toleration for ordinary apps. Ordinary apps are
+single-replica or multi-replica workloads that are not node-local. Let
+the scheduler limit them to the agent pool. That is the purpose of the
+taint.
 
 ---
 
@@ -732,7 +736,7 @@ filter them to the agent pool — that's the point of the taint.
 
 ### Dual-Stack Configuration
 
-All services support both IPv4 and IPv6:
+All services support IPv4 and IPv6:
 
 **Cluster CIDRs:**
 ```yaml
@@ -782,7 +786,7 @@ externaldns:
     external-dns.alpha.kubernetes.io/publish: "true"
 ```
 
-**Shared Gateway wildcard certificate:**
+**Wildcard certificate for the shared Gateway:**
 ```yaml
 gateway:
   dns_names:
@@ -795,19 +799,19 @@ gateway:
 
 ## Extension Guidelines
 
-### Adding a New Infrastructure Layer
+### Add a New Infrastructure Layer
 
-#### 1. Determine Layer Number
+#### 1. Select the Layer Number
 - Core infrastructure: 00-09
 - Platform services: 10-19
 - Utilities: 99
 
-#### 2. Create Layer Structure
+#### 2. Create the Layer Structure
 ```bash
 mkdir -p playbooks/XX-servicename/charts
 ```
 
-#### 3. Create Playbooks
+#### 3. Create the Playbooks
 
 **`standup.yml`:**
 ```yaml
@@ -837,7 +841,7 @@ mkdir -p playbooks/XX-servicename/charts
     # Follow teardown pattern...
 ```
 
-#### 4. Create Inventory Variables
+#### 4. Create the Inventory Variables
 
 **`inventory/production/host_vars/k8s/newservice.yml`:**
 ```yaml
@@ -849,7 +853,7 @@ newservice:
   # ... configuration
 ```
 
-#### 5. Add to Stack Orchestration
+#### 5. Add the Layer to the Stack Orchestration
 
 **In `playbooks/stack-standup.yml`:**
 ```yaml
@@ -879,7 +883,7 @@ Deployment and management instructions.
 
 ### Custom Helm Charts
 
-When creating wrapper charts:
+When you create wrapper charts, use these files:
 
 **`charts/h3xinfra-service-pre/Chart.yaml`:**
 ```yaml
@@ -911,31 +915,31 @@ fullnameOverride: ""
 
 ### ✅ DO:
 
-- **Use the virtual `k8s` host** for all Kubernetes service configurations
-- **Follow the three-phase pattern** (pre/main/post) when services need prerequisites or post-configuration
-- **Set `fullnameOverride`** to maintain consistent resource naming
-- **Use `wait: true`** with appropriate timeouts for all Helm deployments
-- **Use `to_json` filter** with `set_values` for complex data structures
-- **Document service-specific requirements** in layer README files
-- **Encrypt all secrets** with Ansible Vault
-- **Import `kube-connect`** utility in all k8s-related playbooks
-- **Version pin** all Helm charts with `chart_version`
-- **Tolerate all taints with `[{operator: Exists}]`** for DaemonSets that must run on every node (CNI agents, reboot daemon, node-local CSI plugins) — see [Node Scheduling](#node-scheduling)
+- **Use the virtual `k8s` host** for all Kubernetes service configurations.
+- **Use the three-phase pattern** (pre/main/post) when services need prerequisites or post-configuration.
+- **Set `fullnameOverride`** to keep the resource names consistent.
+- **Use `wait: true`** with correct timeouts for all Helm deployments.
+- **Use the `to_json` filter** with `set_values` for complex data structures.
+- **Document service-specific requirements** in the README files of the layers.
+- **Encrypt all secrets** with Ansible Vault.
+- **Import the `kube-connect`** utility in all k8s-related playbooks.
+- **Pin the version** of all Helm charts with `chart_version`.
+- **Tolerate all taints with `[{operator: Exists}]`** for DaemonSets that must run on every node (CNI agents, reboot daemon, node-local CSI plugins). Refer to [Node Scheduling](#node-scheduling).
 
-### ❌ DON'T:
+### ❌ DO NOT:
 
-- **Hard-code values** in playbooks (use inventory variables)
-- **Mix different naming patterns** for releases
-- **Deploy without proper namespace** isolation
-- **Skip the `kube-connect` import** for Kubernetes playbooks
-- **Use `shell` or `command` modules** when native k8s Ansible modules exist
-- **Forget to add services to stack** orchestration playbooks
-- **Create ingress with cert-manager** for services that need to avoid CT logs
-- **Deploy external charts** without version pinning
+- **Do not hard-code values** in playbooks. Use inventory variables.
+- **Do not mix different naming patterns** for releases.
+- **Do not deploy without correct namespace** isolation.
+- **Do not skip the `kube-connect` import** for Kubernetes playbooks.
+- **Do not use `shell` or `command` modules** when native k8s Ansible modules exist.
+- **Do not forget to add services to the stack** orchestration playbooks.
+- **Do not create ingress with cert-manager** for services that must not appear in CT logs.
+- **Do not deploy external charts** without a pinned version.
 
 ---
 
-## Testing and Validation
+## Tests and Validation
 
 ### Deploy Single Layer
 ```bash
@@ -971,30 +975,30 @@ kubectl get ingress -A
 
 ## Helper Scripts
 
-Located in `bin/` directory:
+These scripts are in the `bin/` directory:
 
-- **`h3xinfra-deploy-stack`** - Deploy complete infrastructure stack
-- **`h3xinfra-update-servers`** - Update all cluster nodes
-- **`kube-connect`** - Establish kubectl connection to cluster
-- **`h3xinfra-gen-pass`** - Generate Ansible Vault encrypted passwords
-- **`h3xinfra-generate-token`** - Generate K3s cluster token
-- **`h3xinfra-decrypt-vault`** - Decrypt vault files
-- **`h3xinfra-setup-dependencies`** - Install Ansible dependencies
-- **`h3xinfra-setup-perms`** - Set up file permissions
-- **`h3xinfra-setup-ssh`** - Configure SSH access
+- **`h3xinfra-deploy-stack`** - Deploys the complete infrastructure stack.
+- **`h3xinfra-update-servers`** - Updates all cluster nodes.
+- **`kube-connect`** - Makes a kubectl connection to the cluster.
+- **`h3xinfra-gen-pass`** - Generates passwords that Ansible Vault encrypts.
+- **`h3xinfra-generate-token`** - Generates the K3s cluster token.
+- **`h3xinfra-decrypt-vault`** - Decrypts vault files.
+- **`h3xinfra-setup-dependencies`** - Installs the Ansible dependencies.
+- **`h3xinfra-setup-perms`** - Sets the file permissions.
+- **`h3xinfra-setup-ssh`** - Configures SSH access.
 
 ---
 
 ## Summary
 
-The h3xinfra framework provides a robust, extensible foundation for Kubernetes infrastructure with:
+The h3xinfra framework is a reliable foundation for Kubernetes infrastructure that you can extend. It has these properties:
 
-- **📦 Layered Architecture** - Clear dependency management and ordered deployment
-- **🏷️ Consistent Naming** - Predictable resource names across all services
-- **⎈ Helm-Centric** - Leverage Helm ecosystem with custom configuration
-- **🔒 Security-First** - Vault encryption, network policies, TLS automation
-- **🌐 Dual-Stack Ready** - Full IPv4/IPv6 support throughout
-- **📚 Well-Documented** - Clear patterns and conventions
-- **🔧 Extensible** - Easy to add new services following established patterns
+- **📦 Layered Architecture** - Clear dependency management and ordered deployment.
+- **🏷️ Consistent Naming** - Resource names that you can predict, in all services.
+- **⎈ Helm-Centric** - Uses the Helm ecosystem with custom configuration.
+- **🔒 Security-First** - Vault encryption, network policies, and TLS automation.
+- **🌐 Dual-Stack Ready** - Full IPv4/IPv6 support in all parts of the stack.
+- **📚 Well-Documented** - Clear patterns and conventions.
+- **🔧 Extensible** - It is easy to add new services with the established patterns.
 
-Following these conventions ensures consistency, maintainability, and reliability across the entire infrastructure deployment.
+Use these conventions to make sure that the full infrastructure deployment is consistent, easy to maintain, and reliable.
