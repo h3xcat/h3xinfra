@@ -15,6 +15,11 @@
 
 - import_playbook: 02-cilium/standup.yml
 
+# CoreDNS (a K3s packaged add-on): two replicas on different nodes and a
+# PodDisruptionBudget. It runs after the CNI, so the new pod becomes ready.
+- name: Run CoreDNS with more than one replica
+  import_playbook: 01-k3s/coredns.yml
+
 - import_playbook: 03-metallb/standup.yml
 
 - import_playbook: 04-health/standup.yml

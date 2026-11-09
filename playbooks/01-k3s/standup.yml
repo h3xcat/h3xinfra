@@ -230,6 +230,10 @@
       - 99-resource-reservations.yaml
       - 99-image-gc.yaml
 
+# Stop before K3s restarts if kube-proxy is disabled too early.
+- name: Check the kube-proxy replacement settings
+  import_playbook: kube-proxy-preflight.yml
+
 # Import the main k3s orchestration playbook
 - import_playbook: k3s.orchestration.site
 
@@ -238,6 +242,10 @@
 # Enable kube-apiserver OIDC trust (Keycloak) once the cluster is up. serial: 1
 # with a per-node readiness gate, so a bad config only affects one server.
 - import_playbook: apiserver-oidc.yml
+
+# Set the cluster-wide Pod Security Admission defaults. serial: 1 with a
+# per-node readiness gate, so a bad config only affects one server.
+- import_playbook: apiserver-admission.yml
 
 # Enable kube-apiserver audit logging, with the same serial: 1 readiness gate.
 - name: Enable kube-apiserver audit logging

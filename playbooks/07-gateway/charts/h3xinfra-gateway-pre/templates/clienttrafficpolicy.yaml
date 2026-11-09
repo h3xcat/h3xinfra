@@ -1,0 +1,35 @@
+{{- if .Values.gateway.clientTrafficPolicy.enabled }}
+---
+# Client request headers for every listener of the shared Gateway.
+#
+# The proxy is the first hop: MetalLB with externalTrafficPolicy: Local
+# keeps the client source address, so no proxy in front of it is trusted.
+# Envoy Gateway's default for that case is correct (use_remote_address,
+# zero trusted XFF hops): Envoy takes the client address from the TCP peer,
+# appends it to X-Forwarded-For and overwrites X-Forwarded-Proto. So this
+# policy does NOT set clientIPDetection. Its xForwardedFor mode would turn
+# off use_remote_address and make Envoy read the client address from the
+# header that the client sends.
+#
+# Envoy keeps a client-supplied X-Forwarded-For and only appends to it.
+# Backends that read the first entry (Keycloak with proxy-headers
+# xforwarded) then record an address that the client chose.
+# Remove the proxy headers before Envoy adds its own values, so the
+# backend sees only the addresses that Envoy writes.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: {{ include "h3xinfra-gateway-pre.gatewayName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-gateway-pre.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ include "h3xinfra-gateway-pre.gatewayName" . }}
+  headers:
+    earlyRequestHeaders:
+      remove:
+        {{- toYaml (required "gateway.clientTrafficPolicy.removeRequestHeaders must not be empty" .Values.gateway.clientTrafficPolicy.removeRequestHeaders) | nindent 8 }}
+{{- end }}

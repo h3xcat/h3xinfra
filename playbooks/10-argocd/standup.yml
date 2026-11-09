@@ -29,13 +29,20 @@
         force_update: true
       changed_when: false
 
+    # Pod Security: every Argo CD pod passes restricted.
     - name: Create Argo CD namespace
       kubernetes.core.k8s:
-        api_version: v1
-        kind: Namespace
-        name: "{{ argocd.namespace }}"
         state: present
         wait: true
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ argocd.namespace }}"
+            labels:
+              pod-security.kubernetes.io/enforce: "{{ argocd.pod_security_enforce | default('restricted') }}"
+              pod-security.kubernetes.io/audit: restricted
+              pod-security.kubernetes.io/warn: restricted
 
     - name: Deploy Argo CD via Helm
       kubernetes.core.helm:

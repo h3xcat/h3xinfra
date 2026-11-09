@@ -1,0 +1,4 @@
+// Managed by h3xinfra 00-prep. Refresh package lists and run
+// unattended-upgrades every day (the Ubuntu default when enabled).
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";

@@ -1,0 +1,44 @@
+{{- if .Values.hostFirewall.enabled }}
+{{- $fw := .Values.hostFirewall }}
+{{- if or (empty $fw.trustedCIDRs.ipv4) (empty $fw.trustedCIDRs.ipv6) }}
+{{- fail "hostFirewall.trustedCIDRs.ipv4 and hostFirewall.trustedCIDRs.ipv6 must each list at least one CIDR" }}
+{{- end }}
+{{- if or (empty $fw.nodeLabel.key) (empty $fw.nodeLabel.value) }}
+{{- fail "hostFirewall.nodeLabel.key and hostFirewall.nodeLabel.value are required" }}
+{{- end }}
+# Host policy for the node host endpoints (the host network namespace,
+# including hostNetwork pods). It has deny rules only and sets
+# enableDefaultDeny to false, so it never puts a node into default-deny mode:
+# all traffic that the deny rule does not match stays allowed.
+#
+# CIDR selectors do not match cluster entities (host, remote-node, health,
+# pods), so node-to-node, pod-to-node and Cilium health traffic is not
+# affected. With kube-proxy replacement, traffic to LoadBalancer and NodePort
+# services is checked against the policy of the backend endpoint.
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: {{ include "h3xinfra-cilium-post.fullname" . }}-host-deny-external
+  labels:
+    {{- include "h3xinfra-cilium-post.labels" . | nindent 4 }}
+spec:
+  description: "Deny ingress to labeled nodes from sources outside the trusted ranges."
+  nodeSelector:
+    matchLabels:
+      {{ $fw.nodeLabel.key }}: {{ $fw.nodeLabel.value | quote }}
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  ingressDeny:
+  - fromCIDRSet:
+    - cidr: 0.0.0.0/0
+      except:
+      {{- range $fw.trustedCIDRs.ipv4 }}
+      - {{ . | quote }}
+      {{- end }}
+    - cidr: ::/0
+      except:
+      {{- range $fw.trustedCIDRs.ipv6 }}
+      - {{ . | quote }}
+      {{- end }}
+{{- end }}

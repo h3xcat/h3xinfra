@@ -14,14 +14,21 @@
         force_update: true
       changed_when: false
 
+    # Pod Security: every cert-manager pod passes restricted.
     - name: Create Cert-Manager namespace
       kubernetes.core.k8s:
-        api_version: v1
-        kind: Namespace
-        name: "{{ certmanager.namespace }}"
         state: present
         wait: true
-      
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ certmanager.namespace }}"
+            labels:
+              pod-security.kubernetes.io/enforce: "{{ certmanager.pod_security_enforce | default('restricted') }}"
+              pod-security.kubernetes.io/audit: restricted
+              pod-security.kubernetes.io/warn: restricted
+
     - name: Deploy Cert-Manager via Helm
       kubernetes.core.helm:
         name: "{{ certmanager.release_name_prefix }}-main"
@@ -106,3 +113,4 @@
         state: present
         wait: true
         timeout: "120s"
+      no_log: true

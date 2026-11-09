@@ -81,11 +81,11 @@ all:
     # layout, group_vars/all/versions.yml is loaded automatically instead.
     chart_versions:
       # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-      argocd: "10.11.6"
+      argocd: "10.14.0"
       # renovate: datasource=helm depName=cilium registryUrl=https://helm.cilium.io
       cilium: "1.20.4"
       # renovate: datasource=helm depName=metallb registryUrl=https://metallb.github.io/metallb
-      metallb: "0.16.1"
+      metallb: "0.16.2"
       # renovate: datasource=docker depName=envoyproxy/gateway-helm registryUrl=https://docker.io versioning=helm
       envoy_gateway: "1.9.3"
       # renovate: datasource=github-releases depName=kubernetes-sigs/gateway-api
@@ -95,7 +95,7 @@ all:
       # renovate: datasource=helm depName=cert-manager registryUrl=https://charts.jetstack.io
       cert_manager: "v1.21.3"
       # renovate: datasource=docker depName=quay.io/keycloak/keycloak
-      keycloak: "26.8.1"
+      keycloak: "26.8.2"
       # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
       longhorn: "1.13.0"
       # renovate: datasource=helm depName=csi-driver-smb registryUrl=https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
@@ -114,6 +114,16 @@ all:
     cilium:
       namespace: "kube-system"
       release_name_prefix: "homeinfra-cilium"
+      # Optional. API server address for the Cilium agents and the operator.
+      # It must not use a Service. Set it before you disable the K3s
+      # kube-proxy: playbooks/02-cilium/KUBE-PROXY-REPLACEMENT.md.
+      # k8s_service_host: "k8s-api.example.com"
+      # k8s_service_port: 6443
+
+    # Optional. Number of K3s CoreDNS replicas (default 2). The replicas run
+    # on different nodes. Set 1 to go back to the K3s default.
+    # coredns:
+    #   replicas: 2
     
     metallb:
       namespace: "metallb-system"
@@ -125,6 +135,11 @@ all:
       loadbalancer_pools:
         ipv4: "192.168.100.0/24"  # Large range for general load balancer use
         ipv6: "2001:db8:face:1::/96"  # Dedicated subnet for load balancer pools
+
+      # Set to true only if Services without the
+      # metallb.universe.tf/address-pool annotation must get an address
+      # from this pool. The default is false.
+      auto_assign: false
 
 
     cluster_cidr:
@@ -157,6 +172,13 @@ all:
       dns_names:
       - "mail.app.example.com"
       - "mail.example.com"
+      # Optional. Hostnames of the web UI on the shared Gateway. If you do not
+      # set it, the web UI uses all dns_names. Set it when a name in dns_names
+      # is only for mail protocols (its DNS goes to the mail load balancer).
+      # If you use the OIDC gate, the OIDC host (oauth2.hostname, or the first
+      # name in dns_names) must be in this list. If not, the render fails.
+      # web_hostnames:
+      # - "mail.example.com"
       secret_key: !vault |
         $ANSIBLE_VAULT;1.1;AES256
         changeme_please_encrypt_your_actual_secret_key_with_ansible_vault
@@ -222,10 +244,7 @@ all:
       # Authentication. With Envoy Gateway, "oauth2_proxy" enables a
       # SecurityPolicy.oidc filter on the HTTPRoute (no sidecar).
       auth:
-        method: "oauth2_proxy"          # Options: none, basic, oauth2_proxy
-        basic:
-          secret: "admin:$apr1$example$hashgoeshere/"
-          realm: "Authentication Required - Longhorn"
+        method: "oauth2_proxy"          # Options: none, oauth2_proxy
         oauth2_proxy:
           oidc_issuer_url: "https://auth.app.example.com/realms/h3xinfra"
           client_id: "longhorn"
@@ -298,6 +317,21 @@ k3s_cluster:
     #   ... inner YAML goes here ...
     # registries_config_yaml: | # private registry configuration
     #   ... inner YAML goes here ...
+
+    # Cluster-wide Pod Security Admission defaults (playbooks/01-k3s/apiserver-admission.yml).
+    # They apply only to namespaces without pod-security.kubernetes.io/* labels.
+    # Keep enforce at privileged until each namespace has its labels.
+    apiserver_pod_security:
+      enabled: true
+      defaults:
+        enforce: privileged
+        audit: restricted
+        warn: restricted
+      # An exempt namespace gets no checks, no audit annotations and no warnings.
+      # K3s owns kube-system and starts pods there before any layer can label it.
+      exemptions:
+        namespaces:
+        - kube-system
 
     # Global application variables
     domain_name: home.local  # Replace with your actual local domain
