@@ -29,9 +29,11 @@ sudo apt-get clean
 H3XINFRA_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ansible-galaxy collection install -r "${H3XINFRA_ROOT}/requirements.yml"
 
-# Install python dependencies
-pip3 install --upgrade pip
-pip3 install -r "${H3XINFRA_ROOT}/requirements.txt"
+# Install python dependencies. Ubuntu 24.04 marks the system Python as
+# externally managed (PEP 668). The PPA ansible-core runs on that Python, so its
+# controller-side dependencies must be installed there too. pip puts them under
+# /usr/local and does not replace files that apt manages.
+pip3 install --break-system-packages -r "${H3XINFRA_ROOT}/requirements.txt"
 
 # Install helm-diff at a pinned release: `helm plugin install` without
 # --version fetches whatever tag is newest, so a container rebuild could pick

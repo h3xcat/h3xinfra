@@ -1,8 +1,9 @@
 ARG BASE_IMAGE_NAME=mcr.microsoft.com/devcontainers/base
 # Versioned tag so Renovate's built-in dockerfile manager can track the base
-# image (a bare "jammy" is skipped as invalid-value); the -jammy suffix keeps
-# updates on Ubuntu 22.04.
-ARG BASE_IMAGE_TAG=3.0.12-jammy
+# image (a bare "noble" is skipped as invalid-value); the -noble suffix keeps
+# updates on Ubuntu 24.04. 24.04 (Python 3.12) is needed for ansible-core >= 2.19
+# from ppa:ansible/ansible: the 22.04 PPA build stops at 2.17 (Python 3.10).
+ARG BASE_IMAGE_TAG=3.0.12-noble
 
 FROM ${BASE_IMAGE_NAME}:${BASE_IMAGE_TAG}
 
