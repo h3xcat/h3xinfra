@@ -21,15 +21,15 @@ collections:
   - name: kubernetes.core
     version: 6.6.0
   # community.general.{ini_file,pam_limits,sudoers,terraform} are used directly
-  # by the playbooks. 12.6.5 is the newest release whose `requires_ansible`
-  # (>=2.17.0) the devcontainer's ansible-core 2.17 satisfies; 13.x needs
-  # >=2.18.0. It also shadows the older 9.5.x the PPA `ansible` bundle ships in
-  # site-packages (collections on the collections path win). Renovate's
-  # galaxy-collection datasource only reads Galaxy's first versions page (the
-  # 10 newest of 240+ releases), so a pin older than that page - like the
-  # previous 9.5.2 - is silently skipped (skipReason invalid-value); keep this
-  # pin on a recent release so Renovate can see it. The tests/ venv runs
-  # ansible-core 2.16 (Python 3.10) and only logs a version-mismatch warning.
+  # by the playbooks (keycloak_{user,group} only by 10-keycloak/teardown.yml).
+  # 14.x has `requires_ansible: >=2.19.0`: the devcontainer (Ubuntu 24.04, PPA
+  # ansible-core 2.21) and CI (ANSIBLE_CORE_VERSION 2.21) satisfy it. It also
+  # shadows the older copy the PPA `ansible` bundle ships in site-packages
+  # (collections on the collections path win). Renovate's galaxy-collection
+  # datasource only reads Galaxy's first versions page (the 10 newest of 240+
+  # releases), so a pin older than that page - like the previous 9.5.2 - is
+  # silently skipped (skipReason invalid-value); keep this pin on a recent
+  # release so Renovate can see it.
   - name: community.general
     version: 14.0.0
   # ansible.posix.{mount,sysctl,authorized_key} are used directly by the
