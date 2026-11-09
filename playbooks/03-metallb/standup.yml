@@ -40,7 +40,10 @@
       - "{{ playbook_dir }}/metallb-values.yaml"
       state: present
       wait: true
-      timeout: "120s"
+      # The speaker and frr-k8s DaemonSets roll one node at a time, and the Pis
+      # are slow to pull and start them: an upgrade needs several minutes. With
+      # 120s, helm marked the release `failed` although the rollout completed.
+      timeout: "600s"
 
   - name: Deploy MetalLB configuration via Helm chart
     kubernetes.core.helm:
