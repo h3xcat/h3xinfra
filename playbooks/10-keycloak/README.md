@@ -3,8 +3,8 @@
 This layer is the Keycloak identity provider for H3X Infra. The upstream
 **Keycloak Operator** (`k8s.keycloak.org/v2alpha1`) deploys Keycloak. A
 **CloudNativePG** Postgres `Cluster` is the backend. Terraform manages the realm and client configuration
-declaratively. Thus, the OIDC clients stay in sync with the
-inventory.
+declaratively. Thus, the OIDC clients and the realm groups stay in sync
+with the inventory.
 
 ## Layout
 
@@ -20,6 +20,7 @@ inventory.
     ├── variables.tf
     ├── realm.tf                      # Single realm, SMTP settings
     ├── clients.tf                    # OIDC clients from inventory.clients[]
+    ├── groups.tf                     # Realm groups, client-role mappings, memberships
     ├── outputs.tf
     └── .gitignore                    # Ignores state + rendered tfvars
 ```
@@ -61,7 +62,7 @@ The standup playbook does these steps:
    It tries again until it gets `200`.
 5. **Terraform apply**: The playbook renders `terraform.tfvars.json` from the inventory. It runs
    `terraform init` + `apply` against the new instance. This creates the
-   configured realm + OIDC clients.
+   configured realm, the OIDC clients and the groups.
 
 ### Teardown (`ansible-playbook playbooks/10-keycloak/teardown.yml -e confirm_destroy=yes-destroy-data`)
 
@@ -157,6 +158,105 @@ Consumers can then use this value:
 ```
 oidc_issuer_url: "{{ keycloak.issuer_url_base }}/realms/{{ keycloak.realm.name }}"
 ```
+
+### Groups and memberships
+
+`keycloak.groups` declares realm groups. Each group can get client roles and
+members. The default is `[]`, and then Terraform manages no extra groups.
+
+```yaml
+keycloak:
+  clients:
+  - name: "reports-cms"
+    client_secret: !vault |
+      ...
+    redirect_uris:
+    - "https://reports.app.example.com/oauth2/callback"
+    client_roles: ["report-editor", "report-publisher"]
+  groups:
+  - name: "report-editors"
+    client_roles:
+      reports-cms: ["report-editor"]
+  - name: "report-publishers"
+    client_roles:
+      reports-cms: ["report-publisher"]
+    members: ["alice"]
+```
+
+These are the fields:
+
+| Field          | Default | Purpose |
+|----------------|---------|---------|
+| `name`         | —       | Top-level group name. It must be unique and must not contain `/`. |
+| `client_roles` | `{}`    | Client name → role names. Each role must be in that client's `client_roles`. |
+| `members`      | `[]`    | Lowercase usernames of existing, enabled users. |
+
+The role mappings are authoritative. Terraform sets the role mappings of a
+declared group to exactly its `client_roles` (`exhaustive = true`). It removes
+a role that someone added in the admin console. A group with no
+`client_roles` has no role mappings. Thus, the inventory is the complete
+role grant of each declared group.
+
+The memberships are additive. Terraform adds each member to the group
+(`keycloak_user_groups` with `exhaustive = false`). It does not change the
+other groups of the user, for example `k8s-admins`. When you remove a user
+from `members`, Terraform removes only that membership. When you remove a
+group, Terraform deletes the group, and all of its members lose it.
+
+Thus, `members` is a minimum, not the full member list. Terraform never
+removes a member that `members` does not list, for example a user added in
+the admin console. `terraform plan` does not show such a member as drift.
+Check the *Members* tab of each declared group to see who has its roles.
+
+Terraform does not create users. It looks up each member by exact username.
+The plan fails with `user with username <name> not found` when the user does
+not exist. It also fails when the user is disabled. On a new realm, Terraform
+reads the users only during apply. Thus, add members only after the users
+exist.
+
+`k8s-admins` and `k8s-viewers` are not allowed in `keycloak.groups`.
+`terraform/kubernetes_oidc.tf` manages them, and an admin assigns their
+members in the admin console.
+
+A group with the same name can already exist in Keycloak, for example from
+an older playbook. Then the apply fails, because Keycloak rejects a second
+top-level group with that name. There are two ways to fix it:
+
+- Delete the group in the admin console, then run standup. Terraform creates
+  the group again with only the declared roles and members. The old members
+  lose the group roles until the run ends.
+- Import the group. This keeps the group id and its members.
+
+To import a group, do these steps:
+
+1. Add the group to `keycloak.groups` in the inventory.
+2. Render `terraform.tfvars.json` without an apply:
+
+   ```sh
+   ansible-playbook playbooks/10-keycloak/standup.yml --tags keycloak-tfvars
+   ```
+
+   The tag runs only the tasks that create the Terraform directories and
+   render the file. An older `terraform.tfvars.json` has no `groups`, and
+   then the import fails with "Configuration for import target does not
+   exist".
+3. Find the group id in the admin console (*Groups* → the group → the id in
+   the URL).
+4. Import the group. Run these commands in `playbooks/10-keycloak/terraform`:
+
+   ```sh
+   terraform init
+   terraform import -var-file=terraform.tfvars.json \
+     'keycloak_group.groups["report-editors"]' '<realm>/<group-id>'
+   ```
+
+5. Open the *Members* tab of the group. Remove every user that `members` does
+   not list. Terraform does not remove them.
+6. Run `ansible-playbook playbooks/10-keycloak/standup.yml`. Terraform then
+   sets the role mappings and adds the members.
+
+`playbooks/10-keycloak/tests/groups.tftest.hcl` tests the groups with a mocked
+provider. `tests/test_groups.py` runs it with `terraform test`.
 
 ### Proxy headers
 

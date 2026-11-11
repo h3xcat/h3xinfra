@@ -252,6 +252,20 @@ all:
             $ANSIBLE_VAULT;1.1;AES256
             changeme_please_encrypt_your_actual_oidc_client_secret_with_ansible_vault
 
+    # Keycloak realm groups (excerpt; see playbooks/10-keycloak/README.md for
+    # the other keycloak settings). Each role must be in the client_roles of
+    # the named client in keycloak.clients. Members are added; their other
+    # groups stay. Terraform does not create users.
+    keycloak:
+      groups:
+      - name: "report-editors"
+        client_roles:
+          reports-cms: ["report-editor"]
+      - name: "report-publishers"
+        client_roles:
+          reports-cms: ["report-publisher"]
+        members: ["alice"]
+
 
 k3s_cluster:
   children:
