@@ -64,6 +64,7 @@ The ClusterRole `<release>-unsealer` gives the controller these permissions in a
 - Events: `create`, `patch`.
 
 The Role `<release>-key-admin` in its own namespace gives `get` on the key Secret by name, and `create` and `list` on Secrets.
+The chart grants `create` for key generation. The policy `<release>-key-namespace` denies it.
 The render test asserts these rules. A chart update that changes them fails the test.
 
 Thus, the controller can read every Secret in the cluster. Treat its image like
