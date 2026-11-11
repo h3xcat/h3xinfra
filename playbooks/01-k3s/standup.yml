@@ -111,6 +111,11 @@
       - {name: kernel.keys.root_maxkeys, value: "1000000"}
       - {name: kernel.keys.root_maxbytes, value: "25000000"}
   tasks:
+    # Checked first: an invalid kubelet_allowed_unsafe_sysctls stops the run on
+    # every node before any node changes.
+    - name: Check the kubelet unsafe sysctl allowlist
+      ansible.builtin.import_tasks: tasks/kubelet-sysctls-check.yml
+
     - name: Create kubelet config directory
       ansible.builtin.file:
         path: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d
@@ -257,6 +262,13 @@
         path: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-hardening.conf
         state: absent
       when: not (kubelet_seccomp_default | default(false) | bool) and not (kubelet_protect_kernel_defaults | default(false) | bool)
+
+    # Unsafe sysctl allowlist (kubelet_allowed_unsafe_sysctls), the same file
+    # that kubelet-sysctls.yml writes. No restart here: the K3s install below
+    # restarts every node, so the kubelet loads the file then. A later run of
+    # kubelet-sysctls.yml finds the list loaded and restarts nothing.
+    - name: Write the kubelet unsafe sysctl allowlist
+      ansible.builtin.import_tasks: tasks/kubelet-sysctls.yml
 
     - name: Remove ignored .yaml kubelet drop-ins (kubelet only reads .conf)
       ansible.builtin.file:

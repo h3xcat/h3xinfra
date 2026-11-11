@@ -345,6 +345,15 @@ k3s_cluster:
     # k3s_registries:
     #   state: absent
 
+    # Kubelet allowlist for unsafe sysctls (playbooks/01-k3s/kubelet-sysctls.yml).
+    # Default []: no drop-in. Exact names only (net.*, fs.mqueue.*, kernel IPC
+    # names). Set it on every node where the pod can run BEFORE you deploy a pod
+    # that requests the sysctl: on other nodes the pod fails with SysctlForbidden.
+    # A change restarts K3s on each node, one node at a time. Usually set in
+    # host_vars, for example for the nodes of a WireGuard pod:
+    # kubelet_allowed_unsafe_sysctls:
+    #   - net.ipv4.conf.all.src_valid_mark
+
     # Cluster-wide Pod Security Admission defaults (playbooks/01-k3s/apiserver-admission.yml).
     # They apply only to namespaces without pod-security.kubernetes.io/* labels.
     # Keep enforce at privileged until each namespace has its labels.

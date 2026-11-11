@@ -1,0 +1,77 @@
+---
+# =============================================================================
+# Kubelet allowlist for unsafe sysctls
+# (/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-unsafe-sysctls.conf).
+#
+# Driven by the `kubelet_allowed_unsafe_sysctls` inventory var: a list of
+# exact sysctl names (default []). A pod can then set these sysctls in its own
+# namespaces through spec.securityContext.sysctls. An empty list removes the
+# file. tasks/kubelet-sysctls-check.yml lists the names that are accepted.
+#
+# The kubelet rejects a pod that requests a sysctl that is not on the list of
+# its node (SysctlForbidden), and it does that after the scheduler has placed
+# the pod. So apply the list to every node where the pod can run before you
+# deploy the pod.
+#
+# The kubelet reads the file only when K3s starts. A node restarts only when
+# the list of its running kubelet (read from /configz) differs from the list
+# that it should have. That covers a list that changed in this run and an
+# earlier run that stopped before the restart. Servers restart first, then
+# agents, one node at a time, with the guards of tasks/restart-k3s.yml (other
+# servers ready, etcd nodes Ready and not cordoned, no kured lock). After a
+# restart, the play checks that the running kubelet has the new list. The
+# play stops at the first failure, before it touches the next node.
+#
+# A stopped K3s (inactive) is never started or restarted. A failed or
+# starting K3s stops the play. standup.yml writes the same file before the
+# K3s install, so a new node reads it at its first start.
+# =============================================================================
+- name: Validate the kubelet unsafe sysctl allowlist
+  hosts: k3s_cluster
+  become: false
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Check the allowlist
+      ansible.builtin.import_tasks: tasks/kubelet-sysctls-check.yml
+
+- name: Apply the kubelet unsafe sysctl allowlist on servers, one at a time
+  hosts: server
+  become: true
+  gather_facts: false
+  serial: 1
+  max_fail_percentage: 0
+  vars: &kubelet_sysctls_vars
+    kubelet_sysctls_unit_name: "{{ 'k3s' if inventory_hostname in groups.get('server', []) else 'k3s-agent' }}"
+    kubelet_sysctls_k3s_defaults_path: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/00-k3s-defaults.conf
+    # The list that the running kubelet should have: the inventory list, or
+    # with an empty list the K3s defaults (no drop-in replaces them then).
+    kubelet_sysctls_wanted: "{{ kubelet_allowed_unsafe_sysctls | default([], true) | unique | sort }}"
+    kubelet_sysctls_expected: >-
+      {{ kubelet_sysctls_wanted if (kubelet_sysctls_wanted | length) > 0 else
+         ((((kubelet_sysctls_k3s_defaults.content | default('') | b64decode | from_yaml) or {}).get('allowedUnsafeSysctls') or [])
+          | sort) }}
+    # The list of the running kubelet. The kubelet leaves the field out when
+    # the list is empty.
+    kubelet_sysctls_live: >-
+      {{ ((kubelet_sysctls_configz.stdout | default('{}') | from_json).get('kubeletconfig', {}).get('allowedUnsafeSysctls') or [])
+         | sort }}
+    # Every input is registered before the restart, so the value stays the
+    # same during the restart tasks.
+    kubelet_sysctls_restart: >-
+      {{ (k3s_service_active | default(false) | bool)
+         and kubelet_sysctls_live != kubelet_sysctls_expected }}
+  tasks:
+    - name: Apply the allowlist
+      ansible.builtin.import_tasks: tasks/kubelet-sysctls-node.yml
+
+- name: Apply the kubelet unsafe sysctl allowlist on agents, one at a time
+  hosts: agent
+  become: true
+  gather_facts: false
+  serial: 1
+  max_fail_percentage: 0
+  vars: *kubelet_sysctls_vars
+  tasks:
+    - name: Apply the allowlist
+      ansible.builtin.import_tasks: tasks/kubelet-sysctls-node.yml
