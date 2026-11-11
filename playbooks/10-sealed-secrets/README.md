@@ -18,6 +18,7 @@ The layer is opt-in. It is off until you set `sealed_secrets.enabled: true`.
   Helm does not own it. Helm installs `crds/` only once and never upgrades them.
 - One Deployment with one replica in the `sealed-secrets` namespace. The namespace enforces Pod Security `restricted`.
 - A default-deny ingress NetworkPolicy for the namespace.
+- A CiliumNetworkPolicy that allows egress only to the API server (`kube-apiserver` entity, TCP 443 and 6443).
 - Two ValidatingAdmissionPolicies with Deny bindings (`admissionregistration.k8s.io/v1`, Kubernetes 1.30 or later):
   - `<release>-key-namespace`: the controller may not create, change or delete Secrets in its own namespace.
   - `<release>-strict-scope`: every SealedSecret must use the strict scope.
@@ -43,6 +44,7 @@ Renovate minimum release age applies to this image.
 | `priorityClassName` | `h3xinfra-platform-critical` | Every GitOps Secret depends on this controller, like Argo CD. The requests are small. |
 | `rbac.serviceProxier` | off | The upstream role lets every authenticated user call the controller through the API server proxy. |
 | `networkPolicy.enabled` | `false` | The chart policy admits every source on 8080 and 8081. The release adds default-deny instead. |
+| Egress | API server only | The controller can read every Secret in the cluster. A changed image cannot send them anywhere else. The controller uses the API server IP from `KUBERNETES_SERVICE_HOST`, so it needs no DNS. |
 | ServiceMonitor | off | No public layer scrapes this controller. To scrape port 8081, add a ServiceMonitor and an ingress rule for Prometheus. |
 
 The container runs as UID/GID 1001 with a read-only root file system, no privilege
@@ -64,6 +66,7 @@ The render test asserts these rules. A chart update that changes them fails the 
 
 Thus, the controller can read every Secret in the cluster. Treat its image like
 a cluster credential. The image is pinned by digest and signed upstream, and a person reviews each update.
+The egress policy lets the controller reach only the API server.
 
 The controller does not overwrite an existing Secret that it does not own. It
 writes a Secret only if one of these is true:
@@ -192,14 +195,14 @@ The play stops before any change if the Secret is missing, is not
 
 ```bash
 ansible-playbook -i /path/to/inventory playbooks/10-sealed-secrets/standup.yml
-kubectl -n sealed-secrets get pods,networkpolicies
+kubectl -n sealed-secrets get pods,networkpolicies,ciliumnetworkpolicies
 kubectl get validatingadmissionpolicies,validatingadmissionpolicybindings | grep h3xinfra-sealed-secrets-main
 kubectl -n sealed-secrets logs deploy/h3xinfra-sealed-secrets-main | grep -E 'registered private key|New key written'
 ```
 
 Do these checks:
 
-1. Make sure that the pod is `Running` and `Ready`.
+1. Make sure that the pod is `Running` and `Ready`. The controller reads its keys through the API server at startup, so this also shows that the egress policy admits the API server.
 2. Make sure that the log shows `registered private key` with the name of your key Secret.
 3. Make sure that the log does not show `New key written`. If it does, the controller generated a key. Delete that Secret and find out why.
 4. Make sure that only your keys have the active label:
@@ -295,6 +298,7 @@ the real play values, and `helm template` renders them. The tests check these it
 - The digest-pinned image, and that the image tag equals the chart `appVersion`.
 - Pod Security `restricted`, resources and the priority class.
 - The default-deny ingress policy as the only NetworkPolicy, and no Ingress or ServiceMonitor.
+- The egress policy, which allows only the API server.
 - The exact controller RBAC, and no service proxier binding.
 - The key Secret check and the active key check run before any change, fail with a clear message and never print the key.
 - The two admission policies: the controller ServiceAccount from the rendered chart, the resources, the operations and the Deny bindings.

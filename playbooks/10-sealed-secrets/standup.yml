@@ -265,7 +265,7 @@
           extraDeploy:
             # The controller needs no ingress: sealing happens offline. The
             # kubelet probes come from the node, which Cilium admits by
-            # default (as for Argo CD). Egress stays open for the API.
+            # default (as for Argo CD).
             - apiVersion: networking.k8s.io/v1
               kind: NetworkPolicy
               metadata:
@@ -274,6 +274,26 @@
               spec:
                 podSelector: {}
                 policyTypes: [Ingress]
+            # The controller can read every Secret in the cluster. It needs
+            # only the API server, at KUBERNETES_SERVICE_HOST (an IP, so no
+            # DNS). Same API server rule as the Keycloak egress policy: 443
+            # before and 6443 after the Service translation.
+            - apiVersion: cilium.io/v2
+              kind: CiliumNetworkPolicy
+              metadata:
+                name: "{{ sealed_secrets_release }}-egress"
+                namespace: "{{ sealed_secrets_namespace }}"
+              spec:
+                endpointSelector: {}
+                enableDefaultDeny:
+                  ingress: false
+                  egress: true
+                egress:
+                  - toEntities: [kube-apiserver]
+                    toPorts:
+                      - ports:
+                          - {port: "443", protocol: TCP}
+                          - {port: "6443", protocol: TCP}
         state: present
         wait: true
         timeout: 300s

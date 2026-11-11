@@ -185,6 +185,17 @@ class RenderTests(unittest.TestCase):
         for service in self.kinds("Service"):
             self.assertEqual(service["spec"]["type"], "ClusterIP")
 
+    def test_egress_only_to_the_api_server(self):
+        policies = self.kinds("CiliumNetworkPolicy")
+        self.assertEqual([policy["metadata"]["name"] for policy in policies], [f"{self.release}-egress"])
+        self.assertEqual(policies[0]["metadata"]["namespace"], self.namespace)
+        self.assertEqual(policies[0]["spec"], {
+            "endpointSelector": {},
+            "enableDefaultDeny": {"ingress": False, "egress": True},
+            "egress": [{"toEntities": ["kube-apiserver"], "toPorts": [{"ports": [
+                {"port": "443", "protocol": "TCP"}, {"port": "6443", "protocol": "TCP"}]}]}],
+        }, "The controller reads every Secret: it may reach only the API server")
+
     def test_rbac_scope(self):
         # A chart bump that widens the controller's permissions fails here,
         # so the reviewer sees it. Update README.md together with this list.
