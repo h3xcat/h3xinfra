@@ -336,9 +336,10 @@ Rules:
   `kernel.shmmni`, `kernel.shm_rmid_forced`, `kernel.msgmax`, `kernel.msgmnb`
   and `kernel.msgmni`. With any other name the kubelet does not start. The
   playbook checks the list on every node before it changes a node.
-- `allowed-unsafe-sysctls` must not be in `server_config_yaml`,
-  `agent_config_yaml`, `extra_server_args` or `extra_agent_args`. A kubelet
-  flag replaces the file.
+- Do not also set the kubelet flag `allowed-unsafe-sysctls` (in
+  `server_config_yaml`, `agent_config_yaml`, `extra_server_args` or
+  `extra_agent_args`): it replaces the file. The playbook then fails after the
+  restart, because the running kubelet does not have the inventory list.
 - The kubelet replaces a list from an earlier file instead of adding to it.
   K3s puts `net.ipv4.ip_forward` and `net.ipv6.conf.all.forwarding` into its
   own `00-k3s-defaults.conf` when its servicelb can run on the node (agents

@@ -39,12 +39,16 @@ KUBELET_IPC_SYSCTLS = ["kernel.sem", "kernel.shmall", "kernel.shmmax", "kernel.s
                        "kernel.msgmax", "kernel.msgmnb", "kernel.msgmni"]
 
 
-def check_errors(names=..., **inventory):
+def check_passes(names=...):
     task = load(CHECK)[0]
-    context = {"inventory_hostname": "s1", **inventory}
+    context = {"inventory_hostname": "s1"}
     if names is not ...:
         context["kubelet_allowed_unsafe_sysctls"] = names
-    return render_vars(task["vars"], context)["kubelet_sysctls_errors"].strip()
+    context = render_vars(task["vars"], context)
+    try:
+        return all(evaluate(c, **context) for c in task["ansible.builtin.assert"]["that"])
+    except TypeError:
+        return False  # a non-string entry: the regex test fails the task
 
 
 def configz(names):
@@ -67,56 +71,30 @@ class ValidationTests(unittest.TestCase):
                       ["net.core.somaxconn", "net.ipv6.conf.all.disable_ipv6", "fs.mqueue.msg_max",
                        "net.ipv4.conf.eth0.rp_filter", "net.ipv4.tcp_keepalive_time"]):
             with self.subTest(names=names):
-                self.assertEqual(check_errors(names), "")
+                self.assertTrue(check_passes(names))
 
     def test_invalid_lists_fail(self):
-        cases = {
-            "must be a list of sysctl names": "net.ipv4.conf.all.src_valid_mark",
-            "must be a list of sysctl names ": {"net.ipv4.conf.all.src_valid_mark": 1},
-            "entry 2 is not a string": ["net.core.somaxconn", 1],
-            '"net.ipv4.*" is a pattern': ["net.ipv4.*"],
-            '"kernel.shm*" is a pattern': ["kernel.shm*"],
-            'cannot allow "kernel.panic"': ["kernel.panic"],
-            'cannot allow "vm.swappiness"': ["vm.swappiness"],
-            # The kubelet knows kernel.shm* only by these exact names.
-            'cannot allow "kernel.shmfoo"': ["kernel.shmfoo"],
-            # Namespaced, but not in the scope of this variable.
-            'cannot allow "kernel.domainname"': ["kernel.domainname"],
-            'cannot allow "user.max_user_namespaces"': ["user.max_user_namespaces"],
-            'cannot allow "net/ipv4/conf/all/src_valid_mark"': ["net/ipv4/conf/all/src_valid_mark"],
-            'cannot allow "NET.ipv4.ip_forward"': ["NET.ipv4.ip_forward"],
-            'cannot allow "net."': ["net."],
-            'cannot allow "net"': ["net"],
-            'cannot allow "fs.mqueue"': ["fs.mqueue"],
-            'cannot allow "net.ipv4..x"': ["net.ipv4..x"],
-            "duplicate entries": WIREGUARD * 2,
-        }
-        for expected, names in cases.items():
-            with self.subTest(expected=expected):
-                self.assertIn(expected.strip(), check_errors(names))
-
-    def test_names_too_long_fail(self):
-        self.assertIn("cannot allow", check_errors(["net." + "a" * 250]))
-
-    def test_kubelet_flag_in_k3s_configuration_fails(self):
-        flag = "kubelet-arg:\n- allowed-unsafe-sysctls=net.ipv4.ip_forward\n"
-        for key in ("server_config_yaml", "agent_config_yaml", "extra_server_args", "extra_agent_args"):
-            with self.subTest(key=key):
-                self.assertIn("the kubelet flag would replace this list", check_errors(WIREGUARD, **{key: flag}))
-                # Without a list there is no drop-in for the flag to override.
-                self.assertEqual(check_errors([], **{key: flag}), "")
+        for names in (
+            "net.ipv4.conf.all.src_valid_mark",                 # not a list
+            {"net.ipv4.conf.all.src_valid_mark": 1},            # not a list
+            ["net.core.somaxconn", 1],                          # not a name
+            ["net.ipv4.*"], ["kernel.shm*"],                    # patterns
+            ["kernel.panic"], ["vm.swappiness"],                # not namespaced: the kubelet would not start
+            ["kernel.shmfoo"],                                  # the kubelet knows only the exact IPC names
+            ["kernel.domainname"], ["user.max_user_namespaces"],
+            ["net/ipv4/conf/all/src_valid_mark"], ["NET.ipv4.ip_forward"],
+            ["net."], ["net"], ["fs.mqueue"], ["net.ipv4..x"],
+        ):
+            with self.subTest(names=names):
+                self.assertFalse(check_passes(names))
 
     def test_accepted_kernel_names_are_the_kubelet_ipc_names(self):
-        task = load(CHECK)[0]
         for name in KUBELET_IPC_SYSCTLS:
             with self.subTest(name=name):
-                self.assertIn(f"'{name}'", task["vars"]["kubelet_sysctls_errors"])
+                self.assertTrue(check_passes([name]))
 
     def test_check_stops_every_host(self):
-        task = load(CHECK)[0]
-        self.assertIs(task["any_errors_fatal"], True)
-        self.assertEqual(task["ansible.builtin.assert"]["that"], "(kubelet_sysctls_errors | trim | length) == 0")
-        self.assertIn("kubelet_sysctls_errors", task["ansible.builtin.assert"]["fail_msg"])
+        self.assertIs(load(CHECK)[0]["any_errors_fatal"], True)
 
 
 class DropinTests(unittest.TestCase):

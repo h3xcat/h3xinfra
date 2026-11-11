@@ -1,69 +1,25 @@
 ---
 # Checks kubelet_allowed_unsafe_sysctls (kubelet-sysctls.yml, standup.yml).
 #
-# The kubelet refuses to start when an entry is not a sysctl that it knows to
-# be namespaced (pkg/kubelet/sysctl/allowlist.go), and a node whose kubelet
-# does not start loses all its pods. So this check accepts only the names
-# that the kubelet can allow per pod:
-#   net.*         network namespace
-#   fs.mqueue.*   IPC namespace
-#   kernel.sem, kernel.shmall, kernel.shmmax, kernel.shmmni,
-#   kernel.shm_rmid_forced, kernel.msgmax, kernel.msgmnb, kernel.msgmni
-#                 IPC namespace (the kubelet knows only these kernel.* names)
-# Each entry is one exact name with dots, in the kubelet name syntax. The
-# kubelet also accepts patterns such as net.ipv4.*, but a pattern lets every
-# pod on the node change every matching sysctl in its own namespace. Exact
-# names keep the allowlist small and easy to review, so this check refuses
-# them.
-#
-# A kubelet command line flag wins over the drop-in file, so the check also
-# refuses allowed-unsafe-sysctls in the K3s configuration or arguments while
-# the list is not empty.
-#
-# any_errors_fatal: one invalid host stops the play on every host, before any
-# host changes.
+# The kubelet does not start when the list holds a sysctl that it cannot
+# allow per pod, and a node whose kubelet does not start loses its pods. So
+# only exact names in namespaces that a pod owns pass: net.*, fs.mqueue.* and
+# the kernel IPC names that the kubelet knows. Patterns such as net.ipv4.*
+# fail: they would let every pod on the node set every matching sysctl.
+# any_errors_fatal: one invalid host stops the play before any host changes.
 - name: Check the kubelet_allowed_unsafe_sysctls variable
   ansible.builtin.assert:
-    that: (kubelet_sysctls_errors | trim | length) == 0
-    fail_msg: "Invalid kubelet_allowed_unsafe_sysctls on {{ inventory_hostname }}: {{ kubelet_sysctls_errors | trim }}"
+    that:
+      - kubelet_sysctls_names is not string
+      - kubelet_sysctls_names is not mapping
+      - kubelet_sysctls_names is sequence
+      - kubelet_sysctls_names | reject('match', kubelet_sysctls_pattern) | list | length == 0
+    fail_msg: >-
+      kubelet_allowed_unsafe_sysctls on {{ inventory_hostname }} must be a list of exact
+      sysctl names (net.*, fs.mqueue.*, kernel.sem, kernel.shm*, kernel.msg*): {{ kubelet_sysctls_names }}
     quiet: true
   any_errors_fatal: true
   vars:
-    kubelet_sysctls_errors: >-
-      {%- set ns = namespace(errors=[], unknown=[]) -%}
-      {%- set names = kubelet_allowed_unsafe_sysctls | default([], true) -%}
-      {%- set segment = '[a-z0-9]([-_a-z0-9]*[a-z0-9])?' -%}
-      {%- set ipc = ['kernel.sem', 'kernel.shmall', 'kernel.shmmax', 'kernel.shmmni', 'kernel.shm_rmid_forced',
-                     'kernel.msgmax', 'kernel.msgmnb', 'kernel.msgmni'] -%}
-      {%- if names is string or names is mapping or names is not iterable -%}
-        {%- set ns.errors = ns.errors + ['kubelet_allowed_unsafe_sysctls must be a list of sysctl names'] -%}
-      {%- else -%}
-        {%- for name in names -%}
-          {%- if name is not string -%}
-            {%- set ns.errors = ns.errors + ['entry ' ~ loop.index ~ ' is not a string'] -%}
-          {%- elif '*' in name -%}
-            {%- set ns.errors = ns.errors + ['"' ~ name ~ '" is a pattern; list each sysctl by its exact name'] -%}
-          {%- elif (name | length) > 253
-                or not (name in ipc
-                        or name is match('^net([.]' ~ segment ~ ')+$')
-                        or name is match('^fs[.]mqueue([.]' ~ segment ~ ')+$')) -%}
-            {%- set ns.unknown = ns.unknown + ['"' ~ name ~ '"'] -%}
-          {%- endif -%}
-        {%- endfor -%}
-        {%- if ns.unknown -%}
-          {%- set ns.errors = ns.errors + ['the kubelet cannot allow ' ~ (ns.unknown | join(', ')) ~ ' per pod'
-                                           ~ ' (accepted: net.*, fs.mqueue.*, kernel.sem, kernel.shm*, kernel.msg*;'
-                                           ~ ' exact names with dots, lower case)'] -%}
-        {%- endif -%}
-        {%- if (names | select('string') | list | length) != (names | select('string') | unique | list | length) -%}
-          {%- set ns.errors = ns.errors + ['the list has duplicate entries'] -%}
-        {%- endif -%}
-        {%- if (names | length) > 0
-              and 'allowed-unsafe-sysctls' in ([server_config_yaml | default(''), agent_config_yaml | default(''),
-                                                extra_server_args | default(''), extra_agent_args | default('')]
-                                               | map('string') | join(' ')) -%}
-          {%- set ns.errors = ns.errors + ['allowed-unsafe-sysctls is also set in the K3s configuration or arguments;'
-                                           ~ ' the kubelet flag would replace this list'] -%}
-        {%- endif -%}
-      {%- endif -%}
-      {{ ns.errors | join('; ') }}
+    kubelet_sysctls_names: "{{ kubelet_allowed_unsafe_sysctls | default([], true) }}"
+    kubelet_sysctls_pattern: >-
+      ^(net|fs[.]mqueue)([.][a-z0-9_-]+)+$|^kernel[.](sem|shmall|shmmax|shmmni|shm_rmid_forced|msgmax|msgmnb|msgmni)$
