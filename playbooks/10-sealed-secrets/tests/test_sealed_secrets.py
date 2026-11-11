@@ -26,7 +26,7 @@ FAKE_KEY = "FAKE-PRIVATE-KEY-MATERIAL-MUST-NOT-BE-PRINTED"
 
 VERSIONS = yaml.safe_load((ROOT / "inventory/production/group_vars/all/versions.yml").read_text())
 CONFIG = yaml.safe_load((ROOT / "inventory/production/host_vars/k8s/sealed_secrets.yml").read_text())["sealed_secrets"]
-DIGESTS = yaml.safe_load((LAYER / "chart-digests.yml").read_text())["sealed_secrets_chart_sha256"]
+DIGESTS = yaml.safe_load((LAYER / "vars" / "chart-digests.yml").read_text())["sealed_secrets_chart_sha256"]
 
 
 class InventoryLoader(yaml.SafeLoader):
@@ -158,7 +158,7 @@ class RenderTests(unittest.TestCase):
 
     def test_pinned_chart_matches_the_reviewed_digest(self):
         version = VERSIONS["chart_versions"]["sealed_secrets"]
-        self.assertIn(version, DIGESTS, "Review the new chart, then add its sha256 to chart-digests.yml")
+        self.assertIn(version, DIGESTS, "Review the new chart, then add its sha256 to vars/chart-digests.yml")
         self.assertEqual(self.archive_sha256, DIGESTS[version],
                          "The published chart archive differs from the reviewed one")
 

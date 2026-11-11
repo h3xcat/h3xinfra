@@ -11,7 +11,7 @@ The layer is opt-in. It is off until you set `sealed_secrets.enabled: true`.
 ## What the layer installs
 
 - The chart is `sealed-secrets` from `https://bitnami.github.io/sealed-secrets`, at `chart_versions.sealed_secrets`.
-  The play downloads the chart archive once and checks its sha256 against `chart-digests.yml`.
+  The play downloads the chart archive once and checks its sha256 against `vars/chart-digests.yml`.
   It uses only that verified file for the CRD and the release.
   The project moved from `bitnami-labs` to `bitnami` on GitHub. The old URL `https://bitnami-labs.github.io/sealed-secrets` returns 404.
 - The controller image is `docker.io/bitnami/sealed-secrets-controller` at `image_versions.sealed_secrets_controller`.
@@ -280,7 +280,7 @@ To restore the cluster after a loss, do these steps:
 A chart or image update arrives in one Renovate pull request (`Sealed Secrets`). Do these checks before you merge it:
 
 1. Read the release notes of the controller and the chart.
-2. Review the new chart, then add the sha256 of its archive to `chart-digests.yml`. Until then, the layer tests and the play fail:
+2. Review the new chart, then add the sha256 of its archive to `vars/chart-digests.yml`. Until then, the layer tests and the play fail:
 
    ```bash
    helm pull sealed-secrets --repo https://bitnami.github.io/sealed-secrets --version <version> --destination /tmp/sealed-secrets-chart

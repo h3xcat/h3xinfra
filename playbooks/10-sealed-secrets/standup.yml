@@ -11,7 +11,7 @@
   hosts: k8s
   gather_facts: false
   vars_files:
-    - chart-digests.yml
+    - vars/chart-digests.yml
   vars:
     sealed_secrets_namespace: "{{ (sealed_secrets | default({})).namespace | default('sealed-secrets', true) }}"
     sealed_secrets_release: "{{ (sealed_secrets | default({})).release_name_prefix | default('h3xinfra-sealed-secrets', true) }}-main"
@@ -45,14 +45,14 @@
         quiet: true
 
     # A Renovate bump changes the version only. The play refuses it until a
-    # person reviews the chart and adds its digest to chart-digests.yml.
+    # person reviews the chart and adds its digest to vars/chart-digests.yml.
     - name: Require a reviewed digest for the pinned chart
       ansible.builtin.assert:
         that:
           - (chart_versions.sealed_secrets | string) in sealed_secrets_chart_sha256
           - sealed_secrets_chart_sha256[chart_versions.sealed_secrets | string] is match('^[0-9a-f]{64}$')
         fail_msg: >-
-          playbooks/10-sealed-secrets/chart-digests.yml has no sha256 for sealed-secrets chart
+          playbooks/10-sealed-secrets/vars/chart-digests.yml has no sha256 for sealed-secrets chart
           {{ chart_versions.sealed_secrets }}. Review the chart, then add the digest of its .tgz
           (playbooks/10-sealed-secrets/README.md, "Upgrades").
         quiet: true
@@ -189,7 +189,7 @@
               - sealed_secrets_chart_file.stat.checksum | default('') == sealed_secrets_chart_sha256[chart_versions.sealed_secrets | string]
             fail_msg: >-
               The downloaded sealed-secrets chart {{ chart_versions.sealed_secrets }} does not have the
-              sha256 in playbooks/10-sealed-secrets/chart-digests.yml. The published chart changed.
+              sha256 in playbooks/10-sealed-secrets/vars/chart-digests.yml. The published chart changed.
               Do not deploy it. Find out why first.
             quiet: true
 

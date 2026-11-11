@@ -46,7 +46,7 @@ chart_versions:
   # Sealed Secrets controller (opt-in 10-sealed-secrets layer). Renovate never
   # automerges it. Its appVersion must equal the tag in
   # image_versions.sealed_secrets_controller. The sha256 of the reviewed chart
-  # archive is in playbooks/10-sealed-secrets/chart-digests.yml.
+  # archive is in playbooks/10-sealed-secrets/vars/chart-digests.yml.
   # renovate: datasource=helm depName=sealed-secrets registryUrl=https://bitnami.github.io/sealed-secrets
   sealed_secrets: "2.22.0"
 
