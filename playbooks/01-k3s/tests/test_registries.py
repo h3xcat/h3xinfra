@@ -6,6 +6,7 @@ Ansible filters and tests that they use. No hosts are contacted.
 
 from pathlib import Path
 import re
+import time
 import unittest
 
 import jinja2
@@ -39,6 +40,7 @@ def environment(native=True):
         "items2dict": lambda items: {i["key"]: i["value"] for i in items},
         "to_nice_yaml": lambda data, indent=4: yaml.safe_dump(data, indent=indent, default_flow_style=False),
         "dirname": lambda p: str(Path(p).parent),
+        "strftime": lambda fmt, seconds, utc=False: time.strftime(fmt, (time.gmtime if utc else time.localtime)(seconds)),
     })
     env.tests["match"] = lambda value, pattern: re.match(pattern, value) is not None
     return env
@@ -72,6 +74,9 @@ class RegistriesPlaybook(unittest.TestCase):
 
     def task(self, name):
         return next(t for t in self.tasks if t["name"] == name)
+
+    def evaluate(self, expression, **context):
+        return to_bool(environment().compile_expression(str(expression))(**context))
 
     def index(self, name):
         return next(i for i, t in enumerate(self.tasks) if t["name"] == name)
@@ -179,14 +184,20 @@ class FileTests(RegistriesPlaybook):
 
 
 class RestartTests(RegistriesPlaybook):
-    def restart(self, host="s1", registries=GHCR, written=False, removed=False, active=True, started=2000, mtime=1000.5, exists=True):
-        unit = {"stdout_lines": [f"ActiveState={'active' if active else 'inactive'}",
+    def context(self, host="s1", registries=GHCR, written=False, removed=False, state="active", started=2000,
+                mtime=1000.5, exists=True, containerd_auth=None):
+        unit = {"stdout_lines": [f"ActiveState={state}",
                                  f"ActiveEnterTimestamp=@{started}" if started else "ActiveEnterTimestamp="]}
-        return self.resolve(host=host, registries=registries,
-                            k3s_registries_written={"changed": written},
-                            k3s_registries_removed={"changed": removed},
-                            k3s_registries_stat={"stat": {"exists": exists, "mtime": mtime}},
-                            k3s_registries_unit=unit)["k3s_registries_restart"]
+        registered = {"k3s_registries_written": {"changed": written},
+                      "k3s_registries_removed": {"changed": removed},
+                      "k3s_registries_stat": {"stat": {"exists": exists, "mtime": mtime}},
+                      "k3s_registries_unit": unit}
+        if containerd_auth is not None:
+            registered["k3s_registries_containerd_auth"] = {"rc": 0 if containerd_auth else 1, "stdout": str(containerd_auth)}
+        return self.resolve(host=host, registries=registries, **registered)
+
+    def restart(self, **kwargs):
+        return self.context(**kwargs)["k3s_registries_restart"]
 
     def test_restart_decision(self):
         self.assertIs(self.restart(written=True), True)
@@ -197,8 +208,45 @@ class RestartTests(RegistriesPlaybook):
         # Same second as the start: systemd prints whole seconds.
         self.assertIs(self.restart(mtime=2000.9), False)
         # K3s is not running (new node, or stopped): never started here.
-        self.assertIs(self.restart(written=True, active=False, started=None), False)
+        self.assertIs(self.restart(written=True, state="inactive", started=None), False)
         self.assertIs(self.restart(registries=None, written=True), False)
+        # Removed by an earlier run that stopped before the restart: the
+        # generated containerd configuration still holds the credential.
+        absent = {"registries": {"state": "absent"}, "exists": False}
+        self.assertIs(self.restart(containerd_auth=1, **absent), True)
+        self.assertIs(self.restart(containerd_auth=0, **absent), False)
+        self.assertIs(self.restart(**absent), False)
+
+    def test_failing_or_changing_unit_stops_the_play(self):
+        task = self.task("Refuse a K3s service that is failing or changing state")
+        self.assertEqual(task["when"], "k3s_registries_state != 'unmanaged'")
+        self.assertLess(self.index("Read the K3s service state"), self.index("Refuse a K3s service that is failing or changing state"))
+        self.assertLess(self.index("Refuse a K3s service that is failing or changing state"),
+                        self.index("Restart K3s to load the registry configuration"))
+        that = task["ansible.builtin.assert"]["that"]
+        for state, allowed in (("active", True), ("inactive", True), ("failed", False), ("activating", False),
+                               ("deactivating", False), ("reloading", False)):
+            with self.subTest(state=state):
+                context = self.context(state=state, written=True)
+                self.assertEqual(context["k3s_registries_unit_state"], state)
+                self.assertIs(self.evaluate(that, **context), allowed)
+                if not allowed:
+                    self.assertIs(context["k3s_registries_restart"], False)
+
+    def test_absent_counts_credentials_in_the_containerd_configuration(self):
+        task = self.task("Count registry credentials in the generated containerd configuration")
+        argv = task["ansible.builtin.command"]["argv"]
+        self.assertEqual(argv[:4], ["grep", "-c", "-F", "registry.configs."])
+        self.assertEqual(argv[4], "{{ k3s_registries_containerd_config }}")
+        self.assertEqual(self.vars["k3s_registries_containerd_config"],
+                         "/var/lib/rancher/k3s/agent/etc/containerd/config.toml")
+        self.assertEqual(task["failed_when"], "k3s_registries_containerd_auth.rc > 1")
+        self.assertIs(task["check_mode"], False)
+        self.assertTrue(self.when_true(task, self.context(registries={"state": "absent"})))
+        self.assertFalse(self.when_true(task, self.context()))
+        self.assertFalse(self.when_true(task, self.context(registries={"state": "absent"}, state="inactive")))
+        self.assertLess(self.index("Count registry credentials in the generated containerd configuration"),
+                        self.index("Restart K3s to load the registry configuration"))
 
     def test_servers_then_agents_one_at_a_time(self):
         servers, agents = self.plays[1], self.plays[2]
@@ -212,23 +260,92 @@ class RestartTests(RegistriesPlaybook):
                 self.assertEqual(play["tasks"], [{"name": "Apply the registry configuration",
                                                   "ansible.builtin.import_tasks": "tasks/registries.yml"}])
 
+    GATES = ("Check that the API server on every other server is ready",
+             "Check that every etcd node is Ready and not cordoned",
+             "Check that kured is not rebooting a node")
+
     def test_restart_is_gated_and_followed_by_readiness_waits(self):
         restart = self.task("Restart K3s to load the registry configuration")
         self.assertEqual(restart["ansible.builtin.systemd"],
                          {"name": "{{ k3s_registries_unit_name }}", "state": "restarted"})
         self.assertEqual(restart["when"], "k3s_registries_restart | bool")
-        gate = self.index("Check that every etcd node is Ready before this server restarts")
+        # TimeoutStartSec=0 on the K3s units: a stuck start must fail, not hang.
+        self.assertEqual(restart["timeout"], 600)
         at = self.index("Restart K3s to load the registry configuration")
-        waits = [self.index(n) for n in ("Wait for the local kube-apiserver to report ready",
+        waits = [self.index(n) for n in ("Read the start time of the restarted K3s",
+                                         "Wait for the local kube-apiserver to report ready",
                                          "Wait for the local kubelet to report healthy",
                                          "Wait for the node to be Ready")]
-        self.assertLess(gate, at)
+        self.assertTrue(all(self.index(g) < at for g in self.GATES))
+        self.assertEqual(waits, sorted(waits))
         self.assertTrue(all(w > at for w in waits))
-        for name in ("Check that every etcd node is Ready before this server restarts",
-                     "Wait for the local kube-apiserver to report ready"):
+        for name in self.GATES:
+            with self.subTest(gate=name):
+                task = self.task(name)
+                self.assertIs(task["check_mode"], False)
+                self.assertIs(task["changed_when"], False)
+                self.assertIn("k3s_registries_restart | bool", task["when"])
+        for name in self.GATES[:2] + ("Wait for the local kube-apiserver to report ready",):
             self.assertIn("inventory_hostname in groups.get('server', [])", self.task(name)["when"])
-        self.assertIn("etcd=true", str(self.task("Check that every etcd node is Ready before this server restarts")))
+        self.assertEqual(self.task(self.GATES[2])["when"], "k3s_registries_restart | bool")
+        self.assertIn("etcd=true", str(self.task(self.GATES[1])))
         self.assertIn("/readyz", str(self.task("Wait for the local kube-apiserver to report ready")))
+
+    def test_every_other_server_must_serve_readyz(self):
+        task = self.task("Check that the API server on every other server is ready")
+        self.assertEqual(task["ansible.builtin.command"], "k3s kubectl get --raw=/readyz")
+        self.assertEqual(task["delegate_to"], "{{ item }}")
+        loop = environment().from_string(task["loop"])
+        self.assertEqual(loop.render(inventory_hostname="s2", groups=GROUPS), ["s1", "s3"])
+        result = "k3s_registries_peer_readyz"
+        self.assertTrue(self.evaluate(task["failed_when"], **{result: {"rc": 1, "stdout": ""}}))
+        self.assertTrue(self.evaluate(task["failed_when"], **{result: {"rc": 0, "stdout": "[-]etcd failed"}}))
+        self.assertFalse(self.evaluate(task["failed_when"], **{result: {"rc": 0, "stdout": "ok"}}))
+
+    def test_etcd_nodes_must_be_ready_and_schedulable(self):
+        task = self.task("Check that every etcd node is Ready and not cordoned")
+        result = "k3s_registries_etcd_nodes"
+        for lines, failed in ((["s1 True ", "s2 True ", "s3 True "], False),
+                              (["s1 True", "s2 True false"], False),
+                              (["s1 True false", "s2 True "], False),
+                              (["s1 True ", "s2 True true"], True),
+                              (["s1 True ", "s2 Unknown "], True),
+                              (["s1 True ", "s2  "], True),
+                              ([], False)):
+            with self.subTest(lines=lines):
+                self.assertIs(self.evaluate(task["failed_when"], **{result: {"rc": 0, "stdout_lines": lines}}), failed)
+        self.assertTrue(self.evaluate(task["failed_when"], **{result: {"rc": 1, "stdout_lines": []}}))
+        self.assertIn("{.spec.unschedulable}", task["ansible.builtin.command"]["argv"][-1])
+
+    def test_kured_lock_blocks_the_restart(self):
+        task = self.task("Check that kured is not rebooting a node")
+        self.assertIn("weave\\.works/kured-node-lock", task["ansible.builtin.command"]["argv"][-1])
+        self.assertIn("--selector=app.kubernetes.io/name=kured", task["ansible.builtin.command"]["argv"])
+        result = "k3s_registries_kured_lock"
+        held = 'kured/h3xinfra-kured-main={"nodeID":"s2","created":"2026-11-11T00:00:00Z"}'
+        for lines, failed in ((["kured/h3xinfra-kured-main="], False), ([], False), ([held], True)):
+            with self.subTest(lines=lines):
+                self.assertIs(self.evaluate(task["failed_when"], **{result: {"rc": 0, "stdout_lines": lines}}), failed)
+        self.assertTrue(self.evaluate(task["failed_when"], **{result: {"rc": 1, "stdout_lines": []}}))
+        delegate = environment().from_string(task["delegate_to"])
+        self.assertEqual(delegate.render(inventory_hostname="a1", groups=GROUPS), "s1")
+
+    def test_ready_wait_needs_a_heartbeat_from_the_restarted_kubelet(self):
+        started = self.task("Read the start time of the restarted K3s")
+        self.assertIn("--property=ExecMainStartTimestamp", started["ansible.builtin.command"]["argv"])
+        start = 1793000000  # 2026-10-26T07:33:20Z
+        context = self.resolve(registries=GHCR, k3s_registries_started_at={"rc": 0, "stdout": f"@{start}"})
+        self.assertEqual(context["k3s_registries_started_at_utc"], "2026-10-26T07:33:20Z")
+        self.assertFalse(self.evaluate(started["failed_when"], k3s_registries_started_at={"rc": 0, "stdout": f"@{start}"}))
+        self.assertTrue(self.evaluate(started["failed_when"], k3s_registries_started_at={"rc": 0, "stdout": "n/a"}))
+        until = self.task("Wait for the node to be Ready")["until"]
+        for stdout, ready in (("True 2026-10-26T07:33:19Z", False),  # posted before the restart
+                              ("True 2026-10-26T07:33:20Z", False),  # same second as the start
+                              ("True 2026-10-26T07:33:31Z", True),
+                              ("False 2026-10-26T07:33:31Z", False),
+                              ("True", False)):
+            with self.subTest(stdout=stdout):
+                self.assertIs(self.evaluate(until, k3s_registries_node_ready={"rc": 0, "stdout": stdout}, **context), ready)
 
     def test_agent_readiness_is_read_through_a_server(self):
         task = self.task("Wait for the node to be Ready")

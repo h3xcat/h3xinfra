@@ -217,19 +217,37 @@ K3s reads `registries.yaml` only when it starts. The playbook does these steps:
 1. It checks `k3s_registries` on every node.
 2. It works on the servers one at a time, then on the agents one at a time.
 3. On each node, it writes or deletes the file.
-4. It restarts K3s (`k3s` on servers, `k3s-agent` on agents) only when the
-   file changed in this run, or when the file is newer than the running K3s.
-   The second case covers an earlier run that stopped before the restart.
-5. Before a server restarts, every etcd node must be Ready. One restart then
-   never costs etcd its quorum.
-6. After a restart, a server waits for `/readyz`. Every node waits for the
-   kubelet `healthz` and for the node Ready condition. The node name is the
-   output of `hostname`.
-7. The first failure stops the playbook before the next node.
+4. It reads the state of the K3s service (`k3s` on servers, `k3s-agent` on
+   agents). When the service is `inactive`, the playbook does not start it.
+   When the service is in any other state than `active` or `inactive` (for
+   example `failed` or `activating`), the playbook stops. Repair the node and
+   run the playbook again.
+5. It restarts K3s only when one of these is true:
+   - The file changed in this run.
+   - The file is newer than the running K3s.
+   - `state` is `absent` and the containerd configuration that K3s generated
+     still holds a registry credential.
 
-The playbook never starts a K3s service that is not running. The K3s unit uses
-`KillMode=process`, so running containers keep running during the restart.
-The kubelet watchdog ignores the first 180 seconds after an agent starts.
+   The last two cases cover an earlier run that stopped before the restart.
+6. Before a server restarts, the API server on every other server must
+   answer `/readyz`, and every etcd node must be Ready and not cordoned. The
+   K3s API server uses only its local etcd member, so `/readyz` proves that
+   the member serves with quorum. One restart then never costs etcd its
+   quorum.
+7. Before any node restarts, kured must not hold its reboot lock (the
+   `weave.works/kured-node-lock` annotation on the kured DaemonSet).
+8. The restart fails after 600 seconds. The K3s units have no start timeout
+   of their own.
+9. After a restart, a server waits for `/readyz`. Every node waits for the
+   kubelet `healthz`. Then it waits for the node Ready condition with a
+   heartbeat that is later than the start of the new K3s process. An old
+   Ready status from before the restart does not count. The node name is the
+   output of `hostname`.
+10. The first failure stops the playbook before the next node.
+
+The K3s unit uses `KillMode=process`, so running containers keep running
+during the restart. The kubelet watchdog ignores the first 180 seconds after
+an agent starts.
 
 To apply a change without the rest of the layer, run this command from the
 repository root:
@@ -257,16 +275,21 @@ content, because the task that writes the file uses `no_log` and `diff: false`.
 1. Set `k3s_registries: {state: absent}`.
 2. Run `ansible-playbook playbooks/01-k3s/registries.yml`. It deletes the file
    and restarts K3s on each node, one node at a time.
-3. Remove the variable.
+3. When the run stops early, fix the cause and run it again. A node whose
+   file is already deleted still restarts when its generated containerd
+   configuration holds a registry credential.
+4. When the run completes, remove the variable.
 
 If you only remove the variable, the file stays on the nodes.
 
 ## Security
 
 - The credential is on the disk of every node. `registries.yaml` is owned by
-  root with mode 0600. K3s also copies the credential into the containerd
-  configuration under `/var/lib/rancher/k3s/agent/etc/containerd/`. Root on
-  any node can read it.
+  root with mode 0600. K3s also copies the credential into
+  `/var/lib/rancher/k3s/agent/etc/containerd/config.toml`. K3s writes that
+  file with mode 0644, but its parent `/var/lib/rancher/k3s/agent` has mode
+  0700. Only root on the node can read it. Do not loosen the modes of these
+  directories.
 - A node credential applies to every pod. Any pod on any node can pull every
   image that the credential can read, without an image pull Secret.
   Kubernetes cannot limit a node credential to a namespace.
