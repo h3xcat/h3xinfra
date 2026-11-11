@@ -230,9 +230,19 @@
         - { name: net.ipv6.conf.default.accept_ra_defrtr, value: "0" }
         - { name: net.ipv6.conf.all.use_tempaddr, value: "0" }
         - { name: net.ipv6.conf.default.use_tempaddr, value: "0" }
-        # Required by WireGuard (wg-quick fwmark routing) for the qBittorrent stack
-        # so the workload no longer needs a privileged sysctl init container. See SECURITY_AUDIT.md F5.
-        - { name: net.ipv4.conf.all.src_valid_mark, value: "1" }
+        # Must stay 0 on the host. Cilium redirects DNS traffic of pods with
+        # DNS-aware network policies to its proxy with fwmark 0x200 and TPROXY.
+        # With src_valid_mark=1 the reverse-path check uses that mark, finds
+        # the local route of Cilium's policy routing table for the pod
+        # address and drops the packet as a martian source. Every IPv4 DNS
+        # query of such a pod then times out (5 s per name). IPv6 has no such
+        # check. Set explicitly (not left out) so a node that had 1 is reset
+        # now and in /etc/sysctl.conf. A WireGuard pod (wg-quick fwmark
+        # routing) sets src_valid_mark=1 in its own network namespace through
+        # spec.securityContext.sysctls; list the sysctl in
+        # kubelet_allowed_unsafe_sysctls for the nodes where it can run
+        # (playbooks/01-k3s/kubelet-sysctls.yml) before you deploy the pod.
+        - { name: net.ipv4.conf.all.src_valid_mark, value: "0" }
         # Raise inotify limits -- kubelet, container runtime, and log shippers exhaust
         # the defaults on busy nodes, breaking apt and other tools that watch directories.
         - { name: fs.inotify.max_user_watches, value: "1048576" }
