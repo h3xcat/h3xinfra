@@ -195,13 +195,18 @@ The role mappings are authoritative. Terraform sets the role mappings of a
 declared group to exactly its `client_roles` (`exhaustive = true`). It removes
 a role that someone added in the admin console. A group with no
 `client_roles` has no role mappings. Thus, the inventory is the complete
-grant of each declared group.
+role grant of each declared group.
 
 The memberships are additive. Terraform adds each member to the group
 (`keycloak_user_groups` with `exhaustive = false`). It does not change the
 other groups of the user, for example `k8s-admins`. When you remove a user
 from `members`, Terraform removes only that membership. When you remove a
 group, Terraform deletes the group, and all of its members lose it.
+
+Thus, `members` is a minimum, not the full member list. Terraform never
+removes a member that `members` does not list, for example a user added in
+the admin console. `terraform plan` does not show such a member as drift.
+Check the *Members* tab of each declared group to see who has its roles.
 
 Terraform does not create users. It looks up each member by exact username.
 The plan fails with `user with username <name> not found` when the user does
@@ -213,25 +218,42 @@ exist.
 `terraform/kubernetes_oidc.tf` manages them, and an admin assigns their
 members in the admin console.
 
-To move a group that already exists in Keycloak under Terraform, do these
-steps:
+A group with the same name can already exist in Keycloak, for example from
+an older playbook. Then the apply fails, because Keycloak rejects a second
+top-level group with that name. There are two ways to fix it:
 
-1. Find the group id in the admin console (*Groups* → the group → the id in
-   the URL).
-2. Import the group before the first apply. Run the command in
-   `playbooks/10-keycloak/terraform` with the rendered
-   `terraform.tfvars.json`:
+- Delete the group in the admin console, then run standup. Terraform creates
+  the group again with only the declared roles and members. The old members
+  lose the group roles until the run ends.
+- Import the group. This keeps the group id and its members.
+
+To import a group, do these steps:
+
+1. Add the group to `keycloak.groups` in the inventory.
+2. Render `terraform.tfvars.json` without an apply:
 
    ```sh
+   ansible-playbook playbooks/10-keycloak/standup.yml --tags keycloak-tfvars
+   ```
+
+   The tag runs only the tasks that create the Terraform directories and
+   render the file. An older `terraform.tfvars.json` has no `groups`, and
+   then the import fails with "Configuration for import target does not
+   exist".
+3. Find the group id in the admin console (*Groups* → the group → the id in
+   the URL).
+4. Import the group. Run these commands in `playbooks/10-keycloak/terraform`:
+
+   ```sh
+   terraform init
    terraform import -var-file=terraform.tfvars.json \
      'keycloak_group.groups["report-editors"]' '<realm>/<group-id>'
    ```
 
-3. Run `ansible-playbook playbooks/10-keycloak/standup.yml`. Terraform then
+5. Open the *Members* tab of the group. Remove every user that `members` does
+   not list. Terraform does not remove them.
+6. Run `ansible-playbook playbooks/10-keycloak/standup.yml`. Terraform then
    sets the role mappings and adds the members.
-
-If you do not import the group, the apply fails because a top-level group
-with the same name exists.
 
 `playbooks/10-keycloak/tests/groups.tftest.hcl` tests the groups with a mocked
 provider. `tests/test_groups.py` runs it with `terraform test`.

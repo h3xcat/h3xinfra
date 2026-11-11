@@ -56,6 +56,26 @@ class KeycloakGroupsTests(unittest.TestCase):
         ]
         self.assertEqual(self.render_tfvars(dict(keycloak, groups=groups))["groups"], groups)
 
+    def test_tfvars_tag_renders_without_apply(self):
+        # The README import steps run standup.yml with --tags keycloak-tfvars.
+        # That run must render terraform.tfvars.json and must not apply.
+        plays = yaml.safe_load((LAYER / "standup.yml").read_text())
+        tagged = []
+        for play in plays:
+            self.assertNotIn("keycloak-tfvars", play.get("tags", []), "tag the tasks, not a play")
+            for task in play.get("tasks", []):
+                tags = task.get("tags", [])
+                tags = [tags] if isinstance(tags, str) else tags
+                self.assertNotIn("always", tags)
+                if "keycloak-tfvars" in tags:
+                    tagged.append(task["name"])
+                    self.assertNotIn("community.general.terraform", task)
+        self.assertEqual(tagged, [
+            "Ensure Terraform workspace directory exists",
+            "Ensure Terraform state directory exists on NAS",
+            "Render Terraform variables file",
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()

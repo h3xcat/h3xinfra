@@ -281,17 +281,23 @@
     # clone shares the same state.
     terraform_state_dir: "/h3xinfra/state/keycloak"
 
+  # The tag keycloak-tfvars runs only the three tasks that prepare the
+  # Terraform directory and render terraform.tfvars.json. Nothing is applied.
+  # Use it before a manual `terraform import` (see README.md, "Groups and
+  # memberships").
   tasks:
     - name: Ensure Terraform workspace directory exists
       ansible.builtin.file:
         path: "{{ terraform_dir }}"
         state: directory
         mode: "0755"
+      tags: [keycloak-tfvars]
 
     - name: Ensure Terraform state directory exists on NAS
       ansible.builtin.file:
         path: "{{ terraform_state_dir }}"
         state: directory
+      tags: [keycloak-tfvars]
 
     - name: Render Terraform variables file
       ansible.builtin.copy:
@@ -308,6 +314,7 @@
             'groups': keycloak.groups | default([])
           } | to_nice_json }}"
       no_log: true
+      tags: [keycloak-tfvars]
 
     - name: Apply Terraform configuration
       community.general.terraform:
