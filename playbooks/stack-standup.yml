@@ -41,12 +41,6 @@
 
 - import_playbook: 10-mailu/standup.yml
 
-# Opt in after the sealing key Secret exists (10-sealed-secrets/README.md).
-# Before Argo CD, so SealedSecrets decrypt as soon as Argo CD syncs them.
-- name: Deploy the Sealed Secrets controller (opt-in)
-  import_playbook: 10-sealed-secrets/standup.yml
-  when: sealed_secrets.enabled | default(false) | bool
-
 # Opt in after the Keycloak client and group assignments have been provisioned.
 - import_playbook: 10-argocd/standup.yml
   when: argocd.enabled | default(false) | bool

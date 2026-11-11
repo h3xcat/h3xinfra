@@ -39,11 +39,6 @@
 - import_playbook: 99-utils/kube-connect.yml
   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
 
-# Keeps the SealedSecret CRD, the sealing key and the namespace.
-- name: Remove the Sealed Secrets controller (opt-in)
-  import_playbook: 10-sealed-secrets/teardown.yml
-  when: (hostvars['localhost']['kubectl_accessible'] | default(false) | bool) and (sealed_secrets.enabled | default(false) | bool)
-
 - import_playbook: 10-mailu/teardown.yml
   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
 
