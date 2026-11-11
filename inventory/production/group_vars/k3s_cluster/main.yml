@@ -49,3 +49,13 @@ kubelet_protect_kernel_defaults: true
 #   2. Run 01-k3s on that node and recreate its pods.
 #   3. Make sure that the pods start. Then set it to true here.
 kubelet_seccomp_default: false
+
+# Containerd registry configuration (playbooks/01-k3s/registries.yml). Off when
+# not set. A change restarts K3s on each node, one node at a time. See the
+# 01-k3s README for rotation and removal (state: absent).
+# k3s_registries:
+#   configs:
+#     ghcr.io:
+#       auth:
+#         username: example-user
+#         password: "{{ vault_k3s_registry_ghcr_token }}"
