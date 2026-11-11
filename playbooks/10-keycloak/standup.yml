@@ -304,7 +304,8 @@
             'realm_name': keycloak.realm.name,
             'realm_display_name': keycloak.realm.display_name,
             'smtp': keycloak.realm.smtp,
-            'clients': keycloak.clients | default([])
+            'clients': keycloak.clients | default([]),
+            'groups': keycloak.groups | default([])
           } | to_nice_json }}"
       no_log: true
 
