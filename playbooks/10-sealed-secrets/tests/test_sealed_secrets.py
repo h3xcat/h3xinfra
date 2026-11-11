@@ -106,6 +106,15 @@ class RenderTests(unittest.TestCase):
         if rc != 0:
             raise AssertionError(output)
         cls.values = json.loads(rendered.read_text())
+        policies_task = task(layer_play(), "Apply the Sealed Secrets admission policies")
+        rendered_policies = work / "policies.json"
+        rc, output = run_play(work, [{
+            "name": "Template the admission policies",
+            "ansible.builtin.copy": {"content": "{{ h3x_policies | to_nice_json }}", "dest": str(rendered_policies)},
+        }], play_vars(h3x_policies=policies_task["kubernetes.core.k8s"]["definition"]))
+        if rc != 0:
+            raise AssertionError(output)
+        cls.policies = json.loads(rendered_policies.read_text())
         cls.namespace = CONFIG["namespace"]
         cls.release = f"{CONFIG['release_name_prefix']}-main"
         result = subprocess.run([
@@ -199,6 +208,38 @@ class RenderTests(unittest.TestCase):
         self.assertEqual([role["metadata"]["name"] for role in roles], [f"{self.release}-key-admin"])
         self.assertEqual(roles[0]["metadata"]["namespace"], self.namespace)
 
+    def test_admission_policies(self):
+        by_name = {(doc["kind"], doc["metadata"]["name"]): doc for doc in self.policies}
+        self.assertEqual(len(by_name), 4)
+        for name in (f"{self.release}-key-namespace", f"{self.release}-strict-scope"):
+            with self.subTest(policy=name):
+                policy = by_name[("ValidatingAdmissionPolicy", name)]
+                self.assertEqual(policy["apiVersion"], "admissionregistration.k8s.io/v1")
+                self.assertEqual(policy["spec"]["failurePolicy"], "Fail")
+                binding = by_name[("ValidatingAdmissionPolicyBinding", name)]
+                self.assertEqual(binding["spec"], {"policyName": name, "validationActions": ["Deny"]},
+                                 "The binding must deny, for every namespace that the policy matches")
+
+        keys = by_name[("ValidatingAdmissionPolicy", f"{self.release}-key-namespace")]["spec"]
+        self.assertEqual(keys["matchConstraints"]["namespaceSelector"],
+                         {"matchLabels": {"kubernetes.io/metadata.name": self.namespace}})
+        self.assertEqual(keys["matchConstraints"]["resourceRules"], [{
+            "apiGroups": [""], "apiVersions": ["*"], "operations": ["CREATE", "UPDATE", "DELETE"], "resources": ["secrets"]}])
+        # The user must be the controller's real ServiceAccount, or the policy is a no-op.
+        user = f"system:serviceaccount:{self.namespace}:{self.pod['serviceAccountName']}"
+        self.assertEqual([rule["expression"] for rule in keys["validations"]],
+                         [f'request.userInfo.username != "{user}"'])
+
+        scope = by_name[("ValidatingAdmissionPolicy", f"{self.release}-strict-scope")]["spec"]
+        self.assertNotIn("namespaceSelector", scope["matchConstraints"])
+        self.assertEqual(scope["matchConstraints"]["resourceRules"], [{
+            "apiGroups": ["bitnami.com"], "apiVersions": ["*"], "operations": ["CREATE", "UPDATE"],
+            "resources": ["sealedsecrets"]}])
+        expression = " ".join(rule["expression"] for rule in scope["validations"])
+        for annotation in ("sealedsecrets.bitnami.com/cluster-wide", "sealedsecrets.bitnami.com/namespace-wide"):
+            self.assertIn(f"'{annotation}'", expression)
+        self.assertIn("object.metadata.annotations[k] != 'true'", expression)
+
     def test_crds_stay_outside_the_release(self):
         self.assertIs(self.helm_task["kubernetes.core.helm"]["skip_crds"], True)
         self.assertEqual(self.kinds("CustomResourceDefinition"), [])
@@ -233,14 +274,51 @@ class PlaybookTests(unittest.TestCase):
         self.assertIn("playbooks/10-sealed-secrets/README.md", require["ansible.builtin.assert"]["fail_msg"])
         first_change = min(self.names.index(name) for name in (
             "Add the Sealed Secrets Helm repository", "Create the Sealed Secrets namespace",
-            "Apply the SealedSecret CRD", "Deploy the Sealed Secrets controller via Helm"))
+            "Apply the SealedSecret CRD", "Apply the Sealed Secrets admission policies",
+            "Deploy the Sealed Secrets controller via Helm"))
         self.assertLess(self.names.index("Read the sealing key Secret"), self.names.index("Require the operator-supplied sealing key"))
         self.assertLess(self.names.index("Require the operator-supplied sealing key"), first_change)
+        listing = task(self.play, "List the active sealing keys")
+        self.assertIs(listing["no_log"], True, "The k8s_info result holds the private keys")
+        self.assertEqual(listing["kubernetes.core.k8s_info"]["label_selectors"], [f"{KEY_LABEL}=active"])
         forget = task(self.play, "Forget the sealing key Secret")
-        self.assertEqual(forget["ansible.builtin.set_fact"], {"sealed_secrets_key": {}})
-        for name in ("Read the sealing key Secret", "Require the operator-supplied sealing key", "Forget the sealing key Secret"):
+        self.assertEqual(forget["ansible.builtin.set_fact"], {"sealed_secrets_key": {}, "sealed_secrets_active_keys": {}})
+        guards = ("Read the sealing key Secret", "List the active sealing keys", "Require the operator-supplied sealing key",
+                  "Refuse active sealing keys that the operator did not name", "Forget the sealing key Secret")
+        for name in guards:
             self.assertNotIn("when", task(self.play, name), f"{name} must always run")
+        self.assertEqual([self.names.index(name) for name in guards], sorted(self.names.index(name) for name in guards))
         self.assertLess(self.names.index("Forget the sealing key Secret"), first_change)
+        self.assertLess(self.names.index("Apply the SealedSecret CRD"), self.names.index("Apply the Sealed Secrets admission policies"))
+        self.assertLess(self.names.index("Apply the Sealed Secrets admission policies"),
+                        self.names.index("Deploy the Sealed Secrets controller via Helm"),
+                        "The policies must exist before the controller starts")
+
+    def test_active_key_set_behaviour(self):
+        refuse = task(self.play, "Refuse active sealing keys that the operator did not name")
+
+        def listing(*names):
+            return {"resources": [{"metadata": {"name": name}, "data": {"tls.key": FAKE_KEY}} for name in names]}
+
+        primary = CONFIG["key_secret_name"]
+        rotating = dict(CONFIG, previous_key_secret_names=["sealing-key-2026"])
+        cases = {
+            "only the key": (listing(primary), CONFIG, True),
+            "none": (listing(), CONFIG, True),
+            "generated key": (listing(primary, f"{primary}abc12"), CONFIG, False),
+            "previous key during rotation": (listing(primary, "sealing-key-2026"), rotating, True),
+            "previous key not named": (listing(primary, "sealing-key-2026"), CONFIG, False),
+        }
+        for case, (result, config, ok) in cases.items():
+            with self.subTest(case=case):
+                variables = play_vars(sealed_secrets=config, sealed_secrets_active_keys=result)
+                rc, output = run_play(self.directory.name, [refuse], variables, verbose=True)
+                self.assertNotIn(FAKE_KEY, output)
+                if ok:
+                    self.assertEqual(rc, 0, output)
+                else:
+                    self.assertNotEqual(rc, 0)
+                    self.assertIn("has active sealing keys", output)
 
     def test_key_assert_behaviour(self):
         require = task(self.play, "Require the operator-supplied sealing key")
@@ -298,6 +376,11 @@ class PlaybookTests(unittest.TestCase):
             "key name with a dot": (play_vars(sealed_secrets=dict(CONFIG, key_secret_name="sealing.key-2026")), False),
             "key name too long": (play_vars(sealed_secrets=dict(CONFIG, key_secret_name="k" * 246)), False),
             "key name at the limit": (play_vars(sealed_secrets=dict(CONFIG, key_secret_name="k" * 245)), True),
+            "previous keys": (play_vars(sealed_secrets=dict(CONFIG, previous_key_secret_names=["old-key"])), True),
+            "previous keys as a string": (play_vars(sealed_secrets=dict(CONFIG, previous_key_secret_names="old-key")), False),
+            "previous key with a dot": (play_vars(sealed_secrets=dict(CONFIG, previous_key_secret_names=["old.key"])), False),
+            "previous keys include the key": (play_vars(sealed_secrets=dict(
+                CONFIG, previous_key_secret_names=[CONFIG["key_secret_name"]])), False),
         }
         for case, (variables, ok) in cases.items():
             with self.subTest(case=case):

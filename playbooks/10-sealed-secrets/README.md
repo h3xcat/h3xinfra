@@ -18,6 +18,9 @@ The layer is opt-in. It is off until you set `sealed_secrets.enabled: true`.
   Helm does not own it. Helm installs `crds/` only once and never upgrades them.
 - One Deployment with one replica in the `sealed-secrets` namespace. The namespace enforces Pod Security `restricted`.
 - A default-deny ingress NetworkPolicy for the namespace.
+- Two ValidatingAdmissionPolicies with Deny bindings (`admissionregistration.k8s.io/v1`, Kubernetes 1.30 or later):
+  - `<release>-key-namespace`: the controller may not create, change or delete Secrets in its own namespace.
+  - `<release>-strict-scope`: every SealedSecret must use the strict scope.
 
 Renovate tracks both pins in one group, `Sealed Secrets`. It never automerges them.
 The upstream release workflow pushes each tag to `docker.io/bitnami/sealed-secrets-controller` and to
@@ -32,6 +35,9 @@ Renovate minimum release age applies to this image.
 | `keyrenewperiod` | `"0"` | No scheduled key generation. The operator supplies every key. |
 | `updateStatus` | `true` | The Argo CD health check reads the SealedSecret `Synced` condition. |
 | Key Secret check | before any change | The controller generates a key at startup when it finds none. The play stops first. |
+| Active key check | before any change | The controller decrypts with every Secret in its namespace that has the active label. The play stops if one of them is not `key_secret_name` or in `previous_key_secret_names`. |
+| `<release>-key-namespace` policy | Deny | The checks above hold at deploy time only. This policy holds while the controller runs. See "The controller never stores a key". |
+| `<release>-strict-scope` policy | Deny | A cluster-wide or namespace-wide ciphertext can be copied to another name or namespace. See "Trust boundary". |
 | `fullnameOverride` | `<release_name_prefix>-main` | Repo naming. `kubeseal` defaults to `sealed-secrets-controller` in `kube-system`, but offline sealing does not use the controller. |
 | `secretName` (`--key-prefix`) | `sealed_secrets.key_secret_name` | The controller also reads this exact Secret at startup. |
 | `priorityClassName` | `h3xinfra-platform-critical` | Every GitOps Secret depends on this controller, like Argo CD. The requests are small. |
@@ -67,6 +73,21 @@ writes a Secret only if one of these is true:
 - The Secret has the annotation `sealedsecrets.bitnami.com/managed: "true"`.
 - The Secret has the annotation `sealedsecrets.bitnami.com/patch: "true"`. The controller then patches it.
 
+### The controller never stores a key
+
+The controller generates a key and stores it as a Secret in its namespace in these cases:
+
+- It starts and finds no active key, for example after the key Secret was deleted or lost its label.
+- It receives `SIGUSR1`. Key renewal `0` does not turn this off.
+
+The policy `<release>-key-namespace` denies every create, update and delete of a Secret in the controller
+namespace by the controller ServiceAccount. Thus, the controller cannot store a key. The generation fails,
+and at startup the controller exits with the admission error instead of running with its own key.
+The policy also stops a SealedSecret from unsealing into this namespace. Without it, a SealedSecret
+with a `kubernetes.io/tls` template and the active label would add a key at the next controller start.
+
+Keep this namespace out of every Argo CD AppProject destination.
+
 ### Trust boundary
 
 Sealing needs only the public certificate. Anybody can seal.
@@ -82,7 +103,9 @@ The sealing scope limits where a ciphertext decrypts:
 - `namespace-wide`: the ciphertext is bound to the namespace only.
 - `cluster-wide`: the ciphertext is not bound. Anybody who can create a SealedSecret anywhere can move it into a namespace that they control and read the Secret there.
 
-Use `strict`. Use the other scopes only with a written reason.
+The policy `<release>-strict-scope` enforces `strict`. It denies a SealedSecret that sets
+`sealedsecrets.bitnami.com/cluster-wide` or `sealedsecrets.bitnami.com/namespace-wide` to `"true"`
+in its own metadata. The controller reads the scope from these two annotations only.
 
 The private key decrypts every SealedSecret sealed to its certificate. This includes
 the full Git history. Whoever holds the key can read all of these values.
@@ -110,6 +133,7 @@ The inventory knobs are in `inventory/production/host_vars/k8s/sealed_secrets.ym
 | `sealed_secrets.namespace` | `sealed-secrets` | Namespace of the controller and the key. |
 | `sealed_secrets.release_name_prefix` | `h3xinfra-sealed-secrets` | The release and the controller are `<prefix>-main`. |
 | `sealed_secrets.key_secret_name` | `h3xinfra-sealed-secrets-key` | The key Secret that the play requires. Only lowercase letters, digits and hyphens, at most 245 characters: the controller rejects other `--key-prefix` values at startup. |
+| `sealed_secrets.previous_key_secret_names` | `[]` | Old key Secrets that stay active during a rotation. Same name rule as `key_secret_name`. |
 
 A direct run of `standup.yml` deploys the layer independently of `enabled`.
 The stack runs it before `10-argocd`. A downstream stack that imports individual
@@ -169,6 +193,7 @@ The play stops before any change if the Secret is missing, is not
 ```bash
 ansible-playbook -i /path/to/inventory playbooks/10-sealed-secrets/standup.yml
 kubectl -n sealed-secrets get pods,networkpolicies
+kubectl get validatingadmissionpolicies,validatingadmissionpolicybindings | grep h3xinfra-sealed-secrets-main
 kubectl -n sealed-secrets logs deploy/h3xinfra-sealed-secrets-main | grep -E 'registered private key|New key written'
 ```
 
@@ -246,7 +271,8 @@ The play applies the CRD of the new chart before the Helm upgrade.
 
 ## Removal
 
-`teardown.yml` uninstalls the Helm release. It keeps the namespace, the CRD and the key Secrets.
+`teardown.yml` uninstalls the Helm release. It keeps the namespace, the CRD, the key Secrets and the
+two admission policies. The policies have no effect without the controller.
 
 - Existing Secrets stay in place. New or changed SealedSecrets wait until the controller runs again.
 - Deleting the CRD deletes every SealedSecret. Kubernetes then deletes every Secret that the controller created, because each one is owned by its SealedSecret.
@@ -270,7 +296,8 @@ the real play values, and `helm template` renders them. The tests check these it
 - Pod Security `restricted`, resources and the priority class.
 - The default-deny ingress policy as the only NetworkPolicy, and no Ingress or ServiceMonitor.
 - The exact controller RBAC, and no service proxier binding.
-- The key Secret check runs before any change, fails with a clear message and never prints the key.
+- The key Secret check and the active key check run before any change, fail with a clear message and never print the key.
+- The two admission policies: the controller ServiceAccount from the rendered chart, the resources, the operations and the Deny bindings.
 - The configuration validation, the CRD check, the teardown scope and the stack guards.
 - The Renovate capture of the tag and the digest, and the never-automerge rule.
 

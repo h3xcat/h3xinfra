@@ -14,6 +14,9 @@
     sealed_secrets_namespace: "{{ (sealed_secrets | default({})).namespace | default('sealed-secrets', true) }}"
     sealed_secrets_release: "{{ (sealed_secrets | default({})).release_name_prefix | default('h3xinfra-sealed-secrets', true) }}-main"
     sealed_secrets_key_secret_name: "{{ (sealed_secrets | default({})).key_secret_name | default('h3xinfra-sealed-secrets-key', true) }}"
+    # Old keys that stay active during a rotation (README.md, "Rotate the sealing key").
+    sealed_secrets_previous_key_secret_names: "{{ (sealed_secrets | default({})).previous_key_secret_names | default([], true) }}"
+    sealed_secrets_controller_user: "system:serviceaccount:{{ sealed_secrets_namespace }}:{{ sealed_secrets_release }}"
   tasks:
     - name: Validate Sealed Secrets configuration
       ansible.builtin.assert:
@@ -24,12 +27,18 @@
           # a-z, 0-9 and "-", at most 245 characters. A wider name passes the
           # key check, then stops the controller at startup.
           - sealed_secrets_key_secret_name is match('^[a-z0-9]([-a-z0-9]{0,243}[a-z0-9])?$')
+          - sealed_secrets_previous_key_secret_names is sequence
+          - sealed_secrets_previous_key_secret_names is not string
+          - sealed_secrets_previous_key_secret_names is not mapping
+          - sealed_secrets_previous_key_secret_names | map('string') | select('match', '^[a-z0-9]([-a-z0-9]{0,243}[a-z0-9])?$') | list | length == sealed_secrets_previous_key_secret_names | length
+          - sealed_secrets_key_secret_name not in sealed_secrets_previous_key_secret_names
           - (chart_versions | default({})).sealed_secrets | default('') | length > 0
           - (image_versions | default({})).sealed_secrets_controller | default('') is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}@sha256:[0-9a-f]{64}$')
         fail_msg: >-
           Set chart_versions.sealed_secrets and image_versions.sealed_secrets_controller
           ("<tag>@sha256:<digest>"). Use DNS-label names for sealed_secrets.namespace and
-          sealed_secrets.release_name_prefix. sealed_secrets.key_secret_name may use only
+          sealed_secrets.release_name_prefix. sealed_secrets.key_secret_name and each entry of
+          sealed_secrets.previous_key_secret_names (a list without key_secret_name) may use only
           lowercase letters, digits and hyphens, at most 245 characters.
         quiet: true
 
@@ -43,6 +52,18 @@
         namespace: "{{ sealed_secrets_namespace }}"
         name: "{{ sealed_secrets_key_secret_name }}"
       register: sealed_secrets_key
+      no_log: true
+
+    # The controller decrypts with every Secret in its namespace that has the
+    # active label. Only the keys that the operator names may have it.
+    - name: List the active sealing keys
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: "{{ sealed_secrets_namespace }}"
+        label_selectors:
+          - sealedsecrets.bitnami.com/sealed-secrets-key=active
+      register: sealed_secrets_active_keys
       no_log: true
 
     - name: Require the operator-supplied sealing key
@@ -65,9 +86,25 @@
           provision the sealing key separately (playbooks/10-sealed-secrets/README.md).
         quiet: true
 
+    - name: Refuse active sealing keys that the operator did not name
+      ansible.builtin.assert:
+        that:
+          - sealed_secrets_unnamed_keys | length == 0
+        fail_msg: >-
+          Namespace {{ sealed_secrets_namespace }} has active sealing keys that are neither
+          sealed_secrets.key_secret_name nor in sealed_secrets.previous_key_secret_names:
+          {{ sealed_secrets_unnamed_keys | join(', ') }}. The controller may have generated
+          them. Find out where they came from before you continue (playbooks/10-sealed-secrets/README.md).
+        quiet: true
+      vars:
+        sealed_secrets_unnamed_keys: >-
+          {{ sealed_secrets_active_keys.resources | default([]) | map(attribute='metadata.name')
+             | reject('in', [sealed_secrets_key_secret_name] + sealed_secrets_previous_key_secret_names) | list }}
+
     - name: Forget the sealing key Secret
       ansible.builtin.set_fact:
         sealed_secrets_key: {}
+        sealed_secrets_active_keys: {}
 
     - name: Add the Sealed Secrets Helm repository
       kubernetes.core.helm_repository:
@@ -127,6 +164,79 @@
         server_side_apply:
           field_manager: h3xinfra-sealed-secrets
         definition: "{{ sealed_secrets_crd_render.stdout | from_yaml_all | select | list }}"
+
+    # The key check above holds at deploy time only. These policies hold while
+    # the controller runs. They are outside the Helm release, so they exist
+    # before the controller starts, and teardown keeps them.
+    # 1. The controller may not create, change or delete Secrets in its own
+    #    namespace. A key that it generates (missing key at startup, SIGUSR1)
+    #    cannot be stored, so the controller fails instead. A SealedSecret
+    #    cannot unseal a fake key into this namespace either.
+    # 2. Every SealedSecret uses the strict scope. The controller reads the
+    #    scope from these annotations; a cluster-wide or namespace-wide
+    #    ciphertext could be copied to another name or namespace.
+    - name: Apply the Sealed Secrets admission policies
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        server_side_apply:
+          field_manager: h3xinfra-sealed-secrets
+        definition:
+          - apiVersion: admissionregistration.k8s.io/v1
+            kind: ValidatingAdmissionPolicy
+            metadata:
+              name: "{{ sealed_secrets_release }}-key-namespace"
+            spec:
+              failurePolicy: Fail
+              matchConstraints:
+                namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: "{{ sealed_secrets_namespace }}"
+                resourceRules:
+                  - apiGroups: [""]
+                    apiVersions: ["*"]
+                    operations: [CREATE, UPDATE, DELETE]
+                    resources: [secrets]
+              validations:
+                - expression: "request.userInfo.username != {{ sealed_secrets_controller_user | to_json }}"
+                  message: >-
+                    The Sealed Secrets controller may not write Secrets in its own namespace. It must
+                    never store a key of its own, and SealedSecrets may not target this namespace.
+                  reason: Forbidden
+          - apiVersion: admissionregistration.k8s.io/v1
+            kind: ValidatingAdmissionPolicyBinding
+            metadata:
+              name: "{{ sealed_secrets_release }}-key-namespace"
+            spec:
+              policyName: "{{ sealed_secrets_release }}-key-namespace"
+              validationActions: [Deny]
+          - apiVersion: admissionregistration.k8s.io/v1
+            kind: ValidatingAdmissionPolicy
+            metadata:
+              name: "{{ sealed_secrets_release }}-strict-scope"
+            spec:
+              failurePolicy: Fail
+              matchConstraints:
+                resourceRules:
+                  - apiGroups: [bitnami.com]
+                    apiVersions: ["*"]
+                    operations: [CREATE, UPDATE]
+                    resources: [sealedsecrets]
+              validations:
+                - expression: >-
+                    !has(object.metadata.annotations) ||
+                    ['sealedsecrets.bitnami.com/cluster-wide', 'sealedsecrets.bitnami.com/namespace-wide'].all(k,
+                    !(k in object.metadata.annotations) || object.metadata.annotations[k] != 'true')
+                  message: >-
+                    SealedSecrets must use the strict scope. Seal again with kubeseal --scope strict.
+                  reason: Forbidden
+          - apiVersion: admissionregistration.k8s.io/v1
+            kind: ValidatingAdmissionPolicyBinding
+            metadata:
+              name: "{{ sealed_secrets_release }}-strict-scope"
+            spec:
+              policyName: "{{ sealed_secrets_release }}-strict-scope"
+              validationActions: [Deny]
 
     - name: Deploy the Sealed Secrets controller via Helm
       kubernetes.core.helm:
