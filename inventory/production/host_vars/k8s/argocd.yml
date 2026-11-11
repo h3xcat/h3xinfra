@@ -18,3 +18,10 @@ argocd:
     policy_csv: |
       g, argocd-admins, role:admin
       g, argocd-readonly, role:readonly
+  # Optional KSOPS decryption of SOPS/age files in kustomize builds. It is off
+  # by default. Read the KSOPS section of the layer README before you enable it.
+  ksops:
+    enabled: false
+    # Secret in the Argo CD namespace with the age identity in key keys.txt.
+    # Provision it separately, like repository credentials.
+    age_secret_name: h3xinfra-argocd-sops-age

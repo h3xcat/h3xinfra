@@ -4,6 +4,63 @@
 - name: Deploy Argo CD via Helm
   hosts: k8s
   gather_facts: false
+  vars:
+    # Opt-in KSOPS: SOPS/age decryption in kustomize builds (README, "KSOPS").
+    # When it is disabled, argocd_ksops_active is empty. The Helm values then
+    # fall back to their `default(...)`, which equals the chart default, so
+    # the release renders exactly as without KSOPS.
+    argocd_ksops_enabled: "{{ argocd.ksops.enabled | default(false) | bool }}"
+    argocd_ksops_age_secret_name: "{{ argocd.ksops.age_secret_name | default('h3xinfra-argocd-sops-age') }}"
+    argocd_ksops_active: "{{ argocd_ksops if (argocd_ksops_enabled | bool) else {} }}"
+    argocd_ksops:
+      # The bundled kustomize runs KSOPS as an exec KRM function.
+      kustomize_build_options: --enable-alpha-plugins --enable-exec
+      env:
+        - name: SOPS_AGE_KEY_FILE
+          value: /app/config/sops-age/keys.txt
+      volumes:
+        - name: ksops-tools
+          emptyDir:
+            sizeLimit: 256Mi
+        # Not optional: without the key the pod does not start.
+        - name: ksops-age-key
+          secret:
+            secretName: "{{ argocd_ksops_age_secret_name }}"
+            optional: false
+            items:
+              - key: keys.txt
+                path: keys.txt
+      volumeMounts:
+        - name: ksops-tools
+          mountPath: /usr/local/bin/ksops
+          subPath: ksops
+          readOnly: true
+        - name: ksops-age-key
+          mountPath: /app/config/sops-age
+          readOnly: true
+      initContainers:
+        # Copies only the ksops binary; Argo CD keeps its own kustomize.
+        - name: install-ksops
+          image: "quay.io/viaductoss/ksops:{{ image_versions.ksops }}"
+          imagePullPolicy: IfNotPresent
+          command: [/usr/local/bin/ksops, install, /custom-tools]
+          securityContext:
+            # The image sets USER nonroot by name; restricted PSA needs the UID.
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: {cpu: 10m, memory: 32Mi, ephemeral-storage: 32Mi}
+            limits: {cpu: 100m, memory: 128Mi, ephemeral-storage: 256Mi}
+          volumeMounts:
+            - name: ksops-tools
+              mountPath: /custom-tools
   tasks:
     - name: Validate Argo CD configuration
       ansible.builtin.assert:
@@ -44,6 +101,30 @@
               pod-security.kubernetes.io/audit: restricted
               pod-security.kubernetes.io/warn: restricted
 
+    # Fail before Helm with a clear message. A missing Secret or key would
+    # otherwise leave the repo-server pod stuck in ContainerCreating.
+    - name: Read the KSOPS age key Secret
+      kubernetes.core.k8s_info:
+        kind: Secret
+        namespace: "{{ argocd.namespace }}"
+        name: "{{ argocd_ksops_age_secret_name }}"
+      register: argocd_ksops_age_secret
+      when: argocd_ksops_enabled | bool
+      no_log: true
+
+    - name: Validate KSOPS configuration
+      ansible.builtin.assert:
+        that:
+          - image_versions.ksops | default('') | length > 0
+          - argocd_ksops_age_secret.resources | default([]) | length == 1
+          - (argocd_ksops_age_secret.resources[0].data | default({}))['keys.txt'] | default('') | length > 0
+        fail_msg: >-
+          KSOPS is enabled. Pin image_versions.ksops, and provision the Secret
+          {{ argocd.namespace }}/{{ argocd_ksops_age_secret_name }} with the
+          age identity in key keys.txt before you run this layer.
+        quiet: true
+      when: argocd_ksops_enabled | bool
+
     - name: Deploy Argo CD via Helm
       kubernetes.core.helm:
         name: "{{ argocd.release_name_prefix }}-main"
@@ -69,8 +150,16 @@
                 requestedIDTokenClaims:
                   groups:
                     essential: true
+              # An empty value is not rendered into argocd-cm.
+              kustomize.buildOptions: "{{ argocd_ksops_active.kustomize_build_options | default('') }}"
             rbac:
               policy.csv: "{{ argocd.rbac.policy_csv }}"
+          # KSOPS only; the defaults are the chart defaults.
+          repoServer:
+            env: "{{ argocd_ksops_active.env | default([]) }}"
+            volumes: "{{ argocd_ksops_active.volumes | default([]) }}"
+            volumeMounts: "{{ argocd_ksops_active.volumeMounts | default([]) }}"
+            initContainers: "{{ argocd_ksops_active.initContainers | default([]) }}"
           server:
             httproute:
               enabled: true
