@@ -1,0 +1,8 @@
+---
+# sha256 of each reviewed sealed-secrets chart archive (.tgz), by chart
+# version. standup.yml deploys only an archive with this digest, and the
+# layer tests check it. After you review a new chart version, add its
+# digest here (README.md, "Upgrades"). Keep the previous version until the
+# new one runs, so that a rollback works.
+sealed_secrets_chart_sha256:
+  "2.22.0": 1ed23bb224652aa6c8477979d4bddccd207205b27b12b120f62f360890c80606

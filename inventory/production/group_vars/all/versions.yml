@@ -43,6 +43,12 @@ chart_versions:
   # /var/run/reboot-required is set (e.g. after kernel updates).
   # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
   kured: "6.1.0"
+  # Sealed Secrets controller (opt-in 10-sealed-secrets layer). Renovate never
+  # automerges it. Its appVersion must equal the tag in
+  # image_versions.sealed_secrets_controller. The sha256 of the reviewed chart
+  # archive is in playbooks/10-sealed-secrets/vars/chart-digests.yml.
+  # renovate: datasource=helm depName=sealed-secrets registryUrl=https://bitnami.github.io/sealed-secrets
+  sealed_secrets: "2.22.0"
 
   # Applications
   # renovate: datasource=helm depName=mailu registryUrl=https://mailu.github.io/helm-charts
@@ -63,3 +69,8 @@ cli_versions:
 image_versions:
   # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
   postgresql: "18"
+  # Sealed Secrets controller image: "<tag>@sha256:<digest>". The digest is the
+  # multi-arch image index (linux/amd64 and linux/arm64 for the Raspberry Pi
+  # agents). The chart appends this value to the image repository.
+  # renovate: datasource=docker depName=docker.io/bitnami/sealed-secrets-controller
+  sealed_secrets_controller: "0.41.2@sha256:e63ec6ec2b12a471bf781081bd370a93ca7b7b3999e5b9243341379aeb801d0b"

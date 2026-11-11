@@ -102,6 +102,8 @@ all:
       csi_driver_smb: "1.20.4"
       # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
       kured: "6.1.0"
+      # renovate: datasource=helm depName=sealed-secrets registryUrl=https://bitnami.github.io/sealed-secrets
+      sealed_secrets: "2.22.0"
       # renovate: datasource=helm depName=mailu registryUrl=https://mailu.github.io/helm-charts
       mailu: "2.8.0"
     cli_versions:
@@ -110,6 +112,8 @@ all:
     image_versions:
       # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
       postgresql: "18"
+      # renovate: datasource=docker depName=docker.io/bitnami/sealed-secrets-controller
+      sealed_secrets_controller: "0.41.2@sha256:e63ec6ec2b12a471bf781081bd370a93ca7b7b3999e5b9243341379aeb801d0b"
 
     cilium:
       namespace: "kube-system"
