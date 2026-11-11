@@ -287,6 +287,10 @@ class PlaybookTests(unittest.TestCase):
             "tag without digest": (play_vars(image_versions=tag_only), False),
             "no chart pin": (play_vars(chart_versions=no_chart), False),
             "bad namespace": (play_vars(sealed_secrets=dict(CONFIG, namespace="Bad_NS")), False),
+            # Valid Secret names that the controller's --key-prefix rejects.
+            "key name with a dot": (play_vars(sealed_secrets=dict(CONFIG, key_secret_name="sealing.key-2026")), False),
+            "key name too long": (play_vars(sealed_secrets=dict(CONFIG, key_secret_name="k" * 246)), False),
+            "key name at the limit": (play_vars(sealed_secrets=dict(CONFIG, key_secret_name="k" * 245)), True),
         }
         for case, (variables, ok) in cases.items():
             with self.subTest(case=case):

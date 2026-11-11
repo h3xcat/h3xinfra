@@ -109,7 +109,7 @@ The inventory knobs are in `inventory/production/host_vars/k8s/sealed_secrets.ym
 | `sealed_secrets.enabled` | `false` | `stack-standup.yml` and `stack-teardown.yml` skip the layer while it is false. |
 | `sealed_secrets.namespace` | `sealed-secrets` | Namespace of the controller and the key. |
 | `sealed_secrets.release_name_prefix` | `h3xinfra-sealed-secrets` | The release and the controller are `<prefix>-main`. |
-| `sealed_secrets.key_secret_name` | `h3xinfra-sealed-secrets-key` | The key Secret that the play requires. |
+| `sealed_secrets.key_secret_name` | `h3xinfra-sealed-secrets-key` | The key Secret that the play requires. Only lowercase letters, digits and hyphens, at most 245 characters: the controller rejects other `--key-prefix` values at startup. |
 
 A direct run of `standup.yml` deploys the layer independently of `enabled`.
 The stack runs it before `10-argocd`. A downstream stack that imports individual

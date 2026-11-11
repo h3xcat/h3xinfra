@@ -20,13 +20,17 @@
         that:
           - sealed_secrets_namespace is match('^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$')
           - sealed_secrets_release is match('^[a-z0-9]([-a-z0-9]{0,40}[a-z0-9])?$')
-          - sealed_secrets_key_secret_name is match('^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$')
+          # The controller's --key-prefix rule (validateKeyPrefix): only
+          # a-z, 0-9 and "-", at most 245 characters. A wider name passes the
+          # key check, then stops the controller at startup.
+          - sealed_secrets_key_secret_name is match('^[a-z0-9]([-a-z0-9]{0,243}[a-z0-9])?$')
           - (chart_versions | default({})).sealed_secrets | default('') | length > 0
           - (image_versions | default({})).sealed_secrets_controller | default('') is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}@sha256:[0-9a-f]{64}$')
         fail_msg: >-
           Set chart_versions.sealed_secrets and image_versions.sealed_secrets_controller
-          ("<tag>@sha256:<digest>"), and use DNS-label names for sealed_secrets.namespace,
-          sealed_secrets.release_name_prefix and sealed_secrets.key_secret_name.
+          ("<tag>@sha256:<digest>"). Use DNS-label names for sealed_secrets.namespace and
+          sealed_secrets.release_name_prefix. sealed_secrets.key_secret_name may use only
+          lowercase letters, digits and hyphens, at most 245 characters.
         quiet: true
 
     # The controller generates its own key at startup when it finds none.
