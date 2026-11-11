@@ -147,15 +147,22 @@ An Ansible-managed setup can create the Secret from Ansible Vault in a play that
    kubectl -n sealed-secrets create secret tls h3xinfra-sealed-secrets-key \
      --cert=sealing.crt --key=sealing.key --dry-run=client -o yaml \
      | kubectl label --local -f - sealedsecrets.bitnami.com/sealed-secrets-key=active -o yaml \
-     | kubectl apply -f -
+     | kubectl create -f -
    ```
+
+   Use `kubectl create`, not `kubectl apply`. Client-side apply copies the whole Secret, private key included,
+   into the annotation `kubectl.kubernetes.io/last-applied-configuration`. Tools that read only metadata can show it.
+   `kubectl apply --server-side` does not write that annotation. In Ansible, use `kubernetes.core.k8s` with
+   `state: present` and without `apply: true`.
+   The play stops if the key Secret has the annotation.
 
 6. Delete the local `sealing.key` after the backup is verified.
 7. Set `sealed_secrets.enabled: true`.
 
 The play stops before any change if the Secret is missing, is not
-`kubernetes.io/tls`, has no `tls.crt` or `tls.key`, or does not have the label
-`sealedsecrets.bitnami.com/sealed-secrets-key=active`.
+`kubernetes.io/tls`, has no `tls.crt` or `tls.key`, does not have the label
+`sealedsecrets.bitnami.com/sealed-secrets-key=active`, or has the annotation
+`kubectl.kubernetes.io/last-applied-configuration`.
 
 ## Deployment and verification
 

@@ -262,6 +262,13 @@ class PlaybookTests(unittest.TestCase):
             "inactive label": (secret(metadata={"labels": {KEY_LABEL: "compromised"}}), False),
             "no private key": (secret(data={"tls.crt": "Q0VSVA=="}), False),
             "no data": (secret(data=None), False),
+            # Client-side apply keeps a copy of the key in metadata.
+            "last-applied annotation": (secret(metadata={
+                "name": CONFIG["key_secret_name"], "labels": {KEY_LABEL: "active"},
+                "annotations": {"kubectl.kubernetes.io/last-applied-configuration": FAKE_KEY}}), False),
+            "other annotation": (secret(metadata={
+                "name": CONFIG["key_secret_name"], "labels": {KEY_LABEL: "active"},
+                "annotations": {"example.com/owner": "operator"}}), True),
             "valid": (secret(), True),
         }
         for case, (result, ok) in cases.items():
