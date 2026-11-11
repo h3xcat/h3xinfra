@@ -1,0 +1,160 @@
+---
+# Sealed Secrets controller (bitnami/sealed-secrets). Argo CD applies only
+# SealedSecret objects; this controller decrypts them into Secrets.
+# The sealing key is operator-supplied. This play never creates it, and it
+# stops before Helm when the key Secret is missing. See README.md.
+
+- name: Connect to the cluster
+  import_playbook: ../99-utils/kube-connect.yml
+
+- name: Deploy the Sealed Secrets controller via Helm
+  hosts: k8s
+  gather_facts: false
+  vars:
+    sealed_secrets_namespace: "{{ (sealed_secrets | default({})).namespace | default('sealed-secrets', true) }}"
+    sealed_secrets_release: "{{ (sealed_secrets | default({})).release_name_prefix | default('h3xinfra-sealed-secrets', true) }}-main"
+    sealed_secrets_key_secret_name: "{{ (sealed_secrets | default({})).key_secret_name | default('h3xinfra-sealed-secrets-key', true) }}"
+  tasks:
+    - name: Validate Sealed Secrets configuration
+      ansible.builtin.assert:
+        that:
+          - sealed_secrets_namespace is match('^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$')
+          - sealed_secrets_release is match('^[a-z0-9]([-a-z0-9]{0,40}[a-z0-9])?$')
+          - sealed_secrets_key_secret_name is match('^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$')
+          - (chart_versions | default({})).sealed_secrets | default('') | length > 0
+          - (image_versions | default({})).sealed_secrets_controller | default('') is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}@sha256:[0-9a-f]{64}$')
+        fail_msg: >-
+          Set chart_versions.sealed_secrets and image_versions.sealed_secrets_controller
+          ("<tag>@sha256:<digest>"), and use DNS-label names for sealed_secrets.namespace,
+          sealed_secrets.release_name_prefix and sealed_secrets.key_secret_name.
+        quiet: true
+
+    # The controller generates its own key at startup when it finds none.
+    # Stop before any change unless the operator-supplied key is in place.
+    # The result holds the private key: never log it.
+    - name: Read the sealing key Secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: "{{ sealed_secrets_namespace }}"
+        name: "{{ sealed_secrets_key_secret_name }}"
+      register: sealed_secrets_key
+      no_log: true
+
+    - name: Require the operator-supplied sealing key
+      ansible.builtin.assert:
+        that:
+          - sealed_secrets_key.resources | default([]) | length == 1
+          - sealed_secrets_key.resources[0].type | default('') == 'kubernetes.io/tls'
+          - (sealed_secrets_key.resources[0].metadata.labels | default({}, true))['sealedsecrets.bitnami.com/sealed-secrets-key'] | default('') == 'active'
+          - (sealed_secrets_key.resources[0].data | default({}, true))['tls.crt'] | default('') | length > 0
+          - (sealed_secrets_key.resources[0].data | default({}, true))['tls.key'] | default('') | length > 0
+        fail_msg: >-
+          Secret {{ sealed_secrets_namespace }}/{{ sealed_secrets_key_secret_name }} must exist before
+          the controller starts. It must be type kubernetes.io/tls, hold tls.crt and tls.key, and carry
+          the label sealedsecrets.bitnami.com/sealed-secrets-key=active. This layer never creates it:
+          provision the sealing key separately (playbooks/10-sealed-secrets/README.md).
+        quiet: true
+
+    - name: Forget the sealing key Secret
+      ansible.builtin.set_fact:
+        sealed_secrets_key: {}
+
+    - name: Add the Sealed Secrets Helm repository
+      kubernetes.core.helm_repository:
+        name: sealed-secrets
+        repo_url: https://bitnami.github.io/sealed-secrets
+        state: present
+        force_update: true
+      changed_when: false
+
+    # Pod Security: the controller passes restricted. The key provisioning
+    # step normally creates the namespace first; this re-applies the labels.
+    - name: Create the Sealed Secrets namespace
+      kubernetes.core.k8s:
+        state: present
+        wait: true
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ sealed_secrets_namespace }}"
+            labels:
+              pod-security.kubernetes.io/enforce: restricted
+              pod-security.kubernetes.io/audit: restricted
+              pod-security.kubernetes.io/warn: restricted
+
+    # Helm installs crds/ only once and never upgrades or deletes them.
+    # Apply the CRD of the pinned chart on every run instead, so a chart
+    # bump also updates the schema, and teardown keeps every SealedSecret.
+    - name: Render the SealedSecret CRD of the pinned chart
+      ansible.builtin.command:
+        argv:
+          - helm
+          - show
+          - crds
+          - sealed-secrets/sealed-secrets
+          - --version
+          - "{{ chart_versions.sealed_secrets }}"
+      register: sealed_secrets_crd_render
+      changed_when: false
+      check_mode: false
+
+    - name: Check the rendered CRD
+      ansible.builtin.assert:
+        that:
+          - sealed_secrets_crds | length == 1
+          - sealed_secrets_crds[0].kind == 'CustomResourceDefinition'
+          - sealed_secrets_crds[0].metadata.name == 'sealedsecrets.bitnami.com'
+        fail_msg: The chart must ship exactly the sealedsecrets.bitnami.com CRD. Review the chart before you continue.
+        quiet: true
+      vars:
+        sealed_secrets_crds: "{{ sealed_secrets_crd_render.stdout | from_yaml_all | select | list }}"
+
+    - name: Apply the SealedSecret CRD
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        server_side_apply:
+          field_manager: h3xinfra-sealed-secrets
+        definition: "{{ sealed_secrets_crd_render.stdout | from_yaml_all | select | list }}"
+
+    - name: Deploy the Sealed Secrets controller via Helm
+      kubernetes.core.helm:
+        name: "{{ sealed_secrets_release }}"
+        chart_ref: sealed-secrets/sealed-secrets
+        chart_version: "{{ chart_versions.sealed_secrets }}"
+        release_namespace: "{{ sealed_secrets_namespace }}"
+        create_namespace: false
+        # The task above owns the CRD.
+        skip_crds: true
+        values_files:
+          - "{{ playbook_dir }}/sealed-secrets-values.yaml"
+        values:
+          # kubeseal defaults to sealed-secrets-controller in kube-system.
+          # This release uses the repo naming instead; seal offline with
+          # --cert, or pass --controller-name/--controller-namespace.
+          fullnameOverride: "{{ sealed_secrets_release }}"
+          # Key lookup: the controller reads every Secret in its namespace
+          # with the active label, plus the Secret with this exact name.
+          secretName: "{{ sealed_secrets_key_secret_name }}"
+          image:
+            tag: "{{ image_versions.sealed_secrets_controller }}"
+          rbac:
+            # The chart default "secrets-unsealer" is a cluster-wide name.
+            clusterRoleName: "{{ sealed_secrets_release }}-unsealer"
+          extraDeploy:
+            # The controller needs no ingress: sealing happens offline. The
+            # kubelet probes come from the node, which Cilium admits by
+            # default (as for Argo CD). Egress stays open for the API.
+            - apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: "{{ sealed_secrets_release }}-default-deny"
+                namespace: "{{ sealed_secrets_namespace }}"
+              spec:
+                podSelector: {}
+                policyTypes: [Ingress]
+        state: present
+        wait: true
+        timeout: 300s

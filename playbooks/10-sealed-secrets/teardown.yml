@@ -1,0 +1,27 @@
+---
+# Stops here unless run with -e confirm_destroy=yes-destroy-data.
+- name: Require confirmation before teardown
+  import_playbook: ../99-utils/confirm-destroy.yml
+
+- name: Connect to the cluster
+  import_playbook: ../99-utils/kube-connect.yml
+
+- name: Remove the Sealed Secrets controller while retaining the CRD and the key
+  hosts: k8s
+  gather_facts: false
+  vars:
+    sealed_secrets_namespace: "{{ (sealed_secrets | default({})).namespace | default('sealed-secrets', true) }}"
+    sealed_secrets_release: "{{ (sealed_secrets | default({})).release_name_prefix | default('h3xinfra-sealed-secrets', true) }}-main"
+  tasks:
+    # Retain the namespace, the CRD and the sealing key Secret. Deleting the
+    # CRD deletes every SealedSecret, and the garbage collector then deletes
+    # every Secret the controller created (they are owned by their
+    # SealedSecret). Existing Secrets stay in place while the controller is
+    # gone; only new or changed SealedSecrets wait for it.
+    - name: Remove the Sealed Secrets Helm release
+      kubernetes.core.helm:
+        name: "{{ sealed_secrets_release }}"
+        release_namespace: "{{ sealed_secrets_namespace }}"
+        state: absent
+        wait: true
+        timeout: 300s
