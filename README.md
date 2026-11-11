@@ -85,7 +85,7 @@ The Renovate automerge waits for this check. The tool versions are `env:` pins w
 ## Maintenance
 
 See the [Argo CD layer guide](playbooks/10-argocd/README.md) for Keycloak client
-configuration, deployment, access controls and recovery.
+configuration, deployment, access controls, optional KSOPS secrets and recovery.
 
 See the [Operations Guide](docs/operations.md) for detailed maintenance procedures.
 
