@@ -118,12 +118,6 @@
       "automerge": false
     },
     {
-      "description": "Sealed Secrets decrypts every GitOps Secret with the cluster sealing key, so a person reviews each chart and controller image update (tag or digest) against the release notes, the RBAC diff and the cosign signature. Never automerge. One group, because the chart appVersion and the image tag move together. Placed after the patch/pin/digest automerge rule so this automerge: false wins",
-      "matchPackageNames": ["sealed-secrets", "docker.io/bitnami/sealed-secrets-controller"],
-      "groupName": "Sealed Secrets",
-      "automerge": false
-    },
-    {
       "description": "One PR for CI tooling: tests/tool-versions.env tool pins, tests/requirements.txt python pins and any env pins in workflows. Last rule so it wins over the datasource groups for files under tests/; matchManagers keeps the github-actions group separate",
       "matchManagers": ["custom.regex", "pip_requirements"],
       "matchFileNames": ["tests/**", ".github/workflows/**"],
