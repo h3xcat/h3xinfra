@@ -232,14 +232,27 @@ The controller decrypts with every key that has the active label. It reads the
 keys at startup. Rotation does not change the values of your Secrets.
 
 1. Generate a new key and certificate as in "Provision the sealing key", step 1. Back up the new key.
-2. Create the new key Secret with a new name and the active label. Keep the old key Secret.
-3. Set `sealed_secrets.key_secret_name` to the new name.
-4. Restart the controller: `kubectl -n sealed-secrets rollout restart deploy/h3xinfra-sealed-secrets-main`.
+2. Create the new key Secret with a new name and the active label, as in "Provision the sealing key", step 5. Keep the old key Secret.
+3. In the inventory, set `sealed_secrets.key_secret_name` to the new name. Add the old name to `sealed_secrets.previous_key_secret_names`.
+   Do this together with step 2: the play stops while an active key is not named in the inventory.
+4. Run `standup.yml`. It updates `--key-prefix` and the key-admin Role. The controller restarts with both keys.
 5. Make sure that the log shows `registered private key` for both Secrets.
-6. Seal every Secret again with the new certificate. Commit the new SealedSecrets.
-7. Make sure that Argo CD reports every SealedSecret as healthy.
-8. Delete the old key Secret. Keep its offline backup until no Git revision that you can deploy uses it.
-9. Restart the controller again.
+6. Seal every Secret again with the new certificate. The online `--re-encrypt` is blocked, so do it offline with the old key from the backup:
+
+   ```bash
+   kubeseal --recovery-unseal --recovery-private-key old.key --format yaml < app-credentials.sealedsecret.yaml \
+     | kubeseal --cert new.crt --scope strict --format yaml > app-credentials.sealedsecret.yaml.new
+   mv app-credentials.sealedsecret.yaml.new app-credentials.sealedsecret.yaml
+   ```
+
+   The plaintext passes only through the pipe. It is never written to a file.
+7. Commit the new SealedSecrets. Make sure that Argo CD reports every SealedSecret as healthy.
+8. Delete the old key Secret. Remove its name from `sealed_secrets.previous_key_secret_names`.
+9. Run `standup.yml`, then restart the controller: `kubectl -n sealed-secrets rollout restart deploy/h3xinfra-sealed-secrets-main`.
+   The controller keeps the old key in memory until it restarts.
+10. Keep the offline backup of the old key until no Git revision that you can deploy uses it.
+
+A downstream wrapper that refuses every active key except one must allow the old key during the rotation, or rotate in place.
 
 The old ciphertexts stay in the Git history. Rotation does not protect them. If a
 key leaks, change the secret values themselves (passwords, tokens), then rotate the key.
