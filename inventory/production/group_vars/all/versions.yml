@@ -64,5 +64,6 @@ image_versions:
   # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
   postgresql: "18"
   # KSOPS init container for the Argo CD repo-server (playbooks/10-argocd, opt-in).
+  # Renovate never automerges it: review each bump (renovate.json).
   # renovate: datasource=docker depName=quay.io/viaductoss/ksops
   ksops: "v4.5.1"

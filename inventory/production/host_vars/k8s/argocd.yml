@@ -20,6 +20,8 @@ argocd:
       g, argocd-readonly, role:readonly
   # Optional KSOPS decryption of SOPS/age files in kustomize builds. It is off
   # by default. Read the KSOPS section of the layer README before you enable it.
+  # With KSOPS on, `applications, get` (role:readonly too) lets a user build
+  # any revision of a source repository, which runs code in the repo-server.
   ksops:
     enabled: false
     # Secret in the Argo CD namespace with the age identity in key keys.txt.
