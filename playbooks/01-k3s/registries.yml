@@ -127,26 +127,18 @@
     # Restart only when this run changed the file, or when an earlier run
     # changed it and then stopped before the restart: the file is newer than
     # the running K3s, or (state absent) the generated containerd
-    # configuration still holds a credential. Whole seconds: systemd prints
-    # the start time in seconds.
-    k3s_registries_unit_state: >-
-      {{ (k3s_registries_unit.stdout_lines | default([]) | select('match', '^ActiveState=')
-          | first | default('ActiveState=unknown')).split('=', 1)[1] }}
-    k3s_registries_unit_active: "{{ k3s_registries_unit_state == 'active' }}"
-    k3s_registries_unit_started: >-
-      {{ ((k3s_registries_unit.stdout_lines | default([]) | select('match', '^ActiveEnterTimestamp=@[0-9]+$')
-           | first | default('=@0')).split('@'))[1] | int }}
+    # configuration still holds a credential. k3s_service_active and
+    # k3s_service_started come from tasks/k3s-service-state.yml. The inputs
+    # are all registered before the restart, so the value stays the same
+    # during the restart tasks.
     k3s_registries_restart: >-
       {{ k3s_registries_state != 'unmanaged'
-         and (k3s_registries_unit_active | bool)
+         and (k3s_service_active | default(false) | bool)
          and ((k3s_registries_written.changed | default(false) | bool)
               or (k3s_registries_removed.changed | default(false) | bool)
               or (k3s_registries_containerd_auth.stdout | default('0') | int) > 0
               or ((k3s_registries_stat.stat.exists | default(false) | bool)
-                  and (k3s_registries_stat.stat.mtime | default(0) | int) > (k3s_registries_unit_started | int))) }}
-    # Start of the restarted K3s in the format of a Kubernetes heartbeat.
-    k3s_registries_started_at_utc: >-
-      {{ '%Y-%m-%dT%H:%M:%SZ' | strftime((k3s_registries_started_at.stdout | default('@0') | trim)[1:] | int, utc=true) }}
+                  and (k3s_registries_stat.stat.mtime | default(0) | int) > (k3s_service_started | default(0) | int))) }}
   tasks:
     - name: Check the k3s_registries variable
       ansible.builtin.assert:

@@ -59,3 +59,10 @@ kubelet_seccomp_default: false
 #       auth:
 #         username: example-user
 #         password: "{{ vault_k3s_registry_ghcr_token }}"
+
+# Kubelet allowlist for unsafe sysctls (playbooks/01-k3s/kubelet-sysctls.yml).
+# Default []. Set it in the host_vars of every node where the pod can run,
+# and run kubelet-sysctls.yml before you deploy the pod (SysctlForbidden
+# otherwise). See the 01-k3s README, "Unsafe Sysctls".
+# kubelet_allowed_unsafe_sysctls:
+#   - net.ipv4.conf.all.src_valid_mark

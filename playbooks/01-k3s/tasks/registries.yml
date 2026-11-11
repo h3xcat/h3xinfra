@@ -45,31 +45,12 @@
   check_mode: false
   when: k3s_registries_state != 'unmanaged'
 
-- name: Read the K3s service state
-  ansible.builtin.command:
-    argv:
-      - systemctl
-      - show
-      - --timestamp=unix
-      - --property=ActiveState
-      - --property=ActiveEnterTimestamp
-      - "{{ k3s_registries_unit_name }}"
-  register: k3s_registries_unit
-  changed_when: false
-  check_mode: false
-  when: k3s_registries_state != 'unmanaged'
-
-# inactive means stopped on purpose or not installed yet: leave it alone.
-# Any other state is a broken or changing K3s. Stop before this node and
-# before the next one.
-- name: Refuse a K3s service that is failing or changing state
-  ansible.builtin.assert:
-    that: k3s_registries_unit_state in ['active', 'inactive']
-    fail_msg: >-
-      {{ k3s_registries_unit_name }} on {{ inventory_hostname }} is
-      {{ k3s_registries_unit_state }}. Repair it before applying the registry
-      configuration.
-    quiet: true
+# The service state and the restart are shared with the other playbooks that
+# restart K3s (tasks/k3s-service-state.yml, tasks/restart-k3s.yml).
+- name: Read and check the K3s service state
+  ansible.builtin.import_tasks: k3s-service-state.yml
+  vars:
+    k3s_service_name: "{{ k3s_registries_unit_name }}"
   when: k3s_registries_state != 'unmanaged'
 
 # After a removal, K3s keeps the credential in the containerd configuration
@@ -90,152 +71,10 @@
   failed_when: k3s_registries_containerd_auth.rc > 1
   when:
     - k3s_registries_state == 'absent'
-    - k3s_registries_unit_active | bool
+    - k3s_service_active | bool
 
-# Losing a second etcd member while one is down breaks quorum. The K3s API
-# server uses only its local etcd member, so /readyz on a server proves that
-# its member serves with quorum. An unreachable server fails this task.
-- name: Check that the API server on every other server is ready
-  ansible.builtin.command: k3s kubectl get --raw=/readyz
-  delegate_to: "{{ item }}"
-  loop: "{{ groups.get('server', []) | reject('equalto', inventory_hostname) | list }}"
-  register: k3s_registries_peer_readyz
-  changed_when: false
-  check_mode: false
-  failed_when: k3s_registries_peer_readyz.rc != 0 or (k3s_registries_peer_readyz.stdout | trim) != 'ok'
-  when:
-    - k3s_registries_restart | bool
-    - inventory_hostname in groups.get('server', [])
-
-# Node Ready can stay True for about 50 seconds after a node fails, so this
-# check adds to the /readyz check above. A cordoned etcd node is being
-# drained or repaired. Nodes without the etcd role list nothing.
-- name: Check that every etcd node is Ready and not cordoned
-  ansible.builtin.command:
-    argv:
-      - k3s
-      - kubectl
-      - get
-      - nodes
-      - --selector=node-role.kubernetes.io/etcd=true
-      - -o
-      - 'jsonpath={range .items[*]}{.metadata.name} {.status.conditions[?(@.type=="Ready")].status} {.spec.unschedulable}{"\n"}{end}'
-  register: k3s_registries_etcd_nodes
-  changed_when: false
-  check_mode: false
-  failed_when: >-
-    k3s_registries_etcd_nodes.rc != 0
-    or (k3s_registries_etcd_nodes.stdout_lines | reject('match', '^[^ ]+ True( false)? *$') | list | length) > 0
-  when:
-    - k3s_registries_restart | bool
-    - inventory_hostname in groups.get('server', [])
-
-# kured sets this annotation on its DaemonSet while it drains or reboots a
-# node, and for lock-release-delay after the node is back. Without kured,
-# the list is empty.
-- name: Check that kured is not rebooting a node
-  ansible.builtin.command:
-    argv:
-      - k3s
-      - kubectl
-      - get
-      - daemonsets
-      - --all-namespaces
-      - --selector=app.kubernetes.io/name=kured
-      - -o
-      - 'jsonpath={range .items[*]}{.metadata.namespace}/{.metadata.name}={.metadata.annotations.weave\.works/kured-node-lock}{"\n"}{end}'
-  delegate_to: "{{ inventory_hostname if inventory_hostname in groups.get('server', []) else groups['server'][0] }}"
-  register: k3s_registries_kured_lock
-  changed_when: false
-  check_mode: false
-  failed_when: >-
-    k3s_registries_kured_lock.rc != 0
-    or (k3s_registries_kured_lock.stdout_lines | reject('match', '^[^=]+=$') | list | length) > 0
-  when: k3s_registries_restart | bool
-
-- name: Read the node name
-  ansible.builtin.command: hostname
-  register: k3s_registries_node_name
-  changed_when: false
-  check_mode: false
-  when: k3s_registries_restart | bool
-
-# The K3s units use TimeoutStartSec=0, so systemctl waits without a limit.
-# The timeout fails this node instead of hanging the run.
 - name: Restart K3s to load the registry configuration
-  ansible.builtin.systemd:
-    name: "{{ k3s_registries_unit_name }}"
-    state: restarted
-  timeout: 600
-  when: k3s_registries_restart | bool
-
-# The Ready wait below needs a node status that the restarted kubelet
-# posted. The kubelet runs inside this process, so a heartbeat later than its
-# start time comes from the new kubelet.
-- name: Read the start time of the restarted K3s
-  ansible.builtin.command:
-    argv:
-      - systemctl
-      - show
-      - --timestamp=unix
-      - --property=ExecMainStartTimestamp
-      - --value
-      - "{{ k3s_registries_unit_name }}"
-  register: k3s_registries_started_at
-  changed_when: false
-  failed_when: k3s_registries_started_at.rc != 0 or not (k3s_registries_started_at.stdout | trim) is match('^@[0-9]+$')
-  when:
-    - k3s_registries_restart | bool
-    - not ansible_check_mode
-
-- name: Wait for the local kube-apiserver to report ready
-  ansible.builtin.command: k3s kubectl get --raw=/readyz
-  register: k3s_registries_readyz
-  changed_when: false
-  retries: 40
-  delay: 5
-  until: k3s_registries_readyz.rc == 0 and 'ok' in k3s_registries_readyz.stdout
-  when:
-    - k3s_registries_restart | bool
-    - not ansible_check_mode
-    - inventory_hostname in groups.get('server', [])
-
-- name: Wait for the local kubelet to report healthy
-  ansible.builtin.uri:
-    url: http://127.0.0.1:10248/healthz
-    return_content: true
-  register: k3s_registries_kubelet
-  retries: 40
-  delay: 5
-  until: k3s_registries_kubelet.status == 200 and (k3s_registries_kubelet.content | trim) == 'ok'
-  when:
-    - k3s_registries_restart | bool
-    - not ansible_check_mode
-
-# The Ready condition keeps its old value for about 50 seconds after the
-# kubelet stops. Kubernetes writes the heartbeat in UTC with whole seconds,
-# so a string comparison works. A heartbeat in a later second than the K3s
-# start proves that the restarted kubelet posted it.
-- name: Wait for the node to be Ready
-  ansible.builtin.command:
-    argv:
-      - k3s
-      - kubectl
-      - get
-      - node
-      - "{{ k3s_registries_node_name.stdout | trim }}"
-      - -o
-      - 'jsonpath={.status.conditions[?(@.type=="Ready")].status} {.status.conditions[?(@.type=="Ready")].lastHeartbeatTime}'
-  delegate_to: "{{ inventory_hostname if inventory_hostname in groups.get('server', []) else groups['server'][0] }}"
-  register: k3s_registries_node_ready
-  changed_when: false
-  retries: 40
-  delay: 5
-  until: >-
-    k3s_registries_node_ready.rc == 0
-    and (k3s_registries_node_ready.stdout.split() | length) == 2
-    and k3s_registries_node_ready.stdout.split()[0] == 'True'
-    and k3s_registries_node_ready.stdout.split()[1] > k3s_registries_started_at_utc
-  when:
-    - k3s_registries_restart | bool
-    - not ansible_check_mode
+  ansible.builtin.import_tasks: restart-k3s.yml
+  vars:
+    k3s_service_name: "{{ k3s_registries_unit_name }}"
+    k3s_restart: "{{ k3s_registries_restart }}"

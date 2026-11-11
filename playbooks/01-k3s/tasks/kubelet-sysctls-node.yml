@@ -1,0 +1,89 @@
+---
+# Per-node steps for kubelet-sysctls.yml. The plays run them with serial: 1
+# and define the kubelet_sysctls_* vars.
+
+- name: Write or remove the allowlist file
+  ansible.builtin.import_tasks: kubelet-sysctls.yml
+
+- name: Read and check the K3s service state
+  ansible.builtin.import_tasks: k3s-service-state.yml
+  vars:
+    k3s_service_name: "{{ kubelet_sysctls_unit_name }}"
+
+- name: Read the node name for the kubelet configuration
+  ansible.builtin.command: hostname
+  register: kubelet_sysctls_node_name
+  changed_when: false
+  check_mode: false
+  when: k3s_service_active | bool
+
+# With an empty inventory list no drop-in replaces the K3s defaults, so the
+# running kubelet should have the list from this file.
+- name: Read the K3s kubelet defaults
+  ansible.builtin.slurp:
+    src: "{{ kubelet_sysctls_k3s_defaults_path }}"
+  register: kubelet_sysctls_k3s_defaults
+  check_mode: false
+  when:
+    - k3s_service_active | bool
+    - (kubelet_sysctls_wanted | length) == 0
+
+# /configz shows the configuration that the running kubelet loaded at its
+# start, after it merged the drop-in files and the command line flags.
+# Agents have no admin kubeconfig, so a server reads it for them.
+- name: Read the configuration of the running kubelet
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - get
+      - --raw
+      - "/api/v1/nodes/{{ kubelet_sysctls_node_name.stdout | trim }}/proxy/configz"
+  delegate_to: "{{ inventory_hostname if inventory_hostname in groups.get('server', []) else groups['server'][0] }}"
+  register: kubelet_sysctls_configz
+  changed_when: false
+  check_mode: false
+  when: k3s_service_active | bool
+
+- name: Restart K3s to load the kubelet allowlist
+  ansible.builtin.import_tasks: restart-k3s.yml
+  vars:
+    k3s_service_name: "{{ kubelet_sysctls_unit_name }}"
+    k3s_restart: "{{ kubelet_sysctls_restart }}"
+
+# A kubelet flag (allowed-unsafe-sysctls) or a later drop-in file can still
+# replace the list. Then pods would fail with SysctlForbidden, so stop here.
+- name: Read the configuration of the restarted kubelet
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - get
+      - --raw
+      - "/api/v1/nodes/{{ kubelet_sysctls_node_name.stdout | trim }}/proxy/configz"
+  delegate_to: "{{ inventory_hostname if inventory_hostname in groups.get('server', []) else groups['server'][0] }}"
+  register: kubelet_sysctls_configz_after
+  changed_when: false
+  retries: 6
+  delay: 5
+  until: kubelet_sysctls_configz_after.rc == 0
+  when:
+    - kubelet_sysctls_restart | bool
+    - not ansible_check_mode
+
+- name: Check that the restarted kubelet has the new allowlist
+  ansible.builtin.assert:
+    that: kubelet_sysctls_loaded == kubelet_sysctls_expected
+    fail_msg: >-
+      The kubelet on {{ inventory_hostname }} allows {{ kubelet_sysctls_loaded }}
+      after the restart, not {{ kubelet_sysctls_expected }}. Look for
+      allowed-unsafe-sysctls in the K3s configuration and for other files in
+      /var/lib/rancher/k3s/agent/etc/kubelet.conf.d.
+    quiet: true
+  vars:
+    kubelet_sysctls_loaded: >-
+      {{ ((kubelet_sysctls_configz_after.stdout | default('{}') | from_json).get('kubeletconfig', {}).get('allowedUnsafeSysctls') or [])
+         | sort }}
+  when:
+    - kubelet_sysctls_restart | bool
+    - not ansible_check_mode

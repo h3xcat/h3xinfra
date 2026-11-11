@@ -80,6 +80,7 @@ option is off when its variable is not set.
 | `apiserver_audit.enabled` | `apiserver-audit.yml` writes an audit policy and an audit log on each server. It restarts one server at a time and waits for `/readyz`. |
 | `kubelet_protect_kernel_defaults` | The kubelet stops at start if a kernel tunable is not the kubelet value. `standup.yml` sets and checks the six values first. |
 | `kubelet_seccomp_default` | Containers without a seccomp profile get the runtime default profile. |
+| `kubelet_allowed_unsafe_sysctls` | A list of exact sysctl names that pods on the node may set in their own namespaces (`spec.securityContext.sysctls`). See [Unsafe Sysctls](#unsafe-sysctls). |
 | `secrets-encryption: true` in `server_config_yaml` | k3s encrypts Secrets in the datastore. |
 
 Enable `kubelet_seccomp_default` on one node first. Then recreate the pods on
@@ -245,6 +246,10 @@ K3s reads `registries.yaml` only when it starts. The playbook does these steps:
    output of `hostname`.
 10. The first failure stops the playbook before the next node.
 
+The service state check and the guarded restart (steps 4 and 6 to 10) are
+shared task files, `tasks/k3s-service-state.yml` and `tasks/restart-k3s.yml`.
+`kubelet-sysctls.yml` uses the same files.
+
 The K3s unit uses `KillMode=process`, so running containers keep running
 during the restart. The kubelet watchdog ignores the first 180 seconds after
 an agent starts.
@@ -299,3 +304,94 @@ If you only remove the variable, the file stays on the nodes.
 - Give the credential read access only. A GitHub classic token with
   `read:packages` can read every package that its account can read.
 - Keep the credential in Ansible Vault. Do not put it in plain inventory.
+
+# Unsafe Sysctls
+
+A pod can set a sysctl in its own namespaces with
+`spec.securityContext.sysctls`. The kubelet allows a small set of safe
+sysctls by default. Every other namespaced sysctl needs the kubelet
+allowlist (`allowedUnsafeSysctls`) of the node where the pod runs.
+
+`kubelet-sysctls.yml` writes the allowlist to
+`/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-unsafe-sysctls.conf`. The
+`kubelet_allowed_unsafe_sysctls` inventory variable sets it per host or
+group. The default is an empty list. With an empty list the playbook removes
+the file. `standup.yml` writes the same file before the K3s install, so a new
+node loads it at its first start.
+
+```yaml
+# host_vars of each node where the WireGuard pod can run
+kubelet_allowed_unsafe_sysctls:
+  - net.ipv4.conf.all.src_valid_mark
+```
+
+Rules:
+
+- Each entry is one exact name with dots, for example
+  `net.ipv4.conf.all.src_valid_mark`. Patterns such as `net.ipv4.*` are
+  refused: a pattern lets every pod on the node change every matching sysctl
+  in its namespace.
+- Only sysctls that the kubelet can allow per pod are accepted: `net.*`,
+  `fs.mqueue.*`, `kernel.sem`, `kernel.shmall`, `kernel.shmmax`,
+  `kernel.shmmni`, `kernel.shm_rmid_forced`, `kernel.msgmax`, `kernel.msgmnb`
+  and `kernel.msgmni`. With any other name the kubelet does not start. The
+  playbook checks the list on every node before it changes a node.
+- Do not also set the kubelet flag `allowed-unsafe-sysctls` (in
+  `server_config_yaml`, `agent_config_yaml`, `extra_server_args` or
+  `extra_agent_args`): it replaces the file. The playbook then fails after the
+  restart, because the running kubelet does not have the inventory list.
+- The kubelet replaces a list from an earlier file instead of adding to it.
+  K3s puts `net.ipv4.ip_forward` and `net.ipv6.conf.all.forwarding` into its
+  own `00-k3s-defaults.conf` when its servicelb can run on the node (agents
+  always). This repository disables servicelb, so nothing needs them. If you
+  use servicelb, add both names to the list.
+
+The kubelet reads the file only when K3s starts. The playbook reads the
+allowlist of the running kubelet (`/configz`) and restarts K3s only on a node
+where it differs from the inventory (or, with an empty list, from the K3s
+defaults). This also covers an earlier run that stopped before the restart.
+The restart uses the same guards as `registries.yml` (servers first, then
+agents, one node at a time, peer `/readyz`, etcd nodes Ready and not
+cordoned, no kured lock, readiness waits). After the restart, the playbook
+checks that the running kubelet has the new list.
+
+```sh
+ansible-playbook playbooks/01-k3s/kubelet-sysctls.yml
+```
+
+`--check` shows which nodes would restart.
+
+## Rollout Order
+
+The kubelet checks the sysctls of a pod after the scheduler has placed it.
+On a node without the sysctl on its allowlist, the pod fails with the reason
+`SysctlForbidden` and does not start. The scheduler does not try another
+node. So use this order:
+
+1. Add the sysctl to `kubelet_allowed_unsafe_sysctls` on every node where the
+   pod can run (check its `nodeSelector`, affinity and tolerations). Run
+   `kubelet-sysctls.yml`.
+2. Deploy the workload with the sysctl in `spec.securityContext.sysctls`.
+   The namespace must also admit it: Pod Security `baseline` and `restricted`
+   reject unsafe sysctls, so the namespace needs `privileged`.
+3. Remove the host-wide setting that the workload needed before, if there
+   was one (for `src_valid_mark`, run `00-prep`).
+
+To remove a sysctl, do the steps in reverse: remove it from the workload
+first, then from the list.
+
+## WireGuard and src_valid_mark
+
+`wg-quick` needs `net.ipv4.conf.all.src_valid_mark=1` for its fwmark
+routing. Do not set it on the host: `00-prep` keeps it at `0`. With `1` on
+the host, the reverse-path check of the kernel uses the fwmark of Cilium's
+transparent DNS proxy (TPROXY, mark `0x200`). It finds the local route of
+Cilium's policy routing table for the pod address and drops the redirected
+query as a martian source. Every pod with a DNS-aware network policy
+(`toFQDNs`) then waits 5 seconds per name, because IPv4 DNS never answers.
+IPv6 has no such check.
+
+Set the sysctl in the pod instead (`spec.securityContext.sysctls`) and add
+it to `kubelet_allowed_unsafe_sysctls`. `wg-quick` does not write the sysctl
+when its value is already `1`, so the WireGuard container needs no
+privileges for it.

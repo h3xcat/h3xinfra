@@ -1,0 +1,25 @@
+---
+# Checks kubelet_allowed_unsafe_sysctls (kubelet-sysctls.yml, standup.yml).
+#
+# The kubelet does not start when the list holds a sysctl that it cannot
+# allow per pod, and a node whose kubelet does not start loses its pods. So
+# only exact names in namespaces that a pod owns pass: net.*, fs.mqueue.* and
+# the kernel IPC names that the kubelet knows. Patterns such as net.ipv4.*
+# fail: they would let every pod on the node set every matching sysctl.
+# any_errors_fatal: one invalid host stops the play before any host changes.
+- name: Check the kubelet_allowed_unsafe_sysctls variable
+  ansible.builtin.assert:
+    that:
+      - kubelet_sysctls_names is not string
+      - kubelet_sysctls_names is not mapping
+      - kubelet_sysctls_names is sequence
+      - kubelet_sysctls_names | reject('match', kubelet_sysctls_pattern) | list | length == 0
+    fail_msg: >-
+      kubelet_allowed_unsafe_sysctls on {{ inventory_hostname }} must be a list of exact
+      sysctl names (net.*, fs.mqueue.*, kernel.sem, kernel.shm*, kernel.msg*): {{ kubelet_sysctls_names }}
+    quiet: true
+  any_errors_fatal: true
+  vars:
+    kubelet_sysctls_names: "{{ kubelet_allowed_unsafe_sysctls | default([], true) }}"
+    kubelet_sysctls_pattern: >-
+      ^(net|fs[.]mqueue)([.][a-z0-9_-]+)+$|^kernel[.](sem|shmall|shmmax|shmmni|shm_rmid_forced|msgmax|msgmnb|msgmni)$

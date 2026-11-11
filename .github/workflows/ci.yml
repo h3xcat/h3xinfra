@@ -261,7 +261,9 @@ jobs:
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
-      - name: Test k3s layer (hardening, registries)
+      - name: Test node prep (host sysctls, crash capture, upgrades)
+        run: python -m unittest discover -s playbooks/00-prep/tests -v
+      - name: Test k3s layer (hardening, registries, kubelet sysctls)
         run: python -m unittest discover -s playbooks/01-k3s/tests -v
       - name: Test gateway security routing
         run: python -m unittest discover -s playbooks/07-gateway/tests -p test_security_routing.py -v

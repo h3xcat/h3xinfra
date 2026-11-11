@@ -200,8 +200,14 @@ class KubeletHardeningTests(unittest.TestCase):
                     self.assertEqual(item["value"], KUBELET_KERNEL_DEFAULTS[item["name"]])
 
     def test_kubelet_dropins_use_conf_extension(self):
-        # kubelet --config-dir reads only *.conf files.
+        # kubelet --config-dir reads only *.conf files. Imported task files
+        # (the unsafe sysctl allowlist) count too.
+        steps = []
         for task in self.kubelet_play["tasks"]:
+            imported = task.get("ansible.builtin.import_tasks")
+            steps.extend(load(LAYER / imported) if imported else [task])
+        self.assertTrue(any("99-unsafe-sysctls" in str(t) for t in steps))
+        for task in steps:
             dest = task.get("ansible.builtin.copy", {}).get("dest", "")
             if "kubelet.conf.d" in dest:
                 with self.subTest(dest=dest):

@@ -1,0 +1,46 @@
+---
+# Writes or removes the kubelet drop-in for kubelet_allowed_unsafe_sysctls
+# (kubelet-sysctls.yml, standup.yml). Run tasks/kubelet-sysctls-check.yml on
+# every node first. These tasks never restart K3s: kubelet-sysctls.yml
+# restarts the nodes that need it, and in standup.yml the K3s install that
+# follows restarts every node.
+#
+# The kubelet reads only *.conf files in kubelet.conf.d (--config-dir), in
+# name order. A list in a later file replaces the list of an earlier file,
+# so this list replaces the allowedUnsafeSysctls that K3s writes into
+# 00-k3s-defaults.conf (net.ipv4.ip_forward and net.ipv6.conf.all.forwarding
+# on nodes that run the K3s servicelb). An empty list removes the file, and
+# the K3s defaults apply again.
+
+- name: Ensure the kubelet configuration directory exists
+  ansible.builtin.file:
+    path: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the kubelet unsafe sysctl allowlist
+  ansible.builtin.copy:
+    dest: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-unsafe-sysctls.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by h3xinfra (playbooks/01-k3s/kubelet-sysctls.yml). Do not edit.
+      # The kubelet reads this file only when K3s starts.
+      apiVersion: kubelet.config.k8s.io/v1beta1
+      kind: KubeletConfiguration
+      allowedUnsafeSysctls:
+      {% for name in kubelet_allowed_unsafe_sysctls | default([], true) | unique | sort %}
+        - {{ name }}
+      {% endfor %}
+  register: kubelet_sysctls_written
+  when: (kubelet_allowed_unsafe_sysctls | default([], true) | length) > 0
+
+- name: Remove the kubelet unsafe sysctl allowlist
+  ansible.builtin.file:
+    path: /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/99-unsafe-sysctls.conf
+    state: absent
+  register: kubelet_sysctls_removed
+  when: (kubelet_allowed_unsafe_sysctls | default([], true) | length) == 0
