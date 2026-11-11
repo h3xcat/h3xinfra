@@ -11,6 +11,8 @@ The layer is opt-in. It is off until you set `sealed_secrets.enabled: true`.
 ## What the layer installs
 
 - The chart is `sealed-secrets` from `https://bitnami.github.io/sealed-secrets`, at `chart_versions.sealed_secrets`.
+  The play downloads the chart archive once and checks its sha256 against `chart-digests.yml`.
+  It uses only that verified file for the CRD and the release.
   The project moved from `bitnami-labs` to `bitnami` on GitHub. The old URL `https://bitnami-labs.github.io/sealed-secrets` returns 404.
 - The controller image is `docker.io/bitnami/sealed-secrets-controller` at `image_versions.sealed_secrets_controller`.
   The value is `<tag>@sha256:<digest>`. The digest is the multi-arch image index. It includes `linux/amd64` and `linux/arm64`.
@@ -264,11 +266,19 @@ To restore the cluster after a loss, do these steps:
 A chart or image update arrives in one Renovate pull request (`Sealed Secrets`). Do these checks before you merge it:
 
 1. Read the release notes of the controller and the chart.
-2. Make sure that the image tag equals the chart `appVersion`. The test checks this.
-3. Run the layer tests. A change of the controller RBAC fails `test_rbac_scope`. Update this README and the test together.
-4. Verify the signature with the `cosign.pub` of the release tag:
+2. Review the new chart, then add the sha256 of its archive to `chart-digests.yml`. Until then, the layer tests and the play fail:
+
+   ```bash
+   helm pull sealed-secrets --repo https://bitnami.github.io/sealed-secrets --version <version> --destination /tmp/sealed-secrets-chart
+   sha256sum /tmp/sealed-secrets-chart/sealed-secrets-<version>.tgz
+   ```
+
+   Keep the digest of the previous version until the new one runs. Then a rollback still works.
+3. Make sure that the image tag equals the chart `appVersion`. The test checks this.
+4. Run the layer tests. A change of the controller RBAC fails `test_rbac_scope`. Update this README and the test together.
+5. Verify the signature with the `cosign.pub` of the release tag:
    `cosign verify --key cosign.pub docker.io/bitnami/sealed-secrets-controller:<tag>@<digest>`.
-5. Make sure that the image index includes `linux/amd64` and `linux/arm64`.
+6. Make sure that the image index includes `linux/amd64` and `linux/arm64`.
 
 The play applies the CRD of the new chart before the Helm upgrade.
 
@@ -290,10 +300,11 @@ This playbook does not delete the CRD, the key or the namespace. Do that separat
 python3 -m unittest discover -s playbooks/10-sealed-secrets/tests -v
 ```
 
-The tests download the pinned chart into a temporary directory. For offline runs, set
-`SEALED_SECRETS_CHART_DIR` to a chart that you downloaded before. Ansible templates
+The tests download the pinned chart archive into a temporary directory. For offline runs, set
+`SEALED_SECRETS_CHART_ARCHIVE` to a `.tgz` that you downloaded before. Ansible templates
 the real play values, and `helm template` renders them. The tests check these items:
 
+- The sha256 of the pinned chart archive, and the play's own digest check.
 - No key generation (`--key-renew-period 0`) and no Secret in the release.
 - The digest-pinned image, and that the image tag equals the chart `appVersion`.
 - Pod Security `restricted`, resources and the priority class.

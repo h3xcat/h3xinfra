@@ -4,11 +4,13 @@ Nothing here connects to a Kubernetes cluster. Ansible runs only on localhost
 with a stub ansible.cfg, and the chart is rendered with `helm template`.
 """
 
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
+import tarfile
 import tempfile
 import unittest
 
@@ -24,6 +26,7 @@ FAKE_KEY = "FAKE-PRIVATE-KEY-MATERIAL-MUST-NOT-BE-PRINTED"
 
 VERSIONS = yaml.safe_load((ROOT / "inventory/production/group_vars/all/versions.yml").read_text())
 CONFIG = yaml.safe_load((ROOT / "inventory/production/host_vars/k8s/sealed_secrets.yml").read_text())["sealed_secrets"]
+DIGESTS = yaml.safe_load((LAYER / "chart-digests.yml").read_text())["sealed_secrets_chart_sha256"]
 
 
 class InventoryLoader(yaml.SafeLoader):
@@ -42,8 +45,16 @@ def layer_play(name="standup.yml"):
     return next(play for play in plays if play.get("hosts") == "k8s")
 
 
+def flatten(tasks):
+    """Every task, including the tasks inside blocks, in file order."""
+    for item in tasks:
+        yield item
+        for section in ("block", "rescue", "always"):
+            yield from flatten(item.get(section, []))
+
+
 def task(play, name):
-    return next(task for task in play["tasks"] if task["name"] == name)
+    return next(task for task in flatten(play["tasks"]) if task["name"] == name)
 
 
 def run_play(directory, tasks, variables, verbose=False):
@@ -71,6 +82,7 @@ def play_vars(**extra):
         "sealed_secrets": CONFIG,
         "chart_versions": VERSIONS["chart_versions"],
         "image_versions": VERSIONS["image_versions"],
+        "sealed_secrets_chart_sha256": DIGESTS,
         **layer_play()["vars"],
         **extra,
     }
@@ -84,17 +96,20 @@ class RenderTests(unittest.TestCase):
         cls.work = tempfile.TemporaryDirectory(prefix="h3x-sealed-secrets-test-")
         cls.addClassCleanup(cls.work.cleanup)
         work = Path(cls.work.name)
-        chart = os.environ.get("SEALED_SECRETS_CHART_DIR")
-        if not chart:
+        version = VERSIONS["chart_versions"]["sealed_secrets"]
+        archive = os.environ.get("SEALED_SECRETS_CHART_ARCHIVE")
+        if not archive:
             env = dict(os.environ, HELM_REPOSITORY_CONFIG=str(work / "repositories.yaml"),
                        HELM_REPOSITORY_CACHE=str(work / "cache"))
             subprocess.run([
                 "helm", "pull", "sealed-secrets", "--repo", CHART_REPO,
-                "--version", VERSIONS["chart_versions"]["sealed_secrets"],
-                "--untar", "--untardir", str(work),
+                "--version", version, "--destination", str(work),
             ], env=env, check=True, capture_output=True, text=True, timeout=120)
-            chart = str(work / "sealed-secrets")
-        cls.chart = Path(chart)
+            archive = str(work / f"sealed-secrets-{version}.tgz")
+        cls.archive_sha256 = hashlib.sha256(Path(archive).read_bytes()).hexdigest()
+        with tarfile.open(archive) as bundle:
+            bundle.extractall(work / "chart", filter="data")
+        cls.chart = work / "chart" / "sealed-secrets"
 
         # Ansible itself templates the Helm values, with the play vars.
         cls.helm_task = task(layer_play(), "Deploy the Sealed Secrets controller via Helm")
@@ -140,6 +155,12 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("--key-cutoff-time", args)
         # The chart must never ship a key (or any other Secret).
         self.assertEqual(self.kinds("Secret"), [])
+
+    def test_pinned_chart_matches_the_reviewed_digest(self):
+        version = VERSIONS["chart_versions"]["sealed_secrets"]
+        self.assertIn(version, DIGESTS, "Review the new chart, then add its sha256 to chart-digests.yml")
+        self.assertEqual(self.archive_sha256, DIGESTS[version],
+                         "The published chart archive differs from the reviewed one")
 
     def test_image_is_pinned_by_tag_and_digest(self):
         pin = VERSIONS["image_versions"]["sealed_secrets_controller"]
@@ -269,7 +290,7 @@ class PlaybookTests(unittest.TestCase):
 
     def setUp(self):
         self.play = layer_play()
-        self.names = [task["name"] for task in self.play["tasks"]]
+        self.names = [task["name"] for task in flatten(self.play["tasks"])]
         self.directory = tempfile.TemporaryDirectory(prefix="h3x-sealed-secrets-play-")
         self.addCleanup(self.directory.cleanup)
 
@@ -404,7 +425,7 @@ class PlaybookTests(unittest.TestCase):
 
     def test_crd_is_applied_outside_helm(self):
         render = task(self.play, "Render the SealedSecret CRD of the pinned chart")
-        self.assertEqual(render["ansible.builtin.command"]["argv"][:4], ["helm", "show", "crds", "sealed-secrets/sealed-secrets"])
+        self.assertEqual(render["ansible.builtin.command"]["argv"], ["helm", "show", "crds", "{{ sealed_secrets_chart_archive }}"])
         self.assertIs(render["check_mode"], False)
         apply = task(self.play, "Apply the SealedSecret CRD")["kubernetes.core.k8s"]
         self.assertIs(apply["apply"], True)
@@ -421,6 +442,51 @@ class PlaybookTests(unittest.TestCase):
                 text = "\n---\n".join(yaml.safe_dump(doc) for doc in documents)
                 rc, output = run_play(self.directory.name, [check], {"sealed_secrets_crd_render": {"stdout": text}})
                 self.assertEqual(rc == 0, ok, output)
+
+    def test_chart_archive_is_verified_before_use(self):
+        block = task(self.play, "Deploy the verified chart")
+        self.assertEqual(block["vars"]["sealed_secrets_chart_archive"],
+                         "{{ sealed_secrets_chart_dir.path }}/sealed-secrets-{{ chart_versions.sealed_secrets }}.tgz")
+        inner = [item["name"] for item in block["block"]]
+        self.assertEqual(inner[:4], ["Create a directory for the chart archive", "Download the pinned chart archive",
+                                     "Read the chart archive digest", "Verify the chart archive digest"])
+        for name in ("Render the SealedSecret CRD of the pinned chart", "Apply the SealedSecret CRD",
+                     "Apply the Sealed Secrets admission policies", "Deploy the Sealed Secrets controller via Helm"):
+            self.assertIn(name, inner[4:], f"{name} must use the verified archive")
+        pull = task(self.play, "Download the pinned chart archive")["ansible.builtin.command"]["argv"]
+        self.assertEqual(pull[:5], ["helm", "pull", "sealed-secrets/sealed-secrets", "--version", "{{ chart_versions.sealed_secrets }}"])
+        stat = task(self.play, "Read the chart archive digest")["ansible.builtin.stat"]
+        self.assertEqual((stat["path"], stat["checksum_algorithm"]), ("{{ sealed_secrets_chart_archive }}", "sha256"))
+        helm = task(self.play, "Deploy the Sealed Secrets controller via Helm")["kubernetes.core.helm"]
+        self.assertEqual(helm["chart_ref"], "{{ sealed_secrets_chart_archive }}")
+        self.assertNotIn("chart_version", helm)
+        self.assertEqual([item["name"] for item in block["always"]], ["Remove the chart archive directory"])
+        self.assertLess(self.names.index("Require a reviewed digest for the pinned chart"),
+                        self.names.index("Read the sealing key Secret"))
+
+        verify = task(self.play, "Verify the chart archive digest")
+        version = VERSIONS["chart_versions"]["sealed_secrets"]
+        cases = {
+            "reviewed archive": ({"stat": {"exists": True, "checksum": DIGESTS[version]}}, True),
+            "changed archive": ({"stat": {"exists": True, "checksum": "0" * 64}}, False),
+            "no archive": ({"stat": {"exists": False}}, False),
+        }
+        for case, (result, ok) in cases.items():
+            with self.subTest(case=case):
+                rc, output = run_play(self.directory.name, [verify], play_vars(sealed_secrets_chart_file=result))
+                self.assertEqual(rc == 0, ok, output)
+                if not ok:
+                    self.assertIn("The published chart changed", output)
+
+        require = task(self.play, "Require a reviewed digest for the pinned chart")
+        newer = dict(VERSIONS["chart_versions"], sealed_secrets="99.0.0")
+        for case, variables, ok in (("pinned version", play_vars(), True),
+                                    ("unreviewed version", play_vars(chart_versions=newer), False)):
+            with self.subTest(case=case):
+                rc, output = run_play(self.directory.name, [require], variables)
+                self.assertEqual(rc == 0, ok, output)
+                if not ok:
+                    self.assertIn("has no sha256 for sealed-secrets chart 99.0.0", " ".join(output.split()))
 
     def test_teardown_keeps_crd_key_and_namespace(self):
         plays = load(LAYER / "teardown.yml")

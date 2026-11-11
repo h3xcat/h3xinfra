@@ -10,6 +10,8 @@
 - name: Deploy the Sealed Secrets controller via Helm
   hosts: k8s
   gather_facts: false
+  vars_files:
+    - chart-digests.yml
   vars:
     sealed_secrets_namespace: "{{ (sealed_secrets | default({})).namespace | default('sealed-secrets', true) }}"
     sealed_secrets_release: "{{ (sealed_secrets | default({})).release_name_prefix | default('h3xinfra-sealed-secrets', true) }}-main"
@@ -40,6 +42,19 @@
           sealed_secrets.release_name_prefix. sealed_secrets.key_secret_name and each entry of
           sealed_secrets.previous_key_secret_names (a list without key_secret_name) may use only
           lowercase letters, digits and hyphens, at most 245 characters.
+        quiet: true
+
+    # A Renovate bump changes the version only. The play refuses it until a
+    # person reviews the chart and adds its digest to chart-digests.yml.
+    - name: Require a reviewed digest for the pinned chart
+      ansible.builtin.assert:
+        that:
+          - (chart_versions.sealed_secrets | string) in sealed_secrets_chart_sha256
+          - sealed_secrets_chart_sha256[chart_versions.sealed_secrets | string] is match('^[0-9a-f]{64}$')
+        fail_msg: >-
+          playbooks/10-sealed-secrets/chart-digests.yml has no sha256 for sealed-secrets chart
+          {{ chart_versions.sealed_secrets }}. Review the chart, then add the digest of its .tgz
+          (playbooks/10-sealed-secrets/README.md, "Upgrades").
         quiet: true
 
     # The controller generates its own key at startup when it finds none.
@@ -130,170 +145,224 @@
               pod-security.kubernetes.io/audit: restricted
               pod-security.kubernetes.io/warn: restricted
 
-    # Helm installs crds/ only once and never upgrades or deletes them.
-    # Apply the CRD of the pinned chart on every run instead, so a chart
-    # bump also updates the schema, and teardown keeps every SealedSecret.
-    - name: Render the SealedSecret CRD of the pinned chart
-      ansible.builtin.command:
-        argv:
-          - helm
-          - show
-          - crds
-          - sealed-secrets/sealed-secrets
-          - --version
-          - "{{ chart_versions.sealed_secrets }}"
-      register: sealed_secrets_crd_render
-      changed_when: false
-      check_mode: false
-
-    - name: Check the rendered CRD
-      ansible.builtin.assert:
-        that:
-          - sealed_secrets_crds | length == 1
-          - sealed_secrets_crds[0].kind == 'CustomResourceDefinition'
-          - sealed_secrets_crds[0].metadata.name == 'sealedsecrets.bitnami.com'
-        fail_msg: The chart must ship exactly the sealedsecrets.bitnami.com CRD. Review the chart before you continue.
-        quiet: true
+    # The repository index (GitHub Pages) and the chart archive (a GitHub
+    # release asset) can change after publication. Download the pinned chart
+    # once, check its sha256, and use only that file for the CRD and the
+    # release.
+    - name: Deploy the verified chart
       vars:
-        sealed_secrets_crds: "{{ sealed_secrets_crd_render.stdout | from_yaml_all | select | list }}"
+        sealed_secrets_chart_archive: "{{ sealed_secrets_chart_dir.path }}/sealed-secrets-{{ chart_versions.sealed_secrets }}.tgz"
+      block:
+        - name: Create a directory for the chart archive
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: h3xinfra-sealed-secrets-chart-
+          register: sealed_secrets_chart_dir
+          changed_when: false
+          check_mode: false
 
-    - name: Apply the SealedSecret CRD
-      kubernetes.core.k8s:
-        state: present
-        apply: true
-        server_side_apply:
-          field_manager: h3xinfra-sealed-secrets
-        definition: "{{ sealed_secrets_crd_render.stdout | from_yaml_all | select | list }}"
+        - name: Download the pinned chart archive
+          ansible.builtin.command:
+            argv:
+              - helm
+              - pull
+              - sealed-secrets/sealed-secrets
+              - --version
+              - "{{ chart_versions.sealed_secrets }}"
+              - --destination
+              - "{{ sealed_secrets_chart_dir.path }}"
+          changed_when: false
+          check_mode: false
 
-    # The key check above holds at deploy time only. These policies hold while
-    # the controller runs. They are outside the Helm release, so they exist
-    # before the controller starts, and teardown keeps them.
-    # 1. The controller may not create, change or delete Secrets in its own
-    #    namespace. A key that it generates (missing key at startup, SIGUSR1)
-    #    cannot be stored, so the controller fails instead. A SealedSecret
-    #    cannot unseal a fake key into this namespace either.
-    # 2. Every SealedSecret uses the strict scope. The controller reads the
-    #    scope from these annotations; a cluster-wide or namespace-wide
-    #    ciphertext could be copied to another name or namespace.
-    - name: Apply the Sealed Secrets admission policies
-      kubernetes.core.k8s:
-        state: present
-        apply: true
-        server_side_apply:
-          field_manager: h3xinfra-sealed-secrets
-        definition:
-          - apiVersion: admissionregistration.k8s.io/v1
-            kind: ValidatingAdmissionPolicy
-            metadata:
-              name: "{{ sealed_secrets_release }}-key-namespace"
-            spec:
-              failurePolicy: Fail
-              matchConstraints:
-                namespaceSelector:
-                  matchLabels:
-                    kubernetes.io/metadata.name: "{{ sealed_secrets_namespace }}"
-                resourceRules:
-                  - apiGroups: [""]
-                    apiVersions: ["*"]
-                    operations: [CREATE, UPDATE, DELETE]
-                    resources: [secrets]
-              validations:
-                - expression: "request.userInfo.username != {{ sealed_secrets_controller_user | to_json }}"
-                  message: >-
-                    The Sealed Secrets controller may not write Secrets in its own namespace. It must
-                    never store a key of its own, and SealedSecrets may not target this namespace.
-                  reason: Forbidden
-          - apiVersion: admissionregistration.k8s.io/v1
-            kind: ValidatingAdmissionPolicyBinding
-            metadata:
-              name: "{{ sealed_secrets_release }}-key-namespace"
-            spec:
-              policyName: "{{ sealed_secrets_release }}-key-namespace"
-              validationActions: [Deny]
-          - apiVersion: admissionregistration.k8s.io/v1
-            kind: ValidatingAdmissionPolicy
-            metadata:
-              name: "{{ sealed_secrets_release }}-strict-scope"
-            spec:
-              failurePolicy: Fail
-              matchConstraints:
-                resourceRules:
-                  - apiGroups: [bitnami.com]
-                    apiVersions: ["*"]
-                    operations: [CREATE, UPDATE]
-                    resources: [sealedsecrets]
-              validations:
-                - expression: >-
-                    !has(object.metadata.annotations) ||
-                    ['sealedsecrets.bitnami.com/cluster-wide', 'sealedsecrets.bitnami.com/namespace-wide'].all(k,
-                    !(k in object.metadata.annotations) || object.metadata.annotations[k] != 'true')
-                  message: >-
-                    SealedSecrets must use the strict scope. Seal again with kubeseal --scope strict.
-                  reason: Forbidden
-          - apiVersion: admissionregistration.k8s.io/v1
-            kind: ValidatingAdmissionPolicyBinding
-            metadata:
-              name: "{{ sealed_secrets_release }}-strict-scope"
-            spec:
-              policyName: "{{ sealed_secrets_release }}-strict-scope"
-              validationActions: [Deny]
+        - name: Read the chart archive digest
+          ansible.builtin.stat:
+            path: "{{ sealed_secrets_chart_archive }}"
+            get_checksum: true
+            checksum_algorithm: sha256
+          register: sealed_secrets_chart_file
+          check_mode: false
 
-    - name: Deploy the Sealed Secrets controller via Helm
-      kubernetes.core.helm:
-        name: "{{ sealed_secrets_release }}"
-        chart_ref: sealed-secrets/sealed-secrets
-        chart_version: "{{ chart_versions.sealed_secrets }}"
-        release_namespace: "{{ sealed_secrets_namespace }}"
-        create_namespace: false
-        # The task above owns the CRD.
-        skip_crds: true
-        values_files:
-          - "{{ playbook_dir }}/sealed-secrets-values.yaml"
-        values:
-          # kubeseal defaults to sealed-secrets-controller in kube-system.
-          # This release uses the repo naming instead; seal offline with
-          # --cert, or pass --controller-name/--controller-namespace.
-          fullnameOverride: "{{ sealed_secrets_release }}"
-          # Key lookup: the controller reads every Secret in its namespace
-          # with the active label, plus the Secret with this exact name.
-          secretName: "{{ sealed_secrets_key_secret_name }}"
-          image:
-            tag: "{{ image_versions.sealed_secrets_controller }}"
-          rbac:
-            # The chart default "secrets-unsealer" is a cluster-wide name.
-            clusterRoleName: "{{ sealed_secrets_release }}-unsealer"
-          extraDeploy:
-            # The controller needs no ingress: sealing happens offline. The
-            # kubelet probes come from the node, which Cilium admits by
-            # default (as for Argo CD).
-            - apiVersion: networking.k8s.io/v1
-              kind: NetworkPolicy
-              metadata:
-                name: "{{ sealed_secrets_release }}-default-deny"
-                namespace: "{{ sealed_secrets_namespace }}"
-              spec:
-                podSelector: {}
-                policyTypes: [Ingress]
-            # The controller can read every Secret in the cluster. It needs
-            # only the API server, at KUBERNETES_SERVICE_HOST (an IP, so no
-            # DNS). Same API server rule as the Keycloak egress policy: 443
-            # before and 6443 after the Service translation.
-            - apiVersion: cilium.io/v2
-              kind: CiliumNetworkPolicy
-              metadata:
-                name: "{{ sealed_secrets_release }}-egress"
-                namespace: "{{ sealed_secrets_namespace }}"
-              spec:
-                endpointSelector: {}
-                enableDefaultDeny:
-                  ingress: false
-                  egress: true
-                egress:
-                  - toEntities: [kube-apiserver]
-                    toPorts:
-                      - ports:
-                          - {port: "443", protocol: TCP}
-                          - {port: "6443", protocol: TCP}
-        state: present
-        wait: true
-        timeout: 300s
+        - name: Verify the chart archive digest
+          ansible.builtin.assert:
+            that:
+              - sealed_secrets_chart_file.stat.exists | default(false)
+              - sealed_secrets_chart_file.stat.checksum | default('') == sealed_secrets_chart_sha256[chart_versions.sealed_secrets | string]
+            fail_msg: >-
+              The downloaded sealed-secrets chart {{ chart_versions.sealed_secrets }} does not have the
+              sha256 in playbooks/10-sealed-secrets/chart-digests.yml. The published chart changed.
+              Do not deploy it. Find out why first.
+            quiet: true
+
+        # Helm installs crds/ only once and never upgrades or deletes them.
+        # Apply the CRD of the pinned chart on every run instead, so a chart
+        # bump also updates the schema, and teardown keeps every SealedSecret.
+        - name: Render the SealedSecret CRD of the pinned chart
+          ansible.builtin.command:
+            argv:
+              - helm
+              - show
+              - crds
+              - "{{ sealed_secrets_chart_archive }}"
+          register: sealed_secrets_crd_render
+          changed_when: false
+          check_mode: false
+
+        - name: Check the rendered CRD
+          ansible.builtin.assert:
+            that:
+              - sealed_secrets_crds | length == 1
+              - sealed_secrets_crds[0].kind == 'CustomResourceDefinition'
+              - sealed_secrets_crds[0].metadata.name == 'sealedsecrets.bitnami.com'
+            fail_msg: The chart must ship exactly the sealedsecrets.bitnami.com CRD. Review the chart before you continue.
+            quiet: true
+          vars:
+            sealed_secrets_crds: "{{ sealed_secrets_crd_render.stdout | from_yaml_all | select | list }}"
+
+        - name: Apply the SealedSecret CRD
+          kubernetes.core.k8s:
+            state: present
+            apply: true
+            server_side_apply:
+              field_manager: h3xinfra-sealed-secrets
+            definition: "{{ sealed_secrets_crd_render.stdout | from_yaml_all | select | list }}"
+
+        # The key check above holds at deploy time only. These policies hold while
+        # the controller runs. They are outside the Helm release, so they exist
+        # before the controller starts, and teardown keeps them.
+        # 1. The controller may not create, change or delete Secrets in its own
+        #    namespace. A key that it generates (missing key at startup, SIGUSR1)
+        #    cannot be stored, so the controller fails instead. A SealedSecret
+        #    cannot unseal a fake key into this namespace either.
+        # 2. Every SealedSecret uses the strict scope. The controller reads the
+        #    scope from these annotations; a cluster-wide or namespace-wide
+        #    ciphertext could be copied to another name or namespace.
+        - name: Apply the Sealed Secrets admission policies
+          kubernetes.core.k8s:
+            state: present
+            apply: true
+            server_side_apply:
+              field_manager: h3xinfra-sealed-secrets
+            definition:
+              - apiVersion: admissionregistration.k8s.io/v1
+                kind: ValidatingAdmissionPolicy
+                metadata:
+                  name: "{{ sealed_secrets_release }}-key-namespace"
+                spec:
+                  failurePolicy: Fail
+                  matchConstraints:
+                    namespaceSelector:
+                      matchLabels:
+                        kubernetes.io/metadata.name: "{{ sealed_secrets_namespace }}"
+                    resourceRules:
+                      - apiGroups: [""]
+                        apiVersions: ["*"]
+                        operations: [CREATE, UPDATE, DELETE]
+                        resources: [secrets]
+                  validations:
+                    - expression: "request.userInfo.username != {{ sealed_secrets_controller_user | to_json }}"
+                      message: >-
+                        The Sealed Secrets controller may not write Secrets in its own namespace. It must
+                        never store a key of its own, and SealedSecrets may not target this namespace.
+                      reason: Forbidden
+              - apiVersion: admissionregistration.k8s.io/v1
+                kind: ValidatingAdmissionPolicyBinding
+                metadata:
+                  name: "{{ sealed_secrets_release }}-key-namespace"
+                spec:
+                  policyName: "{{ sealed_secrets_release }}-key-namespace"
+                  validationActions: [Deny]
+              - apiVersion: admissionregistration.k8s.io/v1
+                kind: ValidatingAdmissionPolicy
+                metadata:
+                  name: "{{ sealed_secrets_release }}-strict-scope"
+                spec:
+                  failurePolicy: Fail
+                  matchConstraints:
+                    resourceRules:
+                      - apiGroups: [bitnami.com]
+                        apiVersions: ["*"]
+                        operations: [CREATE, UPDATE]
+                        resources: [sealedsecrets]
+                  validations:
+                    - expression: >-
+                        !has(object.metadata.annotations) ||
+                        ['sealedsecrets.bitnami.com/cluster-wide', 'sealedsecrets.bitnami.com/namespace-wide'].all(k,
+                        !(k in object.metadata.annotations) || object.metadata.annotations[k] != 'true')
+                      message: >-
+                        SealedSecrets must use the strict scope. Seal again with kubeseal --scope strict.
+                      reason: Forbidden
+              - apiVersion: admissionregistration.k8s.io/v1
+                kind: ValidatingAdmissionPolicyBinding
+                metadata:
+                  name: "{{ sealed_secrets_release }}-strict-scope"
+                spec:
+                  policyName: "{{ sealed_secrets_release }}-strict-scope"
+                  validationActions: [Deny]
+
+        - name: Deploy the Sealed Secrets controller via Helm
+          kubernetes.core.helm:
+            name: "{{ sealed_secrets_release }}"
+            # The verified archive. Helm ignores --version for a local file.
+            chart_ref: "{{ sealed_secrets_chart_archive }}"
+            release_namespace: "{{ sealed_secrets_namespace }}"
+            create_namespace: false
+            # The task above owns the CRD.
+            skip_crds: true
+            values_files:
+              - "{{ playbook_dir }}/sealed-secrets-values.yaml"
+            values:
+              # kubeseal defaults to sealed-secrets-controller in kube-system.
+              # This release uses the repo naming instead; seal offline with
+              # --cert, or pass --controller-name/--controller-namespace.
+              fullnameOverride: "{{ sealed_secrets_release }}"
+              # Key lookup: the controller reads every Secret in its namespace
+              # with the active label, plus the Secret with this exact name.
+              secretName: "{{ sealed_secrets_key_secret_name }}"
+              image:
+                tag: "{{ image_versions.sealed_secrets_controller }}"
+              rbac:
+                # The chart default "secrets-unsealer" is a cluster-wide name.
+                clusterRoleName: "{{ sealed_secrets_release }}-unsealer"
+              extraDeploy:
+                # The controller needs no ingress: sealing happens offline. The
+                # kubelet probes come from the node, which Cilium admits by
+                # default (as for Argo CD).
+                - apiVersion: networking.k8s.io/v1
+                  kind: NetworkPolicy
+                  metadata:
+                    name: "{{ sealed_secrets_release }}-default-deny"
+                    namespace: "{{ sealed_secrets_namespace }}"
+                  spec:
+                    podSelector: {}
+                    policyTypes: [Ingress]
+                # The controller can read every Secret in the cluster. It needs
+                # only the API server, at KUBERNETES_SERVICE_HOST (an IP, so no
+                # DNS). Same API server rule as the Keycloak egress policy: 443
+                # before and 6443 after the Service translation.
+                - apiVersion: cilium.io/v2
+                  kind: CiliumNetworkPolicy
+                  metadata:
+                    name: "{{ sealed_secrets_release }}-egress"
+                    namespace: "{{ sealed_secrets_namespace }}"
+                  spec:
+                    endpointSelector: {}
+                    enableDefaultDeny:
+                      ingress: false
+                      egress: true
+                    egress:
+                      - toEntities: [kube-apiserver]
+                        toPorts:
+                          - ports:
+                              - {port: "443", protocol: TCP}
+                              - {port: "6443", protocol: TCP}
+            state: present
+            wait: true
+            timeout: 300s
+      always:
+        - name: Remove the chart archive directory
+          ansible.builtin.file:
+            path: "{{ sealed_secrets_chart_dir.path }}"
+            state: absent
+          when: sealed_secrets_chart_dir.path is defined
+          changed_when: false
+          check_mode: false
