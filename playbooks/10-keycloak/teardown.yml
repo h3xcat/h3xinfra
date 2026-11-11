@@ -21,6 +21,9 @@
         path: /h3xinfra/state/keycloak/terraform.tfstate
       register: tfstate_file
 
+    # `groups` is left out on purpose: destroy uses the state, and without
+    # groups Terraform does not look up the member users. Thus, a deleted
+    # user cannot stop the destroy.
     - name: Render Terraform variables file (for destroy)
       ansible.builtin.copy:
         dest: "{{ terraform_dir }}/terraform.tfvars.json"

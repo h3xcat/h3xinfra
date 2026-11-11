@@ -124,3 +124,61 @@ variable "clients" {
     error_message = "kubernetes_oidc.tf manages the optional scopes of openwebui and k8s-mcp; do not set optional_scopes on them."
   }
 }
+
+variable "groups" {
+  description = "Realm groups with their client roles and additive user memberships (see groups.tf)."
+  type = list(object({
+    name = string
+    # Client name (keycloak.clients[].name) -> role names. Each role must be
+    # in that client's client_roles. The list is the complete role set of
+    # the group.
+    client_roles = optional(map(list(string)), {})
+    # Usernames of existing, enabled users. Terraform adds them to the
+    # group and keeps their other memberships.
+    members = optional(list(string), [])
+  }))
+  default  = []
+  nullable = false
+
+  validation {
+    condition     = length(distinct([for group in var.groups : group.name])) == length(var.groups)
+    error_message = "Group names must be unique."
+  }
+
+  validation {
+    condition = alltrue([for group in var.groups : (
+      length(group.name) > 0 && group.name == trimspace(group.name) && !strcontains(group.name, "/")
+    )])
+    error_message = "Group names must be non-empty, must not start or end with whitespace and must not contain \"/\" (subgroups are not supported)."
+  }
+
+  validation {
+    condition     = alltrue([for group in var.groups : !contains(["k8s-admins", "k8s-viewers"], group.name)])
+    error_message = "k8s-admins and k8s-viewers are managed by kubernetes_oidc.tf; do not declare them in groups."
+  }
+
+  validation {
+    condition = alltrue(flatten([for group in var.groups : [
+      for client, roles in group.client_roles : concat(
+        [contains([for c in var.clients : c.name], client)],
+        [for role in roles : contains(flatten([for c in var.clients : c.client_roles if c.name == client]), role)],
+      )
+    ]]))
+    error_message = "Each group client role must name a client in clients and a role in that client's client_roles."
+  }
+
+  validation {
+    condition = alltrue(flatten([for group in var.groups : [
+      for client, roles in group.client_roles : length(distinct(roles)) == length(roles)
+    ]]))
+    error_message = "A group must not list the same client role twice."
+  }
+
+  validation {
+    condition = alltrue([for group in var.groups : (
+      length(distinct(group.members)) == length(group.members) &&
+      alltrue([for member in group.members : length(member) > 0 && member == lower(trimspace(member))])
+    )])
+    error_message = "Group members must be unique, non-empty, lowercase Keycloak usernames without surrounding whitespace."
+  }
+}
