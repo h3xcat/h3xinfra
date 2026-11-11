@@ -118,6 +118,13 @@
       "automerge": false
     },
     {
+      "description": "KSOPS runs inside the Argo CD repo-server next to the age identity, the Redis password and the repository credentials (playbooks/10-argocd, opt-in), and its pin is a mutable tag. Never automerge: a person reviews every KSOPS bump. quay.io publishes no release timestamps, so minimumReleaseAge cannot delay it. Own group, so a KSOPS bump does not hold back the automerge of the other images. Placed after the patch/pin/digest automerge rule so this automerge: false wins",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["quay.io/viaductoss/ksops"],
+      "groupName": "KSOPS",
+      "automerge": false
+    },
+    {
       "description": "One PR for CI tooling: tests/tool-versions.env tool pins, tests/requirements.txt python pins and any env pins in workflows. Last rule so it wins over the datasource groups for files under tests/; matchManagers keeps the github-actions group separate",
       "matchManagers": ["custom.regex", "pip_requirements"],
       "matchFileNames": ["tests/**", ".github/workflows/**"],
