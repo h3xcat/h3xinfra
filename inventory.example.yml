@@ -329,8 +329,21 @@ k3s_cluster:
 
     # agent_config_yaml: |   # configuration file for agent nodes
     #   ... inner YAML goes here ...
-    # registries_config_yaml: | # private registry configuration
-    #   ... inner YAML goes here ...
+    # Containerd registry configuration (playbooks/01-k3s/registries.yml).
+    # Not set: /etc/rancher/k3s/registries.yaml is left alone. A change restarts
+    # K3s on each node, one node at a time. Use k3s_registries, not the
+    # k3s.orchestration variable registries_config_yaml (world-readable file,
+    # no restart). Keep the token in Ansible Vault. Every pod can pull every
+    # image that the token can read.
+    # k3s_registries:
+    #   configs:
+    #     ghcr.io:
+    #       auth:
+    #         username: example-user  # Replace with your registry login
+    #         password: "{{ vault_k3s_registry_ghcr_token }}"
+    # To delete the file from every node, set `state: absent` and run the playbook:
+    # k3s_registries:
+    #   state: absent
 
     # Cluster-wide Pod Security Admission defaults (playbooks/01-k3s/apiserver-admission.yml).
     # They apply only to namespaces without pod-security.kubernetes.io/* labels.

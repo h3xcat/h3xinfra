@@ -271,6 +271,12 @@
 - name: Check the kube-proxy replacement settings
   import_playbook: kube-proxy-preflight.yml
 
+# Opt-in containerd registry configuration (k3s_registries). It runs before
+# the install, so a new node reads the file at its first start. On a running
+# cluster it restarts only the nodes whose file changed, one at a time.
+- name: Configure the containerd registries
+  import_playbook: registries.yml
+
 # Import the main k3s orchestration playbook
 - import_playbook: k3s.orchestration.site
 

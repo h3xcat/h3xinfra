@@ -165,3 +165,137 @@ Do not set `defaults.enforce` higher than `privileged` until each namespace
 has its labels. If you do, a namespace without labels gets the stricter
 level. Then Kubernetes rejects new privileged pods in that namespace, for
 example after a node drain.
+
+# Containerd Registry Configuration
+
+`registries.yml` writes `/etc/rancher/k3s/registries.yaml` on every server and
+agent. The file holds registry mirrors and registry credentials for containerd.
+`standup.yml` imports `registries.yml` before the K3s install, so a new node
+reads the file at its first start. The schema is in the
+[K3s private registry documentation](https://docs.k3s.io/installation/private-registry).
+
+The `k3s_registries` inventory variable (`group_vars/k3s_cluster`) controls the
+playbook. When the variable is not set or is empty, the playbook changes
+nothing. A file that is already on a node stays as it is.
+
+| Key | Effect |
+| --- | --- |
+| `state` | `present` (default) writes the file. `absent` deletes it. |
+| `mirrors` | The `mirrors` section of the file. Each registry takes `endpoint` (a list of URLs) and `rewrite`. |
+| `configs` | The `configs` section of the file. Each registry takes `auth` (`username` and `password`, or `auth`, or `identity_token`) and `tls` (`ca_file`, `cert_file`, `key_file`, `insecure_skip_verify`). |
+
+The playbook checks the variable on every node before it changes a node. It
+stops when a key is unknown, when `auth` has an empty username or password, or
+when `registries_config_yaml` is also set. K3s ignores unknown keys, so a typo
+would otherwise remove a credential without an error.
+`registries_config_yaml` is the k3s.orchestration variable for the same file.
+It writes the file with mode 0644 and does not restart K3s. Do not use it.
+
+This example gives every node a pull credential for GHCR:
+
+```yaml
+k3s_registries:
+  configs:
+    ghcr.io:
+      auth:
+        username: example-user
+        password: "{{ vault_k3s_registry_ghcr_token }}"
+```
+
+A `configs` entry without a `mirrors` entry is enough. K3s v1.37 puts the
+credential into the containerd configuration that it generates
+(`registry.configs."ghcr.io".auth`). It also writes a `hosts.toml` for
+`ghcr.io` with the default endpoint `https://ghcr.io/v2`. Pulls by the kubelet
+use the credential. `k3s ctr image pull` does not use it. To test a pull on a
+node, use `k3s crictl pull`. Containerd 2.x logs that `configs` is deprecated.
+K3s v1.37 still generates it.
+
+## Restarts
+
+K3s reads `registries.yaml` only when it starts. The playbook does these steps:
+
+1. It checks `k3s_registries` on every node.
+2. It works on the servers one at a time, then on the agents one at a time.
+3. On each node, it writes or deletes the file.
+4. It reads the state of the K3s service (`k3s` on servers, `k3s-agent` on
+   agents). When the service is `inactive`, the playbook does not start it.
+   When the service is in any other state than `active` or `inactive` (for
+   example `failed` or `activating`), the playbook stops. Repair the node and
+   run the playbook again.
+5. It restarts K3s only when one of these is true:
+   - The file changed in this run.
+   - The file is newer than the running K3s.
+   - `state` is `absent` and the containerd configuration that K3s generated
+     still holds a registry credential.
+
+   The last two cases cover an earlier run that stopped before the restart.
+6. Before a server restarts, the API server on every other server must
+   answer `/readyz`, and every etcd node must be Ready and not cordoned. The
+   K3s API server uses only its local etcd member, so `/readyz` proves that
+   the member serves with quorum. One restart then never costs etcd its
+   quorum.
+7. Before any node restarts, kured must not hold its reboot lock (the
+   `weave.works/kured-node-lock` annotation on the kured DaemonSet).
+8. The restart fails after 600 seconds. The K3s units have no start timeout
+   of their own.
+9. After a restart, a server waits for `/readyz`. Every node waits for the
+   kubelet `healthz`. Then it waits for the node Ready condition with a
+   heartbeat that is later than the start of the new K3s process. An old
+   Ready status from before the restart does not count. The node name is the
+   output of `hostname`.
+10. The first failure stops the playbook before the next node.
+
+The K3s unit uses `KillMode=process`, so running containers keep running
+during the restart. The kubelet watchdog ignores the first 180 seconds after
+an agent starts.
+
+To apply a change without the rest of the layer, run this command from the
+repository root:
+
+```sh
+ansible-playbook playbooks/01-k3s/registries.yml
+```
+
+`--check` shows which nodes would restart. `--diff` does not show the file
+content, because the task that writes the file uses `no_log` and `diff: false`.
+
+## Credential Rotation
+
+1. Create the new credential. Keep the old one valid.
+2. Replace the vault value, for example:
+   `ansible-vault encrypt_string --stdin-name vault_k3s_registry_ghcr_token`.
+3. Run `ansible-playbook playbooks/01-k3s/registries.yml`. Every node restarts
+   K3s, one node at a time.
+4. Pull a private image on one node with `k3s crictl pull`, or recreate a pod
+   that uses a private image.
+5. Revoke the old credential.
+
+## Removal
+
+1. Set `k3s_registries: {state: absent}`.
+2. Run `ansible-playbook playbooks/01-k3s/registries.yml`. It deletes the file
+   and restarts K3s on each node, one node at a time.
+3. When the run stops early, fix the cause and run it again. A node whose
+   file is already deleted still restarts when its generated containerd
+   configuration holds a registry credential.
+4. When the run completes, remove the variable.
+
+If you only remove the variable, the file stays on the nodes.
+
+## Security
+
+- The credential is on the disk of every node. `registries.yaml` is owned by
+  root with mode 0600. K3s also copies the credential into
+  `/var/lib/rancher/k3s/agent/etc/containerd/config.toml`. K3s writes that
+  file with mode 0644, but its parent `/var/lib/rancher/k3s/agent` has mode
+  0700. Only root on the node can read it. Do not loosen the modes of these
+  directories.
+- A node credential applies to every pod. Any pod on any node can pull every
+  image that the credential can read, without an image pull Secret.
+  Kubernetes cannot limit a node credential to a namespace.
+- An image that a node has pulled stays in its image cache. With
+  `imagePullPolicy: IfNotPresent`, other pods on that node use it without a
+  credential check.
+- Give the credential read access only. A GitHub classic token with
+  `read:packages` can read every package that its account can read.
+- Keep the credential in Ansible Vault. Do not put it in plain inventory.

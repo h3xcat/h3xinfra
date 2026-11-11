@@ -261,6 +261,8 @@ jobs:
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
+      - name: Test k3s layer (hardening, registries)
+        run: python -m unittest discover -s playbooks/01-k3s/tests -v
       - name: Test gateway security routing
         run: python -m unittest discover -s playbooks/07-gateway/tests -p test_security_routing.py -v
       - name: Test Argo CD chart and access controls
