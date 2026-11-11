@@ -15,6 +15,15 @@
     argocd_ksops:
       # The bundled kustomize runs KSOPS as an exec KRM function.
       kustomize_build_options: --enable-alpha-plugins --enable-exec
+      # Streamed uploads (`argocd app diff --server-side-generate --local`)
+      # need only `applications, get`. With exec they would let any reader
+      # run code in the repo-server. A limit of 0 rejects every upload.
+      params:
+        reposerver.streamed.manifest.max.tar.size: "0"
+        reposerver.streamed.manifest.max.extracted.size: "0"
+      # The repo-server does not call the Kubernetes API. Keep the token
+      # away from programs that kustomizations run.
+      automount_service_account_token: false
       env:
         - name: SOPS_AGE_KEY_FILE
           value: /app/config/sops-age/keys.txt
@@ -112,12 +121,22 @@
       when: argocd_ksops_enabled | bool
       no_log: true
 
+    # Keep only a boolean. The registered result holds the private key and
+    # would otherwise stay in hostvars for the rest of the run.
+    - name: Reduce the KSOPS age key Secret to a presence check
+      ansible.builtin.set_fact:
+        argocd_ksops_age_key_present: >-
+          {{ (argocd_ksops_age_secret.resources | default([]) | length == 1)
+             and ((argocd_ksops_age_secret.resources | default([{}]) | first).data | default({}))['keys.txt'] | default('') | length > 0 }}
+        argocd_ksops_age_secret: {checked: true}
+      when: argocd_ksops_enabled | bool
+      no_log: true
+
     - name: Validate KSOPS configuration
       ansible.builtin.assert:
         that:
           - image_versions.ksops | default('') | length > 0
-          - argocd_ksops_age_secret.resources | default([]) | length == 1
-          - (argocd_ksops_age_secret.resources[0].data | default({}))['keys.txt'] | default('') | length > 0
+          - argocd_ksops_age_key_present | default(false) | bool
         fail_msg: >-
           KSOPS is enabled. Pin image_versions.ksops, and provision the Secret
           {{ argocd.namespace }}/{{ argocd_ksops_age_secret_name }} with the
@@ -152,10 +171,15 @@
                     essential: true
               # An empty value is not rendered into argocd-cm.
               kustomize.buildOptions: "{{ argocd_ksops_active.kustomize_build_options | default('') }}"
+            # KSOPS only; merged into argocd-values.yaml params.
+            params: "{{ argocd_ksops_active.params | default({}) }}"
             rbac:
               policy.csv: "{{ argocd.rbac.policy_csv }}"
           # KSOPS only; the defaults are the chart defaults.
           repoServer:
+            automountServiceAccountToken: "{{ argocd_ksops_active.automount_service_account_token | default(True) }}"
+            serviceAccount:
+              automountServiceAccountToken: "{{ argocd_ksops_active.automount_service_account_token | default(True) }}"
             env: "{{ argocd_ksops_active.env | default([]) }}"
             volumes: "{{ argocd_ksops_active.volumes | default([]) }}"
             volumeMounts: "{{ argocd_ksops_active.volumeMounts | default([]) }}"

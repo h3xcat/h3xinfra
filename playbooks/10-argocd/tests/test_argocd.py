@@ -18,6 +18,11 @@ ROOT = LAYER.parents[1]
 
 AGE_SECRET = "h3xinfra-argocd-sops-age"
 KSOPS_VALUE_KEYS = {"env", "volumes", "volumeMounts", "initContainers"}
+# The repoServer values with KSOPS off: the chart defaults.
+DISABLED_REPO_SERVER = {**{key: [] for key in KSOPS_VALUE_KEYS}, "automountServiceAccountToken": True,
+                        "serviceAccount": {"automountServiceAccountToken": True}}
+STREAMED_PARAMS = {"reposerver.streamed.manifest.max.tar.size": "0",
+                   "reposerver.streamed.manifest.max.extracted.size": "0"}
 
 
 def helm_play(plays):
@@ -88,7 +93,8 @@ class ArgoCDTests(unittest.TestCase):
         # The example values with every KSOPS key removed: the values from
         # before KSOPS existed. Disabled KSOPS must render byte-identically.
         before = copy.deepcopy(cls.values["example"])
-        cls.disabled_ksops_values = (before.pop("repoServer"), before["configs"]["cm"].pop("kustomize.buildOptions"))
+        cls.disabled_ksops_values = (before.pop("repoServer"), before["configs"]["cm"].pop("kustomize.buildOptions"),
+                                     before["configs"].pop("params"))
         cls.values["before"] = before
 
         plays = yaml.safe_load((LAYER / "standup.yml").read_text())
@@ -178,9 +184,10 @@ class ArgoCDTests(unittest.TestCase):
         self.assertTrue(all("kubernetes.core.k8s" not in task for task in tasks))
 
     def test_disabled_ksops_renders_as_before(self):
-        repo_server, build_options = self.disabled_ksops_values
-        self.assertEqual(repo_server, {key: [] for key in KSOPS_VALUE_KEYS})
+        repo_server, build_options, params = self.disabled_ksops_values
+        self.assertEqual(repo_server, DISABLED_REPO_SERVER)
         self.assertEqual(build_options, "")
+        self.assertEqual(params, {})
         self.assertEqual(self.rendered["example"], self.rendered["before"])
         self.assertEqual(self.rendered["absent"], self.rendered["before"])
         self.assertNotIn("ksops", self.rendered["example"].lower())
@@ -210,6 +217,28 @@ class ArgoCDTests(unittest.TestCase):
         self.assertEqual(volumes["ksops-age-key"]["secret"], {
             "secretName": AGE_SECRET, "optional": False, "items": [{"key": "keys.txt", "path": "keys.txt"}],
         })
+
+    def test_ksops_rejects_streamed_local_manifests(self):
+        # Streamed uploads need only `applications, get`; with --enable-exec
+        # they would give every reader code execution in the repo-server.
+        params = self.resource("ConfigMap", "argocd-cmd-params-cm", self.enabled_docs)["data"]
+        for key, value in STREAMED_PARAMS.items():
+            self.assertEqual(params[key], value)
+        self.assertEqual(params["server.insecure"], "true", "the KSOPS params must merge, not replace")
+        disabled = self.resource("ConfigMap", "argocd-cmd-params-cm")["data"]
+        self.assertFalse(STREAMED_PARAMS.keys() & disabled.keys())
+        main = next(c for c in self.repo_server_pod()["containers"] if c["name"] == "repo-server")
+        env = {item["name"]: item for item in main["env"]}
+        for variable, key in (("ARGOCD_REPO_SERVER_STREAMED_MANIFEST_MAX_TAR_SIZE", "reposerver.streamed.manifest.max.tar.size"),
+                              ("ARGOCD_REPO_SERVER_STREAMED_MANIFEST_MAX_EXTRACTED_SIZE", "reposerver.streamed.manifest.max.extracted.size")):
+            self.assertEqual(env[variable]["valueFrom"]["configMapKeyRef"]["key"], key)
+
+    def test_ksops_repo_server_has_no_service_account_token(self):
+        self.assertIs(self.repo_server_pod()["automountServiceAccountToken"], False)
+        account = self.resource("ServiceAccount", "h3xinfra-argocd-main-repo-server", self.enabled_docs)
+        self.assertIs(account["automountServiceAccountToken"], False)
+        disabled = self.resource("Deployment", "h3xinfra-argocd-main-repo-server")["spec"]["template"]["spec"]
+        self.assertIs(disabled["automountServiceAccountToken"], True)
 
     def test_ksops_secret_name_and_enabled_flag(self):
         values = self.values["renamed"]
@@ -287,9 +316,14 @@ class ConfigurationTests(unittest.TestCase):
         # The registered k8s_info result is mocked; no cluster is contacted.
         play = helm_play(yaml.safe_load((LAYER / "standup.yml").read_text()))
         read, check = task_named(play, "Read the KSOPS age key Secret"), task_named(play, "Validate KSOPS configuration")
+        scrub = task_named(play, "Reduce the KSOPS age key Secret to a presence check")
         self.assertTrue(read["no_log"])
+        self.assertTrue(scrub["no_log"])
         self.assertEqual(read["register"], "argocd_ksops_age_secret")
         self.assertNotIn("no_log", check)
+        names = [task["name"] for task in play["tasks"]]
+        self.assertEqual(names.index(scrub["name"]), names.index(read["name"]) + 1)
+        self.assertLess(names.index(check["name"]), names.index("Deploy Argo CD via Helm"))
         present = {"resources": [{"data": {"keys.txt": "QUdFLVNFQ1JFVC1LRVktdGVzdA=="}}]}
         cases = [
             ("disabled", {"argocd": {"namespace": "argocd"}}, True),
@@ -306,11 +340,18 @@ class ConfigurationTests(unittest.TestCase):
             env = ansible_env(directory)
             for name, variables, passes in cases:
                 with self.subTest(case=name):
+                    variables = dict(variables)
+                    # set_fact has the precedence of a registered result.
+                    lookup = variables.pop("argocd_ksops_age_secret", None)
+                    mock = [{"name": "Mock the lookup", "ansible.builtin.set_fact": {"argocd_ksops_age_secret": lookup}}]
+                    # The full result must not outlive the check.
+                    leak = {"name": "Show the remaining result", "ansible.builtin.debug": {
+                        "msg": "{{ argocd_ksops_age_secret | default('none') | to_json }}"}}
                     playbook = Path(directory) / "ksops.yml"
                     playbook.write_text(yaml.safe_dump([{
                         "name": "Check KSOPS inputs", "hosts": "localhost", "gather_facts": False,
                         "vars": {**play["vars"], "image_versions": {"ksops": "v0.0.0"}, **variables},
-                        "tasks": [check],
+                        "tasks": (mock if lookup is not None else []) + [scrub, check, leak],
                     }]))
                     result = subprocess.run([
                         "ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook),
@@ -319,6 +360,8 @@ class ConfigurationTests(unittest.TestCase):
                     self.assertNotIn("QUdFLVNFQ1JFVC1LRVktdGVzdA==", output)
                     if passes:
                         self.assertEqual(result.returncode, 0, output)
+                        remaining = '{\\"checked\\": true}' if lookup is not None else '"msg": "\\"none\\""'
+                        self.assertIn(remaining, output)
                     else:
                         self.assertNotEqual(result.returncode, 0)
                         secret = variables["argocd"]["ksops"].get("age_secret_name", AGE_SECRET)
