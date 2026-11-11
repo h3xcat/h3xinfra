@@ -52,6 +52,7 @@ This project gives Ansible playbooks and configurations to deploy and manage a 3
 │   ├── 09-longhorn/       # Longhorn storage system
 │   ├── 10-mailu/          # Self-hosted email server
 │   ├── 10-keycloak/       # Keycloak identity provider (Operator + CNPG)
+│   ├── 10-sealed-secrets/ # Sealed Secrets controller for GitOps Secrets (opt-in)
 │   ├── 10-argocd/         # Argo CD with native Keycloak SSO (opt-in)
 │   └── 99-utils/          # Utility playbooks
 └── README.md              # This file
@@ -86,6 +87,9 @@ The Renovate automerge waits for this check. The tool versions are `env:` pins w
 
 See the [Argo CD layer guide](playbooks/10-argocd/README.md) for Keycloak client
 configuration, deployment, access controls and recovery.
+
+See the [Sealed Secrets layer guide](playbooks/10-sealed-secrets/README.md) for the
+sealing key, its backup and rotation, offline sealing and recovery.
 
 See the [Operations Guide](docs/operations.md) for detailed maintenance procedures.
 

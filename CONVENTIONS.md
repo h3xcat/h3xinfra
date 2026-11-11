@@ -95,6 +95,7 @@ Each layer has a number. The numbers set the deployment order and the dependency
 - **10-kured**: Kubernetes Reboot Daemon. It does rolling reboots of the nodes when `/var/run/reboot-required` is set. For example, kernel updates from unattended-upgrades set this file.
 - **10-mailu**: Self-hosted email server (Mailu).
 - **10-keycloak**: Identity provider (Keycloak Operator + CloudNativePG). Terraform manages the realm/clients.
+- **10-sealed-secrets**: Sealed Secrets controller. It decrypts SealedSecrets from Git into Secrets with an operator-supplied key. It is opt-in, and it runs before Argo CD.
 - **10-argocd**: GitOps controller with native Keycloak SSO. It is opt-in: it is off until you enable it. Existing resources keep their current owners.
 
 #### Utilities (99)
