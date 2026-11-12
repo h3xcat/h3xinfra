@@ -34,9 +34,9 @@ resource "keycloak_openid_client" "kubernetes" {
 
 # Optional client scope requested during token exchange (carries the user's
 # groups into the exchanged token and makes the `kubernetes` audience available
-# to the k8s-mcp exchanger). Assigned to k8s-mcp below, pulled in via the MCP
-# server's sts_scopes. Optional (not default) so normal logins never get the
-# kubernetes audience — only the exchange does.
+# to the k8s-mcp exchanger). Assign it through that client's optional_scopes.
+# The MCP server requests it via sts_scopes. Optional (not default), so normal
+# logins never get the kubernetes audience — only the exchange does.
 resource "keycloak_openid_client_scope" "k8s_cluster" {
   realm_id               = keycloak_realm.main.id
   name                   = "k8s-cluster"
@@ -70,64 +70,6 @@ resource "keycloak_openid_group_membership_protocol_mapper" "k8s_cluster_groups"
   add_to_id_token     = false
   add_to_access_token = true
   add_to_userinfo     = false
-}
-
-# Keep openwebui in its own normal access-token audience. The MCP server
-# validates the k8s-mcp audience, which the separate mapper below adds.
-resource "keycloak_openid_audience_protocol_mapper" "openwebui_self_audience" {
-  realm_id  = keycloak_realm.main.id
-  client_id = keycloak_openid_client.clients["openwebui"].id
-  name      = "self-audience"
-
-  included_custom_audience = "openwebui"
-  add_to_id_token          = false
-  add_to_access_token      = true
-}
-
-# Put the `k8s-mcp` client in openwebui's token audience so k8s-mcp (the STS
-# exchanger) is allowed to exchange a user's openwebui-issued token: Keycloak v2
-# standard exchange requires the requesting client to appear in the subject
-# token's `aud`. On openwebui's normal access tokens (harmless; k8s-mcp is a
-# confidential client the user can't drive directly).
-resource "keycloak_openid_audience_protocol_mapper" "openwebui_k8s_mcp_audience" {
-  realm_id  = keycloak_realm.main.id
-  client_id = keycloak_openid_client.clients["openwebui"].id
-  name      = "k8s-mcp-audience"
-
-  included_client_audience = keycloak_openid_client.clients["k8s-mcp"].client_id
-  add_to_id_token          = false
-  add_to_access_token      = true
-}
-
-# openwebui's built-in optional scopes (listed explicitly because this resource
-# manages the client's full optional-scope set). k8s-cluster is NOT here: the
-# exchange is performed by k8s-mcp, so the scope is assigned to that client below.
-resource "keycloak_openid_client_optional_scopes" "openwebui" {
-  realm_id  = keycloak_realm.main.id
-  client_id = keycloak_openid_client.clients["openwebui"].id
-
-  optional_scopes = [
-    "address",
-    "phone",
-    "offline_access",
-    "microprofile-jwt",
-  ]
-}
-
-# Assign k8s-cluster as an OPTIONAL scope to the k8s-mcp exchanger (requested
-# only during the exchange via the MCP server's sts_scopes). Built-in optional
-# scopes listed explicitly because this resource manages the full set.
-resource "keycloak_openid_client_optional_scopes" "k8s_mcp" {
-  realm_id  = keycloak_realm.main.id
-  client_id = keycloak_openid_client.clients["k8s-mcp"].id
-
-  optional_scopes = [
-    "address",
-    "phone",
-    "offline_access",
-    "microprofile-jwt",
-    keycloak_openid_client_scope.k8s_cluster.name,
-  ]
 }
 
 # Realm groups for downstream Kubernetes RBAC. Group membership alone grants

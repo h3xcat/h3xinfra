@@ -132,10 +132,61 @@ run "reject_self_audience" {
   expect_failures = [var.clients]
 }
 
-run "reject_optional_scopes_on_kubernetes_oidc_clients" {
-  command = plan
+run "openwebui_and_exchanger_use_generic_audiences_and_scopes" {
+  # Apply only to the mock provider so generated client IDs are known and
+  # the assertions can verify each mapper and scope assignment's client.
+  command = apply
   variables {
-    clients = [{ name = "openwebui", client_secret = "FAKE", redirect_uris = ["https://chat.example.com/cb"], optional_scopes = ["offline_access"] }]
+    clients = [
+      {
+        name                       = "openwebui"
+        access_type                = "PUBLIC"
+        pkce_code_challenge_method = "S256"
+        redirect_uris              = ["https://chat.example.com/oauth/oidc/callback"]
+        audiences                  = ["k8s-mcp"]
+        optional_scopes            = ["address", "phone", "offline_access", "microprofile-jwt"]
+      },
+      {
+        name                            = "k8s-mcp"
+        client_secret                   = "FAKE_EXCHANGER_SECRET"
+        pkce_code_challenge_method      = "S256"
+        redirect_uris                   = ["https://mcp.example.com/oauth2/callback"]
+        standard_token_exchange_enabled = true
+        optional_scopes                 = ["address", "phone", "offline_access", "microprofile-jwt", "k8s-cluster"]
+      },
+    ]
   }
-  expect_failures = [var.clients]
+  assert {
+    condition = (
+      keycloak_openid_client.clients["openwebui"].access_type == "PUBLIC" &&
+      keycloak_openid_client.clients["openwebui"].pkce_code_challenge_method == "S256" &&
+      var.clients[0].client_secret == null &&
+      keycloak_openid_client.clients["k8s-mcp"].access_type == "CONFIDENTIAL" &&
+      keycloak_openid_client.clients["k8s-mcp"].client_secret == "FAKE_EXCHANGER_SECRET" &&
+      keycloak_openid_client.clients["k8s-mcp"].pkce_code_challenge_method == "S256" &&
+      keycloak_openid_client.clients["k8s-mcp"].standard_token_exchange_enabled
+    )
+    error_message = "Open WebUI must keep public S256 login while MCP remains a confidential S256 token exchanger."
+  }
+  assert {
+    condition = (
+      keys(keycloak_openid_audience_protocol_mapper.client_audiences) == ["openwebui:k8s-mcp"] &&
+      keycloak_openid_audience_protocol_mapper.client_audiences["openwebui:k8s-mcp"].client_id == keycloak_openid_client.clients["openwebui"].id &&
+      keycloak_openid_audience_protocol_mapper.client_audiences["openwebui:k8s-mcp"].included_client_audience == "k8s-mcp" &&
+      keycloak_openid_audience_protocol_mapper.client_audiences["openwebui:k8s-mcp"].add_to_access_token &&
+      !keycloak_openid_audience_protocol_mapper.client_audiences["openwebui:k8s-mcp"].add_to_id_token
+    )
+    error_message = "Open WebUI access tokens must carry exactly the MCP audience through the generic mapper."
+  }
+  assert {
+    condition = (
+      toset(keys(keycloak_openid_client_optional_scopes.clients)) == toset(["openwebui", "k8s-mcp"]) &&
+      keycloak_openid_client_optional_scopes.clients["openwebui"].client_id == keycloak_openid_client.clients["openwebui"].id &&
+      keycloak_openid_client_optional_scopes.clients["k8s-mcp"].client_id == keycloak_openid_client.clients["k8s-mcp"].id &&
+      toset(keycloak_openid_client_optional_scopes.clients["openwebui"].optional_scopes) == toset(["address", "phone", "offline_access", "microprofile-jwt"]) &&
+      toset(keycloak_openid_client_optional_scopes.clients["k8s-mcp"].optional_scopes) == toset(["address", "phone", "offline_access", "microprofile-jwt", "k8s-cluster"]) &&
+      keycloak_openid_client_scope.k8s_cluster.name == "k8s-cluster"
+    )
+    error_message = "Both clients must retain their exact optional scopes, with k8s-cluster assigned only to the exchanger."
+  }
 }
