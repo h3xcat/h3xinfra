@@ -1,3 +1,5 @@
+# The shared h3xinfra-private/tests/helm suite checks resource budgets on the
+# rendered chart at the inventory pin, including init containers and certgen.
 resources:
   requests:
     cpu: 250m
@@ -29,6 +31,9 @@ cni:
       memory: 256Mi
       ephemeral-storage: 256Mi
 
+# This limit applies to each DaemonSet, not to the fleet: the Cilium and Envoy
+# controllers can update different nodes concurrently. Stage their updates
+# separately when maintenance requires a global one-node-at-a-time rollout.
 updateStrategy:
   type: RollingUpdate
   rollingUpdate:
@@ -49,6 +54,9 @@ envoy:
     rollingUpdate:
       maxUnavailable: 1
 
+# The chart names its ordinary (non-hook) certgen Job from a pod-spec checksum.
+# Changing these resources replaces that Job; --no-hooks does not suppress it.
+# Certgen reuses the existing CA with --ca-reuse-secret and can reissue leaves.
 certgen:
   resources:
     requests:

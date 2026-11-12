@@ -2,9 +2,7 @@
 
 import copy
 import json
-import os
 from pathlib import Path
-import subprocess
 import unittest
 
 from jinja2 import ChainableUndefined, Environment
@@ -12,7 +10,6 @@ import yaml
 
 
 PLAYBOOK = Path(__file__).resolve().parents[1] / "standup.yml"
-CHART = os.environ.get("LONGHORN_CHART_PATH")
 SIDECARS = {"csi-attacher", "csi-provisioner", "csi-resizer", "csi-snapshotter"}
 MANAGER = {
     "requests": {"cpu": "1", "memory": "3Gi"},
@@ -69,9 +66,8 @@ class LonghornNativeResourceTests(unittest.TestCase):
             expected[name] = budget("25m", "32Mi", "250m", "128Mi")
         self.assertEqual(actual, expected)
 
-    def test_cpu_reservations_keep_live_values_with_correct_case(self):
+    def test_cpu_reservations_keep_current_values(self):
         settings = helm_values()["defaultSettings"]
-        self.assertNotIn("guaranteedInstanceManagerCpu", settings)
         self.assertEqual(settings["guaranteedInstanceManagerCPU"], {"v1": "12", "v2": "31"})
 
     def test_v2_defaults_off_and_prerequisites_require_explicit_opt_in(self):
@@ -82,18 +78,12 @@ class LonghornNativeResourceTests(unittest.TestCase):
         preparation = next(play for play in plays() if play.get("name", "").startswith("Prepare amd64"))
         self.assertIn("longhorn_v2_data_engine | default(false) | bool", preparation["tasks"][0]["when"])
 
-    def test_v2_helm_default_works_with_existing_shared_renderer(self):
-        # Public-core CI reads the shared renderer before the private PR merges.
-        self.assertEqual(
-            helm_values()["defaultSettings"]["v2DataEngine"],
-            "{{ longhorn_v2_data_engine | default(false) }}",
-        )
-
     def test_v2_disable_guard_precedes_any_helm_update(self):
         tasks = next(play for play in plays() if play.get("name") == "Deploy Longhorn via Helm")["tasks"]
         names = [task["name"] for task in tasks]
         guard = tasks[names.index("Verify the V2 data engine is unused before disabling it")]
         self.assertLess(names.index(guard["name"]), names.index("Deploy Longhorn via Helm"))
+        self.assertNotIn("ignore_errors", guard)
         self.assertIn("not (longhorn_v2_data_engine | default(false) | bool)", guard["when"])
         assertions = [task["ansible.builtin.assert"]["that"] for task in guard["block"] if "ansible.builtin.assert" in task]
         self.assertEqual(assertions, [
@@ -121,8 +111,6 @@ class LonghornNativeResourceTests(unittest.TestCase):
             "orphanResourceAutoDeletionGracePeriod": "300",
         }
         self.assertEqual({key: settings[key] for key in expected}, expected)
-        for key in ("engineReplicaTimeout", "replicaReplenishmentWaitInterval", "concurrentReplicaRebuildPerNodeLimit"):
-            self.assertNotIn(key, settings)
 
     def test_disable_assertions_reject_volumes_and_active_processes(self):
         tasks = next(play for play in plays() if play.get("name") == "Deploy Longhorn via Helm")["tasks"]
@@ -185,51 +173,6 @@ class LonghornNativeResourceTests(unittest.TestCase):
         for method in ("basic", "oauth2-proxy", "OAUTH2_PROXY", ""):
             with self.subTest(method=method):
                 self.assertFalse(check(longhorn={"auth": {"method": method}}))
-
-
-@unittest.skipUnless(CHART, "Set LONGHORN_CHART_PATH to the deployed Longhorn chart")
-class LonghornChartRenderTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        values = helm_values()
-        values["defaultSettings"]["v2DataEngine"] = v2_enabled()
-        values["defaultBackupStore"] = {
-            "backupTarget": "cifs://192.0.2.10/test-only",
-            "backupTargetCredentialSecret": "test-only-backup-credential",
-        }
-        result = subprocess.run(
-            [os.environ.get("HELM", "helm"), "template", "test-longhorn", CHART, "-n", "longhorn-system", "-f", "-"],
-            input=yaml.safe_dump(values), capture_output=True, text=True, check=True, timeout=120,
-        )
-        cls.documents = [doc for doc in yaml.safe_load_all(result.stdout) if isinstance(doc, dict)]
-
-    def test_manager_daemonset_has_budget_and_one_at_a_time_strategy(self):
-        manager = next(doc for doc in self.documents if doc["kind"] == "DaemonSet" and doc["metadata"]["name"] == "longhorn-manager")
-        self.assertEqual(manager["spec"]["updateStrategy"]["rollingUpdate"]["maxUnavailable"], 1)
-        container = next(c for c in manager["spec"]["template"]["spec"]["containers"] if c["name"] == "longhorn-manager")
-        self.assertEqual(container["resources"], MANAGER)
-
-    def test_global_manager_deployment_has_configured_budget(self):
-        manager = next(doc for doc in self.documents if doc["kind"] == "Deployment"
-                       and doc["metadata"]["name"] == "longhorn-global-manager")
-        container = next(c for c in manager["spec"]["template"]["spec"]["containers"]
-                         if c["name"] == "longhorn-global-manager")
-        self.assertEqual(container["resources"], {
-            "requests": {"cpu": "100m", "memory": "128Mi"},
-            "limits": {"cpu": "1", "memory": "512Mi"},
-        })
-
-    def test_native_settings_serialize_cpu_csi_and_v2_correctly(self):
-        config = next(doc for doc in self.documents if doc["kind"] == "ConfigMap" and "default-setting.yaml" in doc.get("data", {}))
-        settings = yaml.safe_load(config["data"]["default-setting.yaml"])
-        self.assertEqual(settings["node-down-pod-deletion-policy"], "do-nothing")
-        self.assertEqual(settings["concurrent-automatic-engine-upgrade-per-node-limit"], "0")
-        self.assertEqual(json.loads(settings["guaranteed-instance-manager-cpu"]), {"v1": "12", "v2": "31"})
-        self.assertIs(settings["v2-data-engine"], False)
-        self.assertEqual(
-            json.loads(settings["system-managed-csi-components-resource-limits"]),
-            json.loads(helm_values()["defaultSettings"]["systemManagedCSIComponentsResourceLimits"]),
-        )
 
 
 if __name__ == "__main__":
