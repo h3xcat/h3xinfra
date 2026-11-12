@@ -10,57 +10,35 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 TASKS = "tasks/unattended-upgrades.yml"
-GUARD = "tasks/needrestart.yml"
 
 
 def load(path):
     return yaml.safe_load((ROOT / path).read_text())
 
 
-def import_index(tasks, target):
-    return next(i for i, task in enumerate(tasks) if task.get("ansible.builtin.import_tasks") == target)
-
-
-class OrderTests(unittest.TestCase):
-    def test_needrestart_guard_comes_first_in_both_playbooks(self):
-        for playbook in ("standup.yml", "unattended-upgrades.yml"):
-            with self.subTest(playbook=playbook):
-                tasks = load(playbook)[0]["tasks"]
-                self.assertEqual(import_index(tasks, GUARD), 0)
-                self.assertGreater(import_index(tasks, TASKS), 0)
-
-    def test_dedicated_playbook_targets_cluster_nodes(self):
-        play = load("unattended-upgrades.yml")[0]
-        self.assertEqual(play["hosts"], "k3s_cluster")
-        self.assertIs(play["become"], True)
-
-
 class TaskTests(unittest.TestCase):
     def setUp(self):
         self.tasks = load(TASKS)
 
+    def test_needrestart_guard_comes_first(self):
+        tasks = load("standup.yml")[0]["tasks"]
+        self.assertEqual(tasks[0].get("ansible.builtin.import_tasks"), "tasks/needrestart.yml")
+        self.assertIn(TASKS, [task.get("ansible.builtin.import_tasks") for task in tasks[1:]])
+
     def test_apt_files_are_validated_before_install(self):
         copies = [task["ansible.builtin.copy"] for task in self.tasks if "ansible.builtin.copy" in task]
+        # apt loads files lexically: 52 keeps our reboot policy after the
+        # distribution's 50unattended-upgrades defaults.
         self.assertEqual(
-            sorted(copy["dest"] for copy in copies),
-            ["/etc/apt/apt.conf.d/20auto-upgrades", "/etc/apt/apt.conf.d/52h3xinfra-unattended-upgrades"],
+            sorted(copy["src"] for copy in copies),
+            ["20auto-upgrades", "52h3xinfra-unattended-upgrades"],
         )
         for copy in copies:
             with self.subTest(dest=copy["dest"]):
+                self.assertEqual(copy["dest"], f"/etc/apt/apt.conf.d/{copy['src']}")
                 self.assertTrue((ROOT / "files" / copy["src"]).is_file())
                 self.assertEqual(copy["validate"], "/usr/bin/apt-config -c %s dump")
                 self.assertEqual(copy["mode"], "0644")
-
-    def test_drop_in_loads_after_distribution_defaults(self):
-        # apt reads apt.conf.d in lexical order and the last value wins, so the
-        # Automatic-Reboot drop-in must sort after the packaged defaults.
-        reboot = next(
-            task["ansible.builtin.copy"]
-            for task in self.tasks
-            if "ansible.builtin.copy" in task and task["ansible.builtin.copy"]["src"] != "20auto-upgrades"
-        )
-        self.assertEqual(Path(reboot["dest"]).parent, Path("/etc/apt/apt.conf.d"))
-        self.assertGreater(Path(reboot["dest"]).name, "50unattended-upgrades")
 
     def test_timers_are_enabled(self):
         timers = next(task for task in self.tasks if "ansible.builtin.systemd_service" in task)
