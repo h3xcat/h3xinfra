@@ -1,4 +1,3 @@
-{{- if .Values.recurringJobs.enabled }}
 {{- range .Values.recurringJobs.jobs }}
 ---
 # Longhorn RecurringJob: scheduled snapshot or backup task.
@@ -28,5 +27,4 @@ spec:
   labels:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-{{- end }}
 {{- end }}

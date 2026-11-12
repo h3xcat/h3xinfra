@@ -420,8 +420,6 @@
               clientSecret: "{{ longhorn.auth.oauth2_proxy.client_secret | default('') }}"
               secretRef:
                 name: "{{ longhorn.release_name_prefix }}-oidc"
-          recurringJobs:
-            enabled: "{{ longhorn.recurring_jobs.enabled | default(false) }}"
         set_values:
           # `jobs` is a list of dicts; pass through to_json so Helm gets
           # native YAML/JSON instead of an Ansible-stringified list.

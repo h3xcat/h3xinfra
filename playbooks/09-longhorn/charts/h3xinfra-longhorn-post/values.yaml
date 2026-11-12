@@ -25,30 +25,18 @@ longhornIngress:
     issuerUrl: ""
     clientId: ""
     clientSecret: ""
-    scopes:
-      - openid
-      - email
-      - profile
     secretRef:
       name: ""
 
-# Longhorn RecurringJob CRs (scheduled snapshots / backups). Set
-# `enabled: true` and provide one or more `jobs` to render.
+# Longhorn RecurringJob CRs (scheduled snapshots / backups). Each entry in
+# `jobs` renders a RecurringJob; an empty list renders none.
 #
 # Volumes opt in via the `recurring-job-group.longhorn.io/<group>=enabled`
 # label; the upstream longhorn chart applies the `default` group label
 # to every PVC provisioned by the `longhorn` StorageClass, so jobs
 # targeting `groups: ["default"]` apply to the whole fleet automatically.
 recurringJobs:
-  enabled: false
   jobs: []
-
-# StorageClass for V2 (SPDK) data engine volumes; see
-# templates/storageclass-v2.yaml. Volumes only schedule once block-type
-# disks exist on the amd64 servers.
-v2StorageClass:
-  enabled: true
-  name: longhorn-v2
   # Example:
   # jobs:
   #   - name: daily-snapshot
@@ -63,6 +51,13 @@ v2StorageClass:
   #     retain: 8
   #     concurrency: 1
   #     groups: ["default"]
+
+# StorageClass for V2 (SPDK) data engine volumes; see
+# templates/storageclass-v2.yaml. Volumes only schedule once block-type
+# disks exist on the amd64 servers.
+v2StorageClass:
+  enabled: true
+  name: longhorn-v2
 
 # NetworkPolicy that lets Prometheus scrape longhorn-manager metrics (:9500);
 # pairs with `metrics.serviceMonitor.enabled` on the upstream chart. See

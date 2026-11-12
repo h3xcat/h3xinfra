@@ -39,9 +39,9 @@ spec:
     redirectURL: {{ printf "https://%s/oauth2/callback" .Values.longhornIngress.host | quote }}
     logoutPath: "/oauth2/sign_out"
     scopes:
-      {{- range .Values.longhornIngress.oidc.scopes | default (list "openid" "email" "profile") }}
-      - {{ . | quote }}
-      {{- end }}
+      - openid
+      - email
+      - profile
   {{- end }}
 {{- if and .Values.longhornIngress.oidc.enabled .Values.longhornIngress.oidc.clientSecret .Values.longhornIngress.oidc.secretRef.name }}
 ---
