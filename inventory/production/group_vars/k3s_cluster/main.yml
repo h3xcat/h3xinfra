@@ -28,6 +28,8 @@ server_config_yaml: |
   disable:
   - servicelb
   - traefik
+  # Retire only after the 01-k3s local-storage consumer/recovery checks.
+  - local-storage
   kube-apiserver-arg:
   - "anonymous-auth=true"
   - "enable-aggregator-routing=true"

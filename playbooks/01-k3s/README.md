@@ -1,3 +1,12 @@
+# Packaged local storage
+
+Both inventories disable K3s's bundled `local-storage` component. On an existing
+cluster this uninstalls the local-path provisioner and its StorageClass; it is
+an attended storage/control-plane change. Complete the
+[consumer checks, serial rollout and recovery procedure](LOCAL-STORAGE.md)
+before deploying `01-k3s`. The `04-health` chart, PSA labels and explicit
+`GET /livez` grant/check remain in place.
+
 # Local Kubelet Watchdog
 
 `kubelet-watchdog.yml` installs a 30-second systemd timer on cluster nodes. The
