@@ -4,7 +4,7 @@
   gather_facts: false
   tasks:
     - name: Get node status
-      ansible.builtin.shell: kubectl get nodes -o wide
+      ansible.builtin.command: kubectl get nodes -o wide
       register: nodes_status
       changed_when: false
       delegate_to: localhost
@@ -14,7 +14,7 @@
         var: nodes_status.stdout_lines
         
     - name: Get deployed pods
-      ansible.builtin.shell: kubectl get pods -A
+      ansible.builtin.command: kubectl get pods -A
       register: pods_status
       changed_when: false
       delegate_to: localhost
@@ -24,7 +24,7 @@
         var: pods_status.stdout_lines
         
     - name: Get services
-      ansible.builtin.shell: kubectl get services -A
+      ansible.builtin.command: kubectl get services -A
       register: services_status
       changed_when: false
       delegate_to: localhost

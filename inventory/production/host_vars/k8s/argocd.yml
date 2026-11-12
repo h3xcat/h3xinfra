@@ -1,7 +1,5 @@
 ---
 argocd:
-  # Enable after provisioning the Keycloak client described in the layer README.
-  enabled: false
   namespace: argocd
   release_name_prefix: h3xinfra-argocd
   hostname: "argocd.app.{{ domain_name }}"
