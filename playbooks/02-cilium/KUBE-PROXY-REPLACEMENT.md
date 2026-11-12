@@ -25,8 +25,14 @@ The address must meet these conditions:
 - The API server certificate is valid for it. Add a name to `tls-san` if
   necessary.
 
-Do not use `127.0.0.1:6444`. The K3s agent load balancer listens there on
-agent nodes only. K3s servers that run the API server do not start it.
+K3s servers normally also run the embedded agent. Its local client load
+balancer defaults to port `6444`; when the supervisor and API server are
+colocated, `127.0.0.1:6444` avoids an external DNS or load-balancer dependency.
+See the [K3s agent options](https://docs.k3s.io/cli/agent#node).
+Before selecting it, verify the listener and API certificate on every node,
+and set `k8s_service_port: 6444` explicitly. Agentless servers and a disabled
+client load balancer need another address. The staged migration below is
+still required; changing this guidance does not disable kube-proxy.
 
 `playbooks/01-k3s/kube-proxy-preflight.yml` stops `01-k3s/standup.yml` if
 the K3s configuration disables kube-proxy and `cilium.k8s_service_host` is
