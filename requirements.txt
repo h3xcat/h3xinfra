@@ -3,6 +3,5 @@
 # (`pip3 install -r requirements.txt`); tracked by Renovate (pip_requirements).
 # Pinned to the versions the devcontainer was last verified with.
 kubernetes==37.0.2
-ruamel.yaml==0.19.1
 # netaddr backs ansible.utils.ipwrap, used by k3s.orchestration on the controller.
 netaddr==1.3.0

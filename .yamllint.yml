@@ -1,11 +1,6 @@
-# Mirrors tests/ansible/yamllint.yml in h3xinfra-private (keep the two in sync).
-# It exists so ansible-lint / yamllint run standalone in this repo: ansible-lint
-# reads .yamllint.yml automatically and aborts on an empty one ("invalid
-# config: not a mapping").
-# yamllint config for the h3xinfra test suite (tests/ansible/run.sh).
-# Goal: fail only on real breakage (YAML syntax errors, duplicate keys) and keep
-# the existing baseline (~280 findings) as warnings: yamllint exits 0 on
-# warnings unless --strict. Tighten rule-by-rule as files are cleaned up.
+# Shared yamllint configuration for public and private repository checks.
+# The private test harness uses this file from its public submodule.
+# Syntax errors and duplicate keys fail; existing style issues warn.
 extends: relaxed
 
 ignore: |
