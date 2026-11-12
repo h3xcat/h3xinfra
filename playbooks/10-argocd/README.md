@@ -19,9 +19,8 @@ This layer requires these items:
 Provision native Keycloak OIDC before you enable the layer. Dex is disabled.
 
 Argo CD uses a public OIDC client with PKCE S256 for browser login and for CLI login.
-An OIDC client secret is not necessary. The example disables stack deployment
-until you set `argocd.enabled: true`. A direct layer deployment validates the
-configuration, independently of that stack toggle.
+An OIDC client secret is not necessary. Deploy this layer directly after
+provisioning Keycloak. The layer validates its configuration before deployment.
 
 To configure the layer, do these steps:
 
@@ -87,10 +86,10 @@ kubectl -n argocd get pods,httproutes,networkpolicies
 argocd login argocd.app.example.com --sso --grpc-web --skip-test-tls
 ```
 
-The public stack imports this layer conditionally. A downstream stack that
-imports individual public layers must add this play after `10-keycloak`.
-The public stack does not provision Keycloak. On the first bootstrap, deploy
-Keycloak and its client before you opt in to Argo CD.
+The public stack and `h3xinfra-deploy-stack` do not deploy Argo CD or Keycloak.
+Previously, `argocd.enabled: true` added Argo CD to the public stack; that toggle
+has been removed. Use the direct layer commands above, or add this play after
+`10-keycloak` in a downstream stack.
 
 Do these checks:
 

@@ -15,7 +15,7 @@ This project gives Ansible playbooks and configurations to deploy and manage a 3
 - Longhorn for persistent storage with CIFS backup
 - Mailu for self-hosted email services
 - Keycloak for identity and access management
-- Argo CD for GitOps delivery with native Keycloak SSO (opt-in)
+- Argo CD for GitOps delivery with native Keycloak SSO (deployed separately)
 - Automatic server preparation and updates
 
 ## Documentation
@@ -50,7 +50,7 @@ This project gives Ansible playbooks and configurations to deploy and manage a 3
 │   ├── 09-longhorn/       # Longhorn storage system
 │   ├── 10-mailu/          # Self-hosted email server
 │   ├── 10-keycloak/       # Keycloak identity provider (Operator + CNPG)
-│   ├── 10-argocd/         # Argo CD with native Keycloak SSO (opt-in)
+│   ├── 10-argocd/         # Argo CD with native Keycloak SSO (separate deployment)
 │   └── 99-utils/          # Utility playbooks
 └── README.md              # This file
 ```
@@ -95,6 +95,16 @@ See the [Operations Guide](docs/operations.md) for detailed maintenance procedur
 - A correctly configured inventory in `inventory/production/` (see `inventory/README.md`)
 - A DNS provider API token (for example, Cloudflare) for automatic DNS management
 - An Ansible Vault password file for encrypted secrets
+
+Kubernetes playbooks prepare `~/.kube/config`, which the private Terraform
+providers also use. `KUBECONFIG` and `K8S_AUTH_KUBECONFIG` must be unset or name
+that exact absolute file; file lists and other paths are rejected. Separate
+context overrides are also rejected before connection setup. To use the
+configured current context, run:
+
+```bash
+unset KUBECONFIG K8S_AUTH_KUBECONFIG K8S_AUTH_CONTEXT HELM_KUBECONTEXT
+```
 
 ## Development Environment
 

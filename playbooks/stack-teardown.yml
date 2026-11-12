@@ -8,14 +8,6 @@
 - name: Require confirmation before teardown
   import_playbook: 99-utils/confirm-destroy.yml
 
-- name: Prepare for Kubernetes teardown
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Inform about teardown process
-      ansible.builtin.debug:
-        msg: "Starting K3s cluster teardown process..."
-
 - name: Check if kubectl is accessible
   hosts: localhost
   gather_facts: false
@@ -31,14 +23,6 @@
       ansible.builtin.set_fact:
         kubectl_accessible: "{{ kubectl_result.rc == 0 }}"
       
-    - name: Show kubectl status
-      ansible.builtin.debug:
-        msg: "kubectl accessibility status: {{ kubectl_accessible }}"
-
-# Single kubectl connection setup for components that need kubernetes
-- import_playbook: 99-utils/kube-connect.yml
-  when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
-
 - import_playbook: 10-mailu/teardown.yml
   when: hostvars['localhost']['kubectl_accessible'] | default(false) | bool
 
