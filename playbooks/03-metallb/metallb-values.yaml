@@ -5,8 +5,6 @@
 # pinned chart, including the FRR-K8s init containers and status-cleaner.
 
 controller:
-  enabled: true
-  logLevel: info
   resources:
     requests:
       cpu: 100m
@@ -18,8 +16,6 @@ controller:
       ephemeral-storage: 256Mi
 
 speaker:
-  enabled: true
-  logLevel: info
   resources:
     requests:
       cpu: 100m
@@ -31,14 +27,6 @@ speaker:
       ephemeral-storage: 256Mi
   frr:
     enabled: false
-  # Enable IPv6 support in the speaker component
-  tolerateMaster: true
-  nodeSelector: {}
-  affinity: {}
-  # Allow IPv6 traffic through MetalLB
-  extraEnv:
-    - name: METALLB_ML_BIND_DUAL_STACK
-      value: "true"
 
 frr-k8s:
   frrk8s:
@@ -136,13 +124,6 @@ frr-k8s:
             cpu: 100m
             memory: 64Mi
             ephemeral-storage: 64Mi
-
-rbac:
-  create: true
-
-# Enable CRDs - MetalLB now uses custom resources instead of configInline
-crds:
-  enabled: true
 
 # configInline is removed as it's deprecated
 # Configuration will be applied using separate IPAddressPool and L2Advertisement/BGPAdvertisement CRs
