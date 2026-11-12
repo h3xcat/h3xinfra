@@ -5,6 +5,103 @@
 
 - import_playbook: ../99-utils/kube-connect.yml
 
+# The upstream manifests include cluster-scoped CRDs and RBAC. Refuse shared
+# installations before destroying the realm or either Helm release. Keep other
+# operators/GitOps writers paused from this preflight until teardown completes.
+- name: Verify exclusive ownership of the Keycloak Operator resources
+  hosts: k8s
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    keycloak_operator_roles:
+      - keycloak-operator-clusterrole
+      - keycloakrealmimportcontroller-cluster-role
+      - keycloaksamlclientcontroller-cluster-role
+      - keycloakcontroller-cluster-role
+      - keycloakoidcclientcontroller-cluster-role
+
+  tasks:
+    - name: Discover installed Keycloak CRDs
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: "{{ item }}"
+      loop:
+        - keycloaks.k8s.keycloak.org
+        - keycloakrealmimports.k8s.keycloak.org
+        - keycloakoidcclients.k8s.keycloak.org
+        - keycloaksamlclients.k8s.keycloak.org
+      register: kc_crd_definitions
+
+    - name: Require successful CRD discovery
+      ansible.builtin.assert:
+        that: item.api_found | default(false)
+        fail_msg: Cannot verify Keycloak CRD ownership; teardown has not started.
+      loop: "{{ kc_crd_definitions.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Inspect Keycloak custom resources across all namespaces
+      kubernetes.core.k8s_info:
+        api_version: "{{ item.spec.group }}/{{ (item.spec.versions | selectattr('storage') | first).name }}"
+        kind: "{{ item.spec.names.kind }}"
+      loop: "{{ kc_crd_definitions.results | map(attribute='resources') | flatten }}"
+      register: kc_custom_resources
+      no_log: true
+
+    - name: Require successful custom resource discovery
+      ansible.builtin.assert:
+        that: item.api_found | default(false)
+        fail_msg: Cannot inspect an installed Keycloak API; teardown has not started.
+      loop: "{{ kc_custom_resources.results }}"
+      no_log: true
+
+    - name: Refuse custom resources outside the main Helm release
+      ansible.builtin.assert:
+        that:
+          - item.kind == 'Keycloak'
+          - item.metadata.namespace == keycloak.namespace
+          - item.metadata.name == ((keycloak.release_name_prefix + '-main')[:63]).rstrip('-')
+          - (item.metadata.annotations | default({})).get('meta.helm.sh/release-name') == keycloak.release_name_prefix + '-main'
+          - (item.metadata.annotations | default({})).get('meta.helm.sh/release-namespace') == keycloak.namespace
+        fail_msg: >-
+          Keycloak CRDs have other consumers. Remove or migrate them with their
+          owner while the operator is running; teardown has not started.
+      loop: "{{ kc_custom_resources.results | map(attribute='resources') | flatten }}"
+      no_log: true
+
+    - name: Inspect consumers of the shared operator roles
+      kubernetes.core.k8s_info:
+        api_version: rbac.authorization.k8s.io/v1
+        kind: "{{ item }}"
+      loop: [RoleBinding, ClusterRoleBinding]
+      register: kc_role_bindings
+
+    - name: Require successful RBAC discovery
+      ansible.builtin.assert:
+        that: item.api_found | default(false)
+        fail_msg: Cannot verify shared Keycloak RBAC consumers; teardown has not started.
+      loop: "{{ kc_role_bindings.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Refuse shared operator RBAC consumers
+      ansible.builtin.assert:
+        that:
+          - >-
+            (item.kind == 'RoleBinding' and item.metadata.namespace == keycloak.namespace)
+            or (item.kind == 'ClusterRoleBinding' and item.metadata.name == 'keycloak-operator-clusterrole-binding')
+          - >-
+            item.subjects | default([]) == [{'kind': 'ServiceAccount', 'name': 'keycloak-operator', 'namespace': keycloak.namespace}]
+            or (item.kind == 'RoleBinding' and item.subjects | default([]) == [{'kind': 'ServiceAccount', 'name': 'keycloak-operator'}])
+        fail_msg: Shared Keycloak operator roles have other consumers; teardown has not started.
+      loop: >-
+        {{ kc_role_bindings.results | map(attribute='resources') | flatten
+           | selectattr('roleRef.kind', 'equalto', 'ClusterRole')
+           | selectattr('roleRef.name', 'in', keycloak_operator_roles) | list }}
+      loop_control:
+        label: "{{ item.kind }}/{{ item.metadata.name }}"
+
 # -----------------------------------------------------------------------------
 # Phase 1: Destroy Terraform-managed realm configuration before removing
 # Keycloak itself, so the provider can still reach the admin API.
@@ -12,6 +109,7 @@
 - name: Destroy Keycloak Terraform configuration
   hosts: k8s
   gather_facts: false
+  any_errors_fatal: true
   vars:
     terraform_dir: "{{ playbook_dir }}/terraform"
 
@@ -48,7 +146,6 @@
         variables_files:
         - "{{ terraform_dir }}/terraform.tfvars.json"
       when: tfstate_file.stat.exists
-      failed_when: false
 
 # -----------------------------------------------------------------------------
 # Phase 2: Remove the Helm releases (Keycloak CR + CNPG Cluster), the
@@ -57,6 +154,7 @@
 - name: Remove Keycloak via Helm
   hosts: k8s
   gather_facts: false
+  any_errors_fatal: true
 
   tasks:
     - name: Uninstall Keycloak main Helm release
@@ -75,21 +173,19 @@
         wait: true
         timeout: "300s"
 
-    # CNPG provisions one PVC per instance and does not delete them when
-    # the Cluster CR goes away (data-protection default). The Helm
-    # uninstall above removes the Cluster CR; we follow with an explicit
-    # PVC sweep before namespace deletion.
-    - name: Delete leftover CNPG PVCs
-      kubernetes.core.k8s:
-        api_version: v1
-        kind: PersistentVolumeClaim
-        namespace: "{{ keycloak.namespace }}"
-        name: "{{ item }}"
-        state: absent
-        wait: true
-        wait_timeout: 120
-      loop: "{{ range(1, (keycloak.postgresql.instances | default(2)) + 1) | map('regex_replace', '^(.+)$', keycloak.release_name_prefix + '-pre-postgres-\\1') | list }}"
-      failed_when: false
+    # Let the operator finish any CR finalizers before removing it. Also catch
+    # new consumers created since preflight; never strip finalizers to proceed.
+    - name: Wait for all Keycloak custom resources to disappear
+      kubernetes.core.k8s_info:
+        api_version: "{{ item.spec.group }}/{{ (item.spec.versions | selectattr('storage') | first).name }}"
+        kind: "{{ item.spec.names.kind }}"
+      loop: "{{ kc_crd_definitions.results | map(attribute='resources') | flatten }}"
+      register: kc_remaining_resources
+      until: (kc_remaining_resources.api_found | default(false)) and (kc_remaining_resources.resources | length == 0)
+      retries: 60
+      delay: 5
+      no_log: true
+      when: not ansible_check_mode
 
     - name: Remove Keycloak Operator manifests
       ansible.builtin.command:
@@ -101,6 +197,8 @@
       loop:
       # Reverse order from standup: operator deployment first, then CRDs.
       - kubernetes.yml
+      - keycloaksamlclients.k8s.keycloak.org-v1.yml
+      - keycloakoidcclients.k8s.keycloak.org-v1.yml
       - keycloakrealmimports.k8s.keycloak.org-v1.yml
       - keycloaks.k8s.keycloak.org-v1.yml
 

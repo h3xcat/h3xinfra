@@ -63,11 +63,49 @@ The standup playbook does these steps:
 ### Teardown (`ansible-playbook playbooks/10-keycloak/teardown.yml -e confirm_destroy=yes-destroy-data`)
 
 The playbook stops at the start unless you give
-`-e confirm_destroy=yes-destroy-data`. The teardown deletes the realm, the
-CNPG PVCs, and the namespace. You cannot recover this data.
+`-e confirm_destroy=yes-destroy-data`. It destroys the realm, the Helm releases,
+the operator, all four Keycloak CRDs and the namespace, including its PVCs.
+Back up the database and Terraform state, and verify recovery before proceeding.
+CNPG gives its PVCs a Cluster owner reference, so deleting the Cluster normally
+garbage-collects them; namespace deletion also removes remaining PVCs. Actual
+volume deletion depends on the PV reclaim policy and storage backend. There is
+no name-based PVC sweep or change to retention settings. The shared CNPG
+operator and its CRDs are outside this teardown.
 
-The teardown playbook removes the items in reverse order: `terraform destroy` → main Helm release → pre Helm
-release → namespace.
+The upstream Keycloak manifests include cluster-wide roles and CRDs. Teardown
+first checks all namespaces and refuses other custom resources or bindings
+that use those roles. Only the main release's Helm-owned Keycloak CR is allowed;
+realm-import, OIDC-client and SAML-client CRs must be removed or migrated by their
+owner while the operator is still running. Unavailable APIs and access errors stop the run.
+An already-absent CRD is allowed. These checks require cluster-wide list access
+to the four custom resource kinds and to RoleBindings and ClusterRoleBindings.
+In `--check` mode, ownership checks still run, but Helm only predicts deletion;
+the subsequent CR cleanup wait is skipped. A check-mode run cannot prove cleanup
+or finalizer completion.
+
+Before an owner-approved teardown:
+
+1. Verify backups, state location, target namespace and release prefix. Inventory
+   every consumer of the Keycloak operator/CRDs/RBAC, including empty operator
+   installations. Pause GitOps and other writers for the entire maintenance
+   window; the preflight cannot prevent a concurrent resource creation.
+2. Resolve any shared ownership first. Do not bypass a failed preflight or remove
+   client finalizers: the operator must finish their cleanup.
+3. Run the confirmed teardown in that window. Terraform failure stops the run
+   while Keycloak is still available. After Helm removes the CRs, teardown waits
+   for all four kinds to be empty before removing the operator and CRDs, then
+   removes the namespace. Missing resources remain safe to rerun.
+4. On failure, keep writers paused and inspect the failed stage. If Terraform or
+   CR cleanup failed, restore operator/API availability and resolve that cause
+   before retrying. After namespace/storage deletion, reinstalling manifests
+   does not restore data: recovery requires the verified database/state backups.
+
+The ownership and PVC behavior above was checked against the pinned
+[Keycloak 26.8.2 operator manifests](https://github.com/keycloak/keycloak-k8s-resources/blob/26.8.2/kubernetes/kubernetes.yml)
+and [CNPG 1.30.1 PVC ownership code](https://github.com/cloudnative-pg/cloudnative-pg/blob/v1.30.1/api/v1/cluster_funcs.go#L1315-L1320)
+([CNPG chart 0.29.1](https://github.com/cloudnative-pg/charts/blob/cloudnative-pg-v0.29.1/charts/cloudnative-pg/Chart.yaml)).
+Source checks and synthetic tests do not validate a live teardown or backup restore.
+Recheck the upstream resource set and these ownership guards when upgrading the operator pin.
 
 ## Configuration
 
