@@ -10,19 +10,13 @@ with the inventory.
 
 ```
 10-keycloak/
-├── standup.yml                       # Installs Operator, deploys CRs, runs terraform apply
-├── teardown.yml                      # Runs terraform destroy + removes Helm releases
+├── standup.yml                      # Installs Operator, deploys CRs, runs terraform apply
+├── teardown.yml                     # Runs terraform destroy + removes Helm releases
 ├── charts/
-│   ├── h3xinfra-keycloak-pre/        # Bootstrap admin Secret, CNPG Cluster, HTTPRoute with named rules
-│   └── h3xinfra-keycloak-main/       # Renders the Keycloak CR (+ PDB) consumed by the Operator
-└── terraform/
-    ├── providers.tf                  # keycloak/keycloak provider
-    ├── variables.tf
-    ├── realm.tf                      # Single realm, SMTP settings
-    ├── clients.tf                    # OIDC clients from inventory.clients[]
-    ├── groups.tf                     # Realm groups, client-role mappings, memberships
-    ├── outputs.tf
-    └── .gitignore                    # Ignores state + rendered tfvars
+│   ├── h3xinfra-keycloak-pre/        # Bootstrap Secrets, CNPG Cluster, HTTPRoute/SecurityPolicy
+│   └── h3xinfra-keycloak-main/       # Keycloak CR, chart-owned PDB, optional Cilium policies
+├── terraform/                      # Realm, clients, groups and MFA; backend.tf points to NAS state
+└── tests/                          # Mocked Terraform groups and rendered CNPG affinity checks
 ```
 
 ## Deployment flow
@@ -40,8 +34,8 @@ The standup playbook does these steps:
      admin username/password. The Keycloak CR uses this Secret through
      `spec.bootstrapAdmin.user.secret`.
    - A **CloudNativePG `Cluster`** (`postgresql.cnpg.io/v1`). It is the backend of Keycloak.
-     It replaces the previous single-pod Bitnami subchart, so a node failure
-     does not stop auth. Keycloak connects through the CNPG-rendered
+     Its primary and standby use required pod anti-affinity by default, so
+     they stay on different nodes. Keycloak connects through the CNPG-rendered
      `<cluster>-rw` Service. This Service always points to the current primary.
    - One `HTTPRoute` (Gateway API) with named rules. It attaches only to the
      shared Envoy Gateway HTTPS listener. These are the rules:
@@ -50,14 +44,16 @@ The standup playbook does these steps:
      - **Admin**: `/admin/`, `/metrics`, `/health` — a
        `SecurityPolicy` (`authorization.principal.clientCIDRs`) restricts these paths.
        The values of the policy come from `keycloak.ingress.trusted_setup_ips`. The policy targets only the
-       `admin` rule. An empty allowlist denies admin access. This configuration requires
-       Envoy Gateway 1.9 rule-level policy attachment (the pinned version).
+       `admin` rule using Envoy Gateway's rule-level policy attachment.
+       An empty allowlist denies admin access.
 3. **Main chart** (`h3xinfra-keycloak-main`) renders a `Keycloak` CR
    (`k8s.keycloak.org/v2alpha1`). The Operator reconciles the CR into these items:
-   a StatefulSet, a Service, pod anti-affinity, JGroups KUBE_PING discovery
-   for the Infinispan distributed cache, and rolling upgrades. The chart
-   also renders a `PodDisruptionBudget` with `minAvailable: 1`. The
-   Operator does not render one.
+   a StatefulSet, a Service, soft topology spread constraints across nodes
+   and zones (`ScheduleAnyway`), JGroups KUBE_PING discovery for the
+   Infinispan distributed cache, and rolling upgrades. The spread constraints
+   allow multiple Keycloak pods on one node. When `instances > 1`, the chart
+   renders a `PodDisruptionBudget` with `minAvailable: 1`; the Operator does
+   not render one.
 4. **Readiness probe**: The probe sends requests to `/realms/master/.well-known/openid-configuration`.
    It tries again until it gets `200`.
 5. **Terraform apply**: The playbook renders `terraform.tfvars.json` from the inventory. It runs
@@ -318,10 +314,12 @@ Operator then creates its default `NetworkPolicy` again.
 
 ## Terraform state
 
-The state is **local**, under `playbooks/10-keycloak/terraform/`. Git ignores
-the state (see `.gitignore`). For a shared/remote backend, put a `backend.tf`
-next to the other `.tf` files. The Ansible terraform module has `force_init: true`,
-so it does the init again on the next run.
+`terraform/backend.tf` configures a `local` backend at
+`/h3xinfra/state/keycloak/terraform.tfstate`. This path is on the NAS mounted
+at `/h3xinfra` in the controller, so workspace clones share the same state.
+The playbook creates the state directory before Terraform runs. The Ansible
+Terraform module uses `force_init: true` to initialize the configured backend
+on each run.
 
 The playbook renders a new `terraform.tfvars.json` file at each run.
 

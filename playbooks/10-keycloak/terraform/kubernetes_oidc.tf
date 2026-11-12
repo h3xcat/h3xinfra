@@ -72,9 +72,8 @@ resource "keycloak_openid_group_membership_protocol_mapper" "k8s_cluster_groups"
   add_to_userinfo     = false
 }
 
-# Make the exchange subject token self-audienced (aud contains "openwebui") so
-# the MCP server's `oauth_audience = "openwebui"` validation of the INCOMING
-# token passes. This is on the openwebui client's normal tokens (harmless).
+# Keep openwebui in its own normal access-token audience. The MCP server
+# validates the k8s-mcp audience, which the separate mapper below adds.
 resource "keycloak_openid_audience_protocol_mapper" "openwebui_self_audience" {
   realm_id  = keycloak_realm.main.id
   client_id = keycloak_openid_client.clients["openwebui"].id
@@ -132,7 +131,7 @@ resource "keycloak_openid_client_optional_scopes" "k8s_mcp" {
 }
 
 # Realm groups mapped to Kubernetes RBAC by ClusterRoleBindings
-# (playbooks/29-kubernetes-mcp): oidc:k8s-admins -> cluster-admin,
+# (layer 29-kubernetes-mcp): oidc:k8s-admins -> view + h3xinfra:k8s-mcp-admin-write,
 # oidc:k8s-viewers -> view. Membership is assigned manually in the Keycloak
 # admin console (consistent with how client-role assignment is handled).
 resource "keycloak_group" "k8s_admins" {

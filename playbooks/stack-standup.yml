@@ -6,8 +6,8 @@
 
 - import_playbook: 01-k3s/standup.yml
 
-# Cluster-wide PriorityClasses (platform-critical, app-background) consumed
-# by downstream layers to control eviction order under node pressure.
+# Cluster-wide PriorityClasses (platform-critical, app-background)
+# influence scheduling, preemption and eviction alongside resource requests.
 - import_playbook: 01-priorityclasses/standup.yml
 
 - import_playbook: 02-cilium/standup.yml

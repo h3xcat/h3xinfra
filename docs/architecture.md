@@ -17,19 +17,13 @@ The cluster has a layered deployment. These are the layers:
 
 ## Deployment Flow
 
-The deployment uses this sequence:
-1. Server preparation (system settings, packages)
-2. K3s installation and configuration
-3. Cilium CNI deployment
-4. MetalLB configuration
-5. Health endpoints configuration
-6. Certificate Manager deployment
-7. External DNS setup
-8. Envoy Gateway controller deployment + shared Gateway with wildcard TLS
-9. SMB/CIFS CSI driver deployment
-10. Longhorn storage system deployment
-11. Mailu email server deployment
-12. Keycloak identity management deployment (Operator + CloudNativePG)
+The imports in [stack-standup.yml](../playbooks/stack-standup.yml) are the
+authoritative order, including PriorityClasses, CoreDNS scaling after Cilium,
+and kured after Longhorn. Keycloak has its own deployment entry point;
+provision its realm, clients and groups before services that use them, as
+described in the [Keycloak guide](../playbooks/10-keycloak/README.md).
+[Argo CD](../playbooks/10-argocd/README.md) also has a separate deployment entry
+point and runs after its Keycloak client is configured.
 
 ## Node Topology
 
@@ -88,15 +82,14 @@ Server nodes have the `CriticalAddonsOnly=true:NoSchedule` taint. Thus, **only p
 ## Deployed Services
 
 ### Core Platform Services
-- **Cilium CNI**: eBPF-based networking with network policies (v1.17.3)
-- **MetalLB**: Load balancer for bare metal clusters (v0.13.10)
-- **Cert-Manager**: Automatic TLS certificate management (v1.17.2)
-- **External-DNS**: Automatic DNS record management (v1.16.1)
-- **Envoy Gateway**: Gateway API controller for HTTP routing, TLS termination, OIDC, and IP allowlisting (v1.4.2)
-- **Longhorn**: Distributed block storage (v1.9.0)
+
+The [overview](../README.md#overview) lists the platform components. Their
+chart and image pins live in
+[`inventory/production/group_vars/all/versions.yml`](../inventory/production/group_vars/all/versions.yml).
+These are repository inputs, not evidence of the versions running in a cluster.
 
 ### Application Services
-- **Mailu**: Self-hosted email server with web interface (v2.2.2)
+- **Mailu**: Self-hosted email server with web interface
   - Domain: example.com
   - Hostnames: mail.app.example.com, mail.example.com
   - External SMTP relay through smtp2go.com
@@ -126,42 +119,6 @@ All releases use this naming pattern: `h3xinfra-{component}-{phase}`
 ### Network Interface Configuration
 The cluster uses the primary network interface: `eth0` (or your primary interface).
 This setting is important for the Cilium IPv6 multicast device configuration.
-
-## Development Environment
-
-### Devcontainer Architecture
-
-The project includes a devcontainer setup with these items:
-
-- **Base Environment**: Ubuntu 22.04 (jammy) with custom user configuration
-- **Tool Integration**: Pre-configured Ansible, kubectl, Helm, and Docker CLI
-- **Path Management**: Custom scripts are automatically available in PATH
-- **Volume Strategy**: SSH keys mounted from the host, persistent command history
-- **Network Access**: Docker-outside-of-Docker for container management
-- **IDE Integration**: VS Code extensions for Python and GitHub Copilot
-
-### Container Features
-
-```dockerfile
-# Key devcontainer features:
-- ghcr.io/devcontainers/features/docker-outside-of-docker:1
-```
-
-A feature does not install kubectl and Helm. They are pinned as `ARG KUBECTL_VERSION` / `ARG HELM_VERSION` in `.devcontainer/Dockerfile`.
-These pins have `# renovate:` markers, so Renovate bumps them.
-The project pins the two tools in the Dockerfile for these reasons:
-
-- The `kubectl-helm-minikube` feature installed `latest` over those pins.
-- The kubectl version must stay within +/-1 minor of the k3s cluster version.
-
-### Environment Variables
-
-- `WORKSPACE_FOLDER`: Points to the project root
-- `H3XINFRA_FOLDER`: Points to the public h3xinfra project
-- `ANSIBLE_CONFIG`: Points to the project ansible.cfg
-- `PATH`: Extended to include `${WORKSPACE_FOLDER}/bin`
-
-This setup makes sure that the development environment is the same on different machines and operating systems.
 
 ## Security Considerations
 

@@ -70,15 +70,16 @@ variable "clients" {
     # WebUI's `admin`/`user`). When non-empty, a protocol mapper is also added
     # that flattens these client roles into a top-level `roles` claim (id token
     # + userinfo). The roles are created but assignment to users stays manual
-    # (Keycloak admin console). The oauth2-proxy-fronted clients don't need
-    # this, so it defaults to empty.
+    # (Keycloak admin console). Clients without app-level role checks can
+    # leave this empty.
     client_roles = optional(list(string), [])
     # Native OIDC consumers such as Argo CD authorize using Keycloak groups.
     groups_claim = optional(bool, false)
     # Enable Keycloak v2 "standard token exchange" (RFC 8693) for this client,
-    # so it may exchange a token issued to itself for one carrying a different
-    # audience. Used by the Kubernetes MCP server (STS client = openwebui) to
-    # mint an `aud=kubernetes` token for the kube-apiserver. Defaults off.
+    # so it may exchange a token whose audience includes this client for one
+    # carrying a different audience. The Kubernetes MCP server uses the
+    # k8s-mcp STS client to mint an `aud=kubernetes` token for the kube-apiserver.
+    # Defaults off.
     standard_token_exchange_enabled = optional(bool, false)
     # Client IDs to add to this client's ACCESS token audience (one audience
     # mapper each). A resource server that checks `aud` (for example an MCP
