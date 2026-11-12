@@ -90,8 +90,12 @@ namespace labels, CRD identities/schemas and both databases. Review a fresh
 old-owner plan and require no attempt to recreate or delete the operator or
 its labels. Do not revert the old owner's resource declarations and apply;
 returning ownership requires a separate reviewed handoff with public runs
-frozen. Keep the migration blocks until every affected old state is proven
-migrated.
+frozen. After the private `20-openwebui` state has forgotten both addresses,
+public adoption and the no-acknowledgement rerun pass, and the private plan
+has no changes, record completion and retire the two temporary `removed`
+blocks and their transition-only assertions. Preserve resource and ownership
+guards. Older recovery copies follow [state recovery](README.md#terraform-state)
+and do not require retaining these blocks in current source.
 
 ## Source validation limits
 

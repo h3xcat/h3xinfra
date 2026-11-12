@@ -1,6 +1,6 @@
 # Keep the existing mapper and complete optional-scope assignments while their
-# configuration moves to keycloak.clients. Retain these moves until every
-# existing workspace has applied the migration; see the layer README.
+# configuration moves to keycloak.clients. Keep these moves until the owner's
+# NAS-backed state records this pending migration; see the layer README.
 moved {
   from = keycloak_openid_audience_protocol_mapper.openwebui_k8s_mcp_audience
   to   = keycloak_openid_audience_protocol_mapper.client_audiences["openwebui:k8s-mcp"]

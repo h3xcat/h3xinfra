@@ -135,12 +135,6 @@
       when: ansible_architecture == "x86_64"
       failed_when: false
 
-    - name: Remove stale modules-load.d entry for iTCO_wdt (blacklist makes it a no-op)
-      file:
-        path: /etc/modules-load.d/iTCO_wdt.conf
-        state: absent
-      when: ansible_architecture == "x86_64"
-
     - name: Install systemd unit to force-load iTCO_wdt at boot (x86)
       copy:
         dest: /etc/systemd/system/load-itco-wdt.service
@@ -309,32 +303,6 @@
       command: systemctl daemon-reexec
       when: systemd_watchdog_changed.changed
 
-    # Hugepages: the Pis once pre-allocated 1024 * 2 MiB = 2 GiB of dead
-    # weight, so the runtime allocation is zeroed here and `hugepages=N` is
-    # stripped from the Pi kernel cmdline below. The amd64 servers stay
-    # excluded: legacy Longhorn V2 sysctl files may still reserve hugepages.
-    # Their removal and runtime release require separate attended checks;
-    # removing V2 preparation from source does not clean installed host state.
-    - name: Check current huge page allocation
-      shell: cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
-      register: hugepage_current
-      changed_when: false
-      check_mode: false
-      when: ansible_architecture != "x86_64"
-
-    - name: Release huge page allocation (runtime, non-amd64 only)
-      shell: echo 0 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
-      register: hugepage_result
-      changed_when: true
-      when: ansible_architecture != "x86_64" and hugepage_current.stdout != "0"
-
-    - name: Verify huge page allocation is zero (non-amd64 only)
-      shell: cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
-      register: hugepage_check
-      changed_when: false
-      check_mode: false
-      when: ansible_architecture != "x86_64"
-
     - name: Check if GRUB configuration exists
       stat:
         path: /etc/default/grub
@@ -374,22 +342,6 @@
         insertbefore: '^GRUB_CMDLINE_LINUX='
         firstmatch: true
       when: grub_exists.stat.exists
-
-    # Strip any legacy `hugepages=N` argument from the Pi kernel cmdline.
-    # cmdline.txt is a single space-separated line; the replace below removes
-    # the token plus any preceding whitespace, leaving the rest intact.
-    - name: Remove hugepages from Raspberry Pi cmdline.txt
-      replace:
-        path: "{{ item }}"
-        regexp: '\s*hugepages=\d+'
-        replace: ''
-        backup: no
-      loop:
-        - /boot/firmware/cmdline.txt
-        - /boot/cmdline.txt
-      register: rpi_cmdline_updated
-      failed_when: false
-      when: not grub_exists.stat.exists
 
     - name: Check if ubuntu-vg volume group exists
       shell: vgs ubuntu-vg --noheadings 2>/dev/null
