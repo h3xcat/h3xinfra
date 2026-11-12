@@ -106,6 +106,13 @@ To keep the keys after a devcontainer rebuild, do these steps:
 
 `h3xinfra-setup-ssh` installs that copy when you create or rebuild the devcontainer. A container restart does not install it again. After you change the copy on the share, run `bash "$H3XINFRA_FOLDER/scripts/h3xinfra-setup-ssh"`.
 
+When moving `ansible_ssh_privatekey` to another secrets directory, copy the
+reviewed, nonempty `ssh_known_hosts` beside it before rebuilding. The setup
+script reads both from the same directory. Verify that the staged
+`~/.ssh/h3xinfra_known_hosts` matches that copy before connecting. Without the
+pinned copy, a fresh container accepts unknown host keys on first contact;
+moving the private key alone does not preserve host-key pinning.
+
 If you reinstall a node, do these steps:
 
 1. On the node console, show the fingerprint of the host key: `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`.
