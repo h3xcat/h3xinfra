@@ -63,7 +63,7 @@ h3xinfra/
 │   └── operations.md      # Operational procedures
 ├── bin/                   # Helper scripts
 │   ├── h3xinfra-deploy-stack
-│   ├── h3xinfra-update-servers
+│   ├── h3xinfra-gen-pass
 │   ├── kube-connect
 │   └── ...
 ├── ansible.cfg            # Ansible configuration
@@ -98,7 +98,7 @@ Each layer has a number. The numbers set the deployment order and the dependency
 - **10-argocd**: GitOps controller with native Keycloak SSO. It is opt-in: it is off until you enable it. Existing resources keep their current owners.
 
 #### Utilities (99)
-- **99-utils**: Shared utilities, for example kube-connect and apt updates.
+- **99-utils**: Shared utilities, for example kube-connect and cluster status.
 
 ### Dependency Flow
 ```
@@ -978,11 +978,8 @@ kubectl get ingress -A
 These scripts are in the `bin/` directory:
 
 - **`h3xinfra-deploy-stack`** - Deploys the complete infrastructure stack.
-- **`h3xinfra-update-servers`** - Updates all cluster nodes.
 - **`kube-connect`** - Makes a kubectl connection to the cluster.
-- **`h3xinfra-gen-pass`** - Generates passwords that Ansible Vault encrypts.
-- **`h3xinfra-generate-token`** - Generates the K3s cluster token.
-- **`h3xinfra-decrypt-vault`** - Decrypts vault files.
+- **`h3xinfra-gen-pass [variable_name]`** - Generates a named password that Ansible Vault encrypts.
 - **`h3xinfra-setup-dependencies`** - Installs the Ansible dependencies.
 - **`h3xinfra-setup-perms`** - Sets the file permissions.
 - **`h3xinfra-setup-ssh`** - Configures SSH access.

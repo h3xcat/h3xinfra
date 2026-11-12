@@ -73,10 +73,11 @@ chmod 600 ~/.ssh/*
 
 ### Server Updates
 
-To update all the servers in the cluster, run this command:
+Unattended upgrades install security updates only. To also install non-security
+package updates on the cluster nodes, run this command:
 
 ```bash
-h3xinfra-update-servers
+ansible k3s_cluster -b -m ansible.builtin.apt -a 'update_cache=true upgrade=safe'
 ```
 
 ### Cluster Status Check
@@ -99,19 +100,28 @@ h3xinfra-deploy-stack
 
 ### Generate Passwords
 
-To generate encrypted passwords for services, run this command:
+To generate a password as an inline Vault-encrypted inventory variable, run this
+command from the repository root (or with `ANSIBLE_CONFIG` set to its config):
 
 ```bash
-h3xinfra-gen-pass
+h3xinfra-gen-pass service_password
 ```
 
-### Generate K3s Token
+The optional argument is the variable name; it defaults to `password`. Only the
+encrypted value is printed. The helper uses the Vault password resolver from
+`ansible.cfg`.
 
-To generate a new K3s cluster token, run this command:
+### Read One Vaulted Value
+
+To inspect one inline `!vault` inventory value, replace `variable_name` below
+with its inventory key:
 
 ```bash
-h3xinfra-generate-token
+ansible k8s -m ansible.builtin.debug -a var=variable_name
 ```
+
+`ansible-vault view` reads files encrypted as a whole; it does not read inline
+`!vault` values.
 
 ## Component Management
 

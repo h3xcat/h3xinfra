@@ -36,7 +36,6 @@ This project gives Ansible playbooks and configurations to deploy and manage a 3
 │   │   └── host_vars/     # Host variables
 │   └── README.md          # Inventory documentation
 ├── inventory.example.yml  # Alternative single-file format
-├── secrets/               # Encrypted password files
 ├── playbooks/             # Ansible playbooks
 │   ├── stack-standup.yml  # Master deployment playbook
 │   ├── stack-teardown.yml # Master teardown playbook
@@ -123,16 +122,14 @@ The devcontainer gives these items:
 In the devcontainer, you can use these commands directly:
 ```bash
 h3xinfra-deploy-stack      # Deploy complete infrastructure
-h3xinfra-update-servers    # Update all cluster nodes
 kube-connect              # Connect to Kubernetes cluster
-h3xinfra-gen-pass                  # Generate encrypted passwords
-h3xinfra-generate-token   # Generate new K3s token
+h3xinfra-gen-pass [name]   # Generate a named vault-encrypted password
 ```
 
 ## Quick Start
 
 1. **Configure Inventory**: Set up your inventory in `inventory/production/`. For the structure, see `inventory/README.md`.
-2. **Set up secrets**: Configure the encrypted variables in the `secrets/` directory.
+2. **Set up secrets**: Add vault-encrypted variables to the inventory. `ansible.cfg` uses `bin/h3xinfra-vault-pass` to resolve the Vault password.
 3. **Deploy the complete stack**:
    ```bash
    h3xinfra-deploy-stack
