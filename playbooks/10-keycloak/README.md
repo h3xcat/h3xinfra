@@ -175,8 +175,10 @@ Update the client inventory together with this module. Keep `oidc-moved.tf`
 until every existing workspace has applied the migration: deleting the old
 optional-scope resources without their moves detaches those scope assignments.
 
-Before merging this migration, the owner must inspect a plan against the real
-workspace and state, using the paired inventory. Expect these three address moves:
+Source publication does not perform this migration. Before the first deployment
+or apply, the owner must inspect a plan against the real workspace and state,
+using the paired module and inventory. Keep normal Keycloak and stack applies
+paused until that review is complete. Expect these three address moves:
 
 - `keycloak_openid_audience_protocol_mapper.openwebui_k8s_mcp_audience` to
   `keycloak_openid_audience_protocol_mapper.client_audiences["openwebui:k8s-mcp"]`.
@@ -190,7 +192,7 @@ The moved audience mapper also changes its display name from
 `keycloak_openid_audience_protocol_mapper.openwebui_self_audience`, which added
 `openwebui` to access tokens. MCP checks for `k8s-mcp`; this mapper did not add
 anything to ID tokens. There must be no creation, replacement, client or scope
-detachment, or authentication change. Resolve any unexpected action before merge.
+detachment, or authentication change. Resolve any unexpected action before apply.
 
 After applying, verify Open WebUI login and its MCP exchange, then remove the
 temporary moves only after all existing workspaces have recorded the new addresses.
