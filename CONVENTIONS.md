@@ -608,7 +608,7 @@ privacy decision: a certificate for one host goes into the public **Certificate
 Transparency logs**. Then anyone can easily find each service with CT
 search engines, for example crt.sh. A wildcard (`*.app.example.com`)
 shows the wildcard label instead of each service name in that certificate's
-CT entry. ExternalDNS watches Service and Ingress resources with the
+CT entry. ExternalDNS watches Service resources with the
 `external-dns.alpha.kubernetes.io/publish=true` label. The shared Gateway's
 managed Service has no publish metadata in this repository; creating a
 Gateway or HTTPRoute does not itself publish a DNS record. Configure DNS
@@ -751,7 +751,7 @@ externaldns:
   - "*.example.com"
 ```
 
-The playbook uses Service/Ingress sources and a publish-label filter. To
+The playbook uses only the Service source and a publish-label filter. To
 publish a Service, its metadata must include the label and the desired DNS
 hostname annotation; these are not `externaldns` inventory fields:
 
@@ -762,6 +762,24 @@ metadata:
   annotations:
     external-dns.alpha.kubernetes.io/hostname: "service.example.com"
 ```
+
+Ingresses and HTTPRoutes do not publish DNS through this configuration. The
+TXT registry, domain filters, Cloudflare provider and `policy: sync` stay in
+place. No explicit TXT owner ID is set; the pinned ExternalDNS 0.23.0 default
+is `default`. The publish label filters Kubernetes input; it does not protect
+an existing DNS record from deletion.
+
+Before applying the change from Service/Ingress to Service only, inventory
+actual publish-labelled Ingresses and compare the intended DNS changes with
+the current records and TXT ownership. With `sync`, an in-scope record owned
+by this controller that has no remaining desired Service endpoint can be
+deleted together with its ownership TXT record. A matching hostname alone
+does not prove equivalence: targets, record types, TTL and provider properties
+also matter. Resolve any Ingress-only consumer before applying. Source scans
+and chart renders do not establish this live precondition. The pinned chart
+runs one controller with `Recreate`, so changing its arguments also replaces
+that pod. Removing the Ingress source removes Ingress read permission; reads
+of Services, nodes, pods and EndpointSlices remain.
 
 **Wildcard certificate for the shared Gateway:**
 ```yaml
