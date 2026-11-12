@@ -66,8 +66,10 @@ Server nodes have the `CriticalAddonsOnly=true:NoSchedule` taint. Thus, **only p
 - **IPv6 Service CIDR**: fd00:cafe:43::/112
 
 ### Load Balancer Pools
-- **IPv4**: 192.168.100.0/24 (MetalLB dynamic allocation)
-- **IPv6**: 2001:db8:face:1::/96 (MetalLB dynamic allocation)
+
+MetalLB announces dedicated per-service pools through L2 ARP/NDP. Each pool
+disables automatic assignment, and each LoadBalancer Service names its pool.
+The core layer creates no general-purpose pool.
 
 ### Manual Service IP Allocations
 - **Envoy Gateway (shared) IPv4**: 192.168.101.100/32

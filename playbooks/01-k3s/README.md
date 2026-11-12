@@ -181,7 +181,7 @@ and `enforce` set to the strictest level that its pods pass:
 | Namespace variable | `enforce` | Reason |
 | --- | --- | --- |
 | `cilium.namespace` | `privileged` | hostNetwork, hostPath, host ports, a privileged init container, NET_ADMIN/SYS_ADMIN |
-| `metallb.namespace` | `privileged` | hostNetwork, NET_RAW/NET_ADMIN/SYS_ADMIN |
+| `metallb.namespace` | `privileged` | L2 speaker: hostNetwork, NET_RAW |
 | `certmanager.namespace` | `restricted` | All pods pass `restricted`. |
 | `externaldns.namespace` | `restricted` | All pods pass `restricted`. |
 | `gateway.namespace` | `privileged` (opt-in `restricted`) | The controller generates the Envoy proxy pods. |

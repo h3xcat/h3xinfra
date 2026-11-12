@@ -2,7 +2,7 @@
 # Reference: https://metallb.universe.tf/installation/
 # Reference: https://github.com/metallb/metallb/tree/main/charts/metallb
 # Resource completeness is checked by h3xinfra-private/tests/helm against the
-# pinned chart, including the FRR-K8s init containers and status-cleaner.
+# pinned chart. Only the controller and L2 speaker are deployed.
 
 controller:
   resources:
@@ -28,102 +28,6 @@ speaker:
   frr:
     enabled: false
 
-frr-k8s:
-  frrk8s:
-    # The bundled chart also uses this block for its status-cleaner Deployment.
-    resources:
-      requests:
-        cpu: 100m
-        memory: 256Mi
-        ephemeral-storage: 32Mi
-      limits:
-        cpu: "1"
-        memory: 512Mi
-        ephemeral-storage: 256Mi
-    frr:
-      resources:
-        requests:
-          cpu: 50m
-          memory: 64Mi
-          ephemeral-storage: 32Mi
-        limits:
-          cpu: 500m
-          memory: 256Mi
-          ephemeral-storage: 1Gi
-    frrMetrics:
-      resources:
-        requests:
-          cpu: 50m
-          memory: 64Mi
-          ephemeral-storage: 32Mi
-        limits:
-          cpu: 500m
-          memory: 256Mi
-          ephemeral-storage: 256Mi
-    frrStatus:
-      resources:
-        requests:
-          cpu: 25m
-          memory: 64Mi
-          ephemeral-storage: 32Mi
-        limits:
-          cpu: 250m
-          memory: 256Mi
-          ephemeral-storage: 256Mi
-    reloader:
-      resources:
-        requests:
-          cpu: 10m
-          memory: 16Mi
-          ephemeral-storage: 32Mi
-        limits:
-          cpu: 100m
-          memory: 64Mi
-          ephemeral-storage: 256Mi
-    # frr-k8s 0.0.27 (MetalLB 0.16.2) exposes resources for its init containers.
-    # They only copy the FRR, reloader, metrics and status files, so they get the
-    # reloader-sized budget. Earlier frr-k8s versions ignore this block.
-    initContainers:
-      cpFrrFiles:
-        resources:
-          requests:
-            cpu: 10m
-            memory: 16Mi
-            ephemeral-storage: 32Mi
-          limits:
-            cpu: 100m
-            memory: 64Mi
-            ephemeral-storage: 64Mi
-      cpReloader:
-        resources:
-          requests:
-            cpu: 10m
-            memory: 16Mi
-            ephemeral-storage: 32Mi
-          limits:
-            cpu: 100m
-            memory: 64Mi
-            ephemeral-storage: 64Mi
-      cpMetrics:
-        resources:
-          requests:
-            cpu: 10m
-            memory: 16Mi
-            ephemeral-storage: 32Mi
-          limits:
-            cpu: 100m
-            memory: 64Mi
-            ephemeral-storage: 64Mi
-      cpFrrStatus:
-        resources:
-          requests:
-            cpu: 10m
-            memory: 16Mi
-            ephemeral-storage: 32Mi
-          limits:
-            cpu: 100m
-            memory: 64Mi
-            ephemeral-storage: 64Mi
-
-# configInline is removed as it's deprecated
-# Configuration will be applied using separate IPAddressPool and L2Advertisement/BGPAdvertisement CRs
+# L2 announcements need neither the bundled nor legacy FRR backend.
+frrk8s:
+  enabled: false
