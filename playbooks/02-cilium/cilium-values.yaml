@@ -31,6 +31,11 @@ cni:
       memory: 256Mi
       ephemeral-storage: 256Mi
 
+# The chart hashes cilium-config into the agent PodTemplate. Adoption rolls
+# agents even with the host firewall off; later ConfigMap changes roll them
+# too. Every restart clears host endpoint audit mode: see HOST-FIREWALL.md.
+rollOutCiliumPods: true
+
 # This limit applies to each DaemonSet, not to the fleet: the Cilium and Envoy
 # controllers can update different nodes concurrently. Stage their updates
 # separately when maintenance requires a global one-node-at-a-time rollout.

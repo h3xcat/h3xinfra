@@ -45,15 +45,27 @@ change. Do the procedure steps in sequence.
 
 ## Procedure
 
+Use a maintenance window for both the Cilium update in step 3 and the later
+K3s migration. Confirm recovery access first. API address values change the
+agent PodTemplate directly. The Cilium chart also rolls agents when its
+rendered `cilium-config` checksum changes; checksum adoption can roll them
+with the host firewall off.
+The agent DaemonSet's `maxUnavailable: 1` is not a fleetwide availability
+guarantee. If any nodes enforce the host firewall, account for audit-mode
+reset before policy and label reconciliation as described in
+[agent rollouts and readiness](HOST-FIREWALL.md#agent-rollouts-and-readiness).
+
 1. Choose the API server address.
 2. Set `k8s_service_host` and `k8s_service_port` (default `6443`) in the
    `cilium` inventory variable.
-3. Run `playbooks/02-cilium/standup.yml`. The Cilium agents restart one node
-   at a time. Kube-proxy continues to run.
+3. Run `playbooks/02-cilium/standup.yml`. The API address values change the
+   agent PodTemplate and trigger a DaemonSet rolling update. Kube-proxy
+   continues to run.
 4. Make sure that all Cilium agents are ready:
    `kubectl -n kube-system rollout status ds/cilium`.
 5. Make sure that Service traffic and DNS work on all nodes.
-6. Start the maintenance window.
+6. Confirm that recovery access remains available before proceeding with the
+   K3s changes in the maintenance window.
 7. Set `disable-kube-proxy: true` in `server_config_yaml`.
 8. Run `playbooks/01-k3s/standup.yml`. The K3s servers restart with the new
    configuration.

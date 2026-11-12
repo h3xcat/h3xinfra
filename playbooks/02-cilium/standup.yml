@@ -13,28 +13,6 @@
     host_fw_nodes: "{{ host_fw.enforce_nodes | default([]) }}"
     host_fw_label_key: "h3xinfra.io/host-firewall"
     host_fw_label_value: "enforce"
-    # The agents read enable-host-firewall only at start. rollOutCiliumPods
-    # stays at the chart default (false), so a Helm upgrade does not restart
-    # them. The play records the value that the agents started with in this
-    # pod template annotation, and restarts the agents when the value changes.
-    host_fw_desired: "{{ host_fw_enabled | bool | lower }}"
-    host_fw_agent_daemonset: "cilium"
-    host_fw_agent_config_map: "cilium-config"
-    host_fw_started_key: "h3xinfra.io/host-firewall-enabled"
-    host_fw_config_before_value: >-
-      {{ (((host_fw_config_before.resources | default([]) | first | default({})).data
-           | default({}, true))['enable-host-firewall'] | default('')) | string | lower }}
-    host_fw_agents_started_value: >-
-      {{ ((((host_fw_agent_ds_info.resources | first).spec.template.metadata.annotations)
-           | default({}, true))[host_fw_started_key] | default('')) | string | lower }}
-    # Restart when the agents started with a different value. With no
-    # annotation (never set by this play), restart only to turn the host
-    # firewall on, or to turn it off when cilium-config had it on.
-    host_fw_restart_needed: >-
-      {{ host_fw_agents_started_value != host_fw_desired
-         and (host_fw_agents_started_value != ''
-              or host_fw_desired == 'true'
-              or host_fw_config_before_value == 'true') }}
     # The policy never denies these sources. Private, link-local and the
     # unspecified IPv6 source (duplicate address detection) are always
     # trusted; extra_trusted_cidrs adds site ranges. The global IPv6 prefix
@@ -74,14 +52,6 @@
         cilium.host_firewall.enforce_nodes has unknown node names:
         {{ host_fw_nodes | difference(host_fw_node_info.resources | map(attribute='metadata.name') | list) }}
       quiet: true
-
-  - name: Read the host firewall setting in cilium-config before the upgrade
-    kubernetes.core.k8s_info:
-      api_version: v1
-      kind: ConfigMap
-      name: "{{ host_fw_agent_config_map }}"
-      namespace: "{{ cilium.namespace }}"
-    register: host_fw_config_before
 
   - name: Add Cilium Helm repository
     kubernetes.core.helm_repository:
@@ -141,46 +111,17 @@
         value_type: string
       - value: "extraConfig.ipv6-mcast-device={{ primary_network_interface }}"
         value_type: string
-      # Sets enable-host-firewall in cilium-config. The agents load the host
-      # firewall datapath only at start: the restart task below applies a
-      # change. Host policies apply only to labeled nodes (below).
+      # Sets enable-host-firewall in cilium-config. The chart checksum rolls
+      # agents when that ConfigMap changes, so they load it at startup.
+      # Host policies apply only to labeled nodes (below).
       - value: "hostFirewall.enabled={{ host_fw_enabled | bool | lower }}"
         value_type: raw
 
       state: present
       wait: true
-      timeout: "600s"
-
-  - name: Read the Cilium agent DaemonSet
-    kubernetes.core.k8s_info:
-      api_version: apps/v1
-      kind: DaemonSet
-      name: "{{ host_fw_agent_daemonset }}"
-      namespace: "{{ cilium.namespace }}"
-    register: host_fw_agent_ds_info
-
-  - name: Check that the Cilium agent DaemonSet exists
-    ansible.builtin.assert:
-      that: host_fw_agent_ds_info.resources | length == 1
-      fail_msg: >-
-        DaemonSet {{ cilium.namespace }}/{{ host_fw_agent_daemonset }} not found
-        after the Cilium Helm upgrade.
-      quiet: true
-
-  # A pod template change starts a rolling update (maxUnavailable 1 in
-  # cilium-values.yaml). The task waits until all agents are updated and
-  # ready. The node label tasks run only after this task.
-  - name: Restart the Cilium agents to apply the host firewall setting
-    kubernetes.core.k8s:
-      state: patched
-      api_version: apps/v1
-      kind: DaemonSet
-      name: "{{ host_fw_agent_daemonset }}"
-      namespace: "{{ cilium.namespace }}"
-      definition: "{{ {'spec': {'template': {'metadata': {'annotations': {host_fw_started_key: host_fw_desired}}}}} }}"
-      wait: true
-      wait_timeout: 1800
-    when: host_fw_restart_needed | bool
+      # Helm 4's watcher waits for all desired agents updated and ready.
+      # Keep the previous restart waiter's budget before policy/label changes.
+      timeout: "1800s"
 
   - name: Deploy Cilium host firewall policy via Helm
     kubernetes.core.helm:
