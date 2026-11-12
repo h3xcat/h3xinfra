@@ -16,14 +16,30 @@ with the inventory.
 │   ├── h3xinfra-keycloak-pre/        # Bootstrap Secrets, CNPG Cluster, HTTPRoute/SecurityPolicy
 │   └── h3xinfra-keycloak-main/       # Keycloak CR, chart-owned PDB, optional Cilium policies
 ├── terraform/                      # Realm, clients, groups and MFA; backend.tf points to NAS state
-└── tests/                          # Mocked client/group plans and rendered image/HA checks
+├── tasks/cnpg-operator.yml          # Shared CNPG install and guarded ownership handoff
+├── cnpg-values.yaml                # Pinned operator resource budgets
+└── tests/                          # Mocked contracts and rendered image/HA checks
 ```
 
 ## Deployment flow
 
 ### Standup (`ansible-playbook playbooks/10-keycloak/standup.yml`)
 
-The standup playbook does these steps:
+The standup playbook first ensures that the shared CloudNativePG operator
+is ready, including its Cluster CRD. It owns the existing Helm identity
+`cloudnative-pg` in `cnpg-system`, uses `chart_versions.cloudnative_pg`, and
+keeps all three namespace PSA labels at `restricted`. This lets a fresh
+cluster create the Keycloak database before private application layers run.
+The operator is shared with Open WebUI and is retained by Keycloak teardown.
+
+An existing installation requires the coordinated ownership handoff described
+in [CNPG operator ownership](CNPG-OWNERSHIP.md). A namespace marker makes later
+public runs idempotent; it does not prove that another Terraform state has
+forgotten the release. The installer refuses unexpected ownership, values,
+controller images or adoption schemas. It reuses existing Helm values and
+never forces release ownership or replaces/uninstalls the operator.
+
+After that prerequisite, the standup playbook does these steps:
 
 1. **Keycloak Operator**: The playbook applies the upstream manifests
    pinned to `chart_versions.keycloak`. The Operator is distributed as raw
