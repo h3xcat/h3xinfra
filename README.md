@@ -58,25 +58,18 @@ This project gives Ansible playbooks and configurations to deploy and manage a K
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` validates every pull request and push to `main`.
-It does not need a cluster. It runs these checks:
+`.github/workflows/ci.yml` validates every pull request and push to `main`,
+and runs weekly or on demand. It does not need a cluster or private-repository
+credentials. The `minimal` job runs these checks:
 
 - `renovate-config-validator`
 - yamllint
 - `ansible-playbook --syntax-check` against `inventory/production`
 - `helm lint`/`template` of the charts under `playbooks/*/charts`
+- Local behavior tests discovered under every `playbooks/*/tests` directory
 - `terraform validate` for `playbooks/10-keycloak/terraform`
 
-The `H3XINFRA_PRIVATE_TOKEN` secret is a fine-grained PAT with *Contents: read* on `h3xcat/h3xinfra-private`.
-If this secret is present, the full test suite from the `tests/` directory of that repo runs instead.
-That suite includes these checks:
-
-- Chart renders with production-shaped values
-- kubeconform
-- Artifact existence checks
-- Renovate config invariants
-
-In both cases, the single check to monitor is `ci-ok`.
+The single check to monitor is `ci-ok`.
 The Renovate automerge waits for this check. The tool versions are `env:` pins with
 `# renovate:` markers at the top of the workflow.
 
