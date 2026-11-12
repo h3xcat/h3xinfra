@@ -35,7 +35,6 @@ This project gives Ansible playbooks and configurations to deploy and manage a 3
 │   │   ├── group_vars/    # Group variables
 │   │   └── host_vars/     # Host variables
 │   └── README.md          # Inventory documentation
-├── inventory.example.yml  # Alternative single-file format
 ├── playbooks/             # Ansible playbooks
 │   ├── stack-standup.yml  # Master deployment playbook
 │   ├── stack-teardown.yml # Master teardown playbook

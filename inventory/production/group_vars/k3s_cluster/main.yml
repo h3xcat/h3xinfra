@@ -39,6 +39,21 @@ apiserver_audit:
   max_backups: 10
   max_age_days: 30
 
+# Cluster-wide Pod Security Admission defaults (playbooks/01-k3s/apiserver-admission.yml).
+# They apply only to namespaces without pod-security.kubernetes.io/* labels.
+# Keep enforce at privileged until each namespace has its labels.
+apiserver_pod_security:
+  enabled: true
+  defaults:
+    enforce: privileged
+    audit: restricted
+    warn: restricted
+  # An exempt namespace gets no checks, no audit annotations and no warnings.
+  # K3s owns kube-system and starts pods there before any layer can label it.
+  exemptions:
+    namespaces:
+    - kube-system
+
 # Kubelet hardening (playbooks/01-k3s/standup.yml). Both default to false.
 # protect_kernel_defaults: the playbook pins and checks the kernel values that
 # the kubelet expects before the kubelet restarts.

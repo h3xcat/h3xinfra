@@ -43,7 +43,7 @@ inventory/
 ### 3. **Security**
 - All the vault-encrypted secrets are together in `group_vars/all/secrets.yml`.
 - Secrets that apply to one service stay in the file of that service.
-- The files use variable references in the same way everywhere. For example, `{{ storage_password }}`.
+- The files use variable references in the same way everywhere. For example, `{{ dns_api_token }}`.
 
 ## Usage
 
