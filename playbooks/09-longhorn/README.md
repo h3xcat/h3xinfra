@@ -83,6 +83,43 @@ For a setting-only rollout, do these steps:
 Do not run the full standup playbook as a shortcut. A rollback changes the
 failure handling again. A rollback requires an explicit operational decision.
 
+## Attended Teardown
+
+Teardown is destructive: the Longhorn 1.13.0 Helm pre-delete Job invokes
+`longhorn-manager uninstall --force`, which can remove volumes still in use.
+The deletion flag permits that Job; it does not protect live data. Before an
+owner runs teardown, retire or migrate every Longhorn workload, review PV/PVC
+retention, and establish the required backups and tested recovery path. Keep
+this work separate from ordinary setting updates or failure recovery.
+
+`teardown.yml` still requires `-e confirm_destroy=yes-destroy-data` before any
+connection or mutation. It rejects pending/incomplete releases and orphaned
+Longhorn CRDs, then patches only an existing `deleting-confirmation-flag`
+Setting. The flag is never enabled by standup. Helm removes post, main, then
+pre; the main release retains its supported uninstall hook and has a
+20-minute timeout for the chart's 15-minute Job deadline. Any failure stops
+later plays. Remaining Longhorn CRDs stop pre-release and namespace removal.
+An already absent installation needs no Setting creation or finalizer bypass.
+
+Review the current release state and matching chart version before an attended
+run. A confirmed `--check` can preview tasks but cannot prove the uninstall
+Job, volume retirement, or recovery; its post-uninstall CRD check is skipped
+because no deletion has happened. After a real run, verify release/CRD and
+namespace removal and the planned data-retention outcome.
+
+If the main uninstall fails, preserve the pre-release and namespace and inspect
+the Job and release before retrying. A successful flag patch followed by failure can
+leave the flag true. Inspect active uninstall work before deciding whether to
+cancel or reset it. For an incomplete installation, use the version-matched
+Longhorn recovery procedure, which can require restoring its release before
+uninstalling. Do not strip finalizers, delete webhooks, or remove replica data
+to force completion. Reverting this source change cannot restore deleted data
+or reset the live flag.
+
+References: [Longhorn 1.13.0 uninstall procedure](https://longhorn.io/docs/1.13.0/deploy/uninstall/),
+[the pinned Helm uninstall Job](https://github.com/longhorn/charts/blob/longhorn-1.13.0/charts/longhorn/templates/uninstall-job.yaml),
+and [the pinned uninstall controller](https://github.com/longhorn/longhorn-manager/blob/v1.13.0/controller/uninstall_controller.go).
+
 ## Parked V2 Engine
 
 V2 and dedicated block disks are parked. `standup.yml` sets the literal
