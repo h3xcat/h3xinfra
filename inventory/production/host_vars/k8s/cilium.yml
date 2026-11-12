@@ -3,6 +3,12 @@ cilium:
   namespace: "kube-system"
   release_name_prefix: "h3xinfra-cilium"
 
+  # Optional. API server address for the Cilium agents and the operator.
+  # It must not use a Service. Set it before you disable the K3s
+  # kube-proxy: playbooks/02-cilium/KUBE-PROXY-REPLACEMENT.md.
+  # k8s_service_host: "k8s-api.example.com"
+  # k8s_service_port: 6443
+
   # Optional host firewall (playbooks/02-cilium/HOST-FIREWALL.md). Off by
   # default. Turn it on in stages: enabled first, then one node at a time.
   host_firewall:
@@ -16,26 +22,3 @@ cilium:
       ipv4: []
       ipv6:
         - "2001:db8:7c20:a470::/60"
-  
-  # Cilium configuration
-  config:
-    k8sServiceHost: "192.168.1.10"  # API server IP
-    k8sServicePort: "6443"
-    
-    # IPv6 and dual-stack configuration
-    ipv6:
-      enabled: true
-    ipv4:
-      enabled: true
-    
-    # BGP and load balancing
-    bgp:
-      enabled: false
-    
-    # Hubble observability
-    hubble:
-      enabled: true
-      relay:
-        enabled: true
-      ui:
-        enabled: true

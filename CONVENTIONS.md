@@ -573,7 +573,7 @@ cloudflare_api_token: !vault |
   $ANSIBLE_VAULT;1.1;AES256
   ...
 
-storage_password: !vault |
+k3s_token: !vault |
   $ANSIBLE_VAULT;1.1;AES256
   ...
 ```

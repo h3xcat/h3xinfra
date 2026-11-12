@@ -13,17 +13,15 @@ domain_name: example.com
 # Replace with your actual primary network interface
 primary_network_interface: "eth0"
 
-# Global release name prefix for Helm charts
-release_name_prefix: "h3xinfra"
-
 # Health service configuration
 health:
   release_name_prefix: "h3xinfra-health"
 
+# Optional. Number of K3s CoreDNS replicas (default 2). The replicas run
+# on different nodes. Set 1 to go back to the K3s default.
+# coredns:
+#   replicas: 2
+
 # DNS API token for External-DNS and Cert-Manager
 # Replace with your actual Cloudflare API token (or other DNS provider)
 cloudflare_api_token: "{{ dns_api_token }}"
-
-# Include service configurations
-# These are separated into individual files for better organization
-# but referenced here so they are available to all hosts

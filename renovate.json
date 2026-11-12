@@ -106,12 +106,6 @@
       "enabled": false
     },
     {
-      "description": "chart_versions.gateway_api is not consumed: Gateway API CRDs are rendered from oci://docker.io/envoyproxy/gateway-crds-helm at chart_versions.envoy_gateway (h3xinfra/playbooks/07-gateway/standup.yml). Stop generating PRs for it until the pin is removed; delete this rule together with the pin",
-      "matchDatasources": ["github-releases"],
-      "matchPackageNames": ["kubernetes-sigs/gateway-api"],
-      "enabled": false
-    },
-    {
       "description": "One PR for all GitHub Actions digest/version bumps (helpers:pinGitHubActionDigests keeps the SHA + '# vX.Y.Z' comment current); separate PRs per action would eat the prConcurrentLimit. Never automerge: a moved upstream tag arrives as a digest update and its new code runs in CI, so a person reviews every action bump. Placed after the patch/pin/digest automerge rule so this automerge: false wins",
       "matchManagers": ["github-actions"],
       "groupName": "GitHub Actions",
@@ -127,10 +121,9 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Generic `# renovate: datasource=… depName=… [packageName=…] [registryUrl=…] [extractVersion=…] [versioning=…]` marker (attributes in any order) above a `key: value`, `key = \"value\"`, `KEY=value` or Dockerfile `ARG KEY=value` line. A docker value may carry a digest (`\"<tag>@sha256:<digest>\"`): the tag is captured as currentValue and the digest as currentDigest, so Renovate updates both. Covers inventory versions.yml and inventory.example.yml (mirrored pins update together), terraform *.auto.tfvars, tests/tool-versions.env and other tests/ files, env pins in GitHub workflows, ARG pins in .devcontainer/Dockerfile and the tool pins in scripts/h3xinfra-setup-dependencies. Blank and plain comment lines between marker and key are tolerated (RE2 has no lookahead, so a second `# renovate:` marker or a commented-out key in that gap would be mis-attributed: tests/renovate/test_config.py forbids that)",
+      "description": "Generic `# renovate: datasource=… depName=… [packageName=…] [registryUrl=…] [extractVersion=…] [versioning=…]` marker (attributes in any order) above a `key: value`, `key = \"value\"`, `KEY=value` or Dockerfile `ARG KEY=value` line. A docker value may carry a digest (`\"<tag>@sha256:<digest>\"`): the tag is captured as currentValue and the digest as currentDigest, so Renovate updates both. Covers inventory versions.yml, terraform *.auto.tfvars, tests/tool-versions.env and other tests/ files, env pins in GitHub workflows, ARG pins in .devcontainer/Dockerfile and the tool pins in scripts/h3xinfra-setup-dependencies. Blank and plain comment lines between marker and key are tolerated (RE2 has no lookahead, so a second `# renovate:` marker or a commented-out key in that gap would be mis-attributed: tests/renovate/test_config.py forbids that)",
       "managerFilePatterns": [
         "/(^|/)versions\\.ya?ml$/",
-        "/(^|/)inventory\\.example\\.ya?ml$/",
         "/\\.auto\\.tfvars$/",
         "/(^|/)tests/.+\\.(env|ya?ml)$/",
         "/(^|/)\\.github/workflows/[^/]+\\.ya?ml$/",
@@ -143,7 +136,7 @@
     },
     {
       "customType": "regex",
-      "description": "k3s version pinned in the Ansible inventory (k3s_version key, k3s+build regex versioning so v1.36.4+k3s1 -> +k3s2 is a patch and -rc tags are ignored). Same comment-tolerant tail as the generic manager; inventory.example.yml is handled by the generic manager to avoid duplicate extraction",
+      "description": "k3s version pinned in the Ansible inventory (k3s_version key, k3s+build regex versioning so v1.36.4+k3s1 -> +k3s2 is a patch and -rc tags are ignored). Same comment-tolerant tail as the generic manager.",
       "managerFilePatterns": ["/(^|/)inventory/.+\\.ya?ml$/"],
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+versioning=(?<versioning>[^\\s]+))?[^\\S\\n]*\\n(?:[^\\S\\n]*(?:#[^\\n]*)?\\n)*[^\\S\\n]*k3s_version:\\s*(?<currentValue>[^\\s\"'\\n]+)"

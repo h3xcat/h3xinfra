@@ -9,6 +9,13 @@ mailu:
   dns_names:
   - "mail.app.example.com"
   - "mail.example.com"
+  # Optional. Hostnames of the web UI on the shared Gateway. If you do not
+  # set it, the web UI uses all dns_names. Set it when a name in dns_names
+  # is only for mail protocols (its DNS goes to the mail load balancer).
+  # If you use the OIDC gate, the OIDC host (oauth2.hostname, or the first
+  # name in dns_names) must be in this list. If not, the render fails.
+  # web_hostnames:
+  # - "mail.example.com"
   secret_key: "{{ mailu_secret_key }}"
   admin_password: "{{ mailu_admin_password }}"
   
@@ -25,6 +32,3 @@ mailu:
   public_addresses:
     ipv4: "203.0.113.10"  # Example public IPv4 (replace with actual)
     ipv6: "2001:db8:face::101"  # Same as load balancer IP for this service
-  
-  ingress_trusted_ips:
-  - "192.168.2.0/23"

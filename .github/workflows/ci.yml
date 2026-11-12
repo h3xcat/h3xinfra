@@ -215,7 +215,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: python -m pip install --disable-pip-version-check "yamllint==${YAMLLINT_VERSION}" "ansible-core==${ANSIBLE_CORE_VERSION}"
       - name: yamllint (.yamllint.yml mirrors the private suite's config)
-        run: yamllint -c .yamllint.yml playbooks inventory inventory.example.yml renovate.json requirements.yml .github
+        run: yamllint -c .yamllint.yml playbooks inventory renovate.json requirements.yml .github
       - name: ansible-playbook --syntax-check (own inventory)
         run: |
           set -euo pipefail
