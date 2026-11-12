@@ -8,15 +8,15 @@
 # rebooting, waiting for Ready, uncordoning. Then it moves to the next.
 #
 # Use cases:
-#   - Apply a kernel cmdline change that was just deployed (e.g. removing
-#     `hugepages=` from GRUB / Pi `cmdline.txt`) without waiting for
-#     unattended-upgrades to flag it.
+#   - Apply a reviewed kernel command-line change without waiting for
+#     unattended-upgrades to flag a reboot.
 #   - Push a fleet reboot for firmware/config changes that need a fresh
 #     boot to take effect.
 #
 # Prerequisites:
 #   - 10-kured layer deployed and DaemonSet Ready
-#   - Longhorn 1.5+ with `nodeDrainPolicy: block-if-contains-last-replica`
+#   - Longhorn configured with
+#     `nodeDrainPolicy: block-for-eviction-if-contains-last-replica`
 #   - 3-replica Longhorn volumes (so drain has a healthy quorum to fall back to)
 #
 # Run:
