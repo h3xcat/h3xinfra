@@ -127,8 +127,6 @@
     # NOTE: kubelet's --config-dir (KEP-3983) only processes files with a
     # `.conf` extension — anything else in the directory is silently ignored
     # (k3s's own generated defaults live there as 00-k3s-defaults.conf).
-    # These drop-ins were originally deployed as `.yaml` and therefore never
-    # took effect; the cleanup task below removes the dead files.
     - name: Create kubelet configuration file for shutdown grace periods
       ansible.builtin.copy:
         content: |
@@ -269,15 +267,6 @@
     # kubelet-sysctls.yml finds the list loaded and restarts nothing.
     - name: Write the kubelet unsafe sysctl allowlist
       ansible.builtin.import_tasks: tasks/kubelet-sysctls.yml
-
-    - name: Remove ignored .yaml kubelet drop-ins (kubelet only reads .conf)
-      ansible.builtin.file:
-        path: "/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/{{ item }}"
-        state: absent
-      loop:
-      - 99-shutdown-grace-period.yaml
-      - 99-resource-reservations.yaml
-      - 99-image-gc.yaml
 
 # Stop before K3s restarts if kube-proxy is disabled too early.
 - name: Check the kube-proxy replacement settings
