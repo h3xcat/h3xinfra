@@ -7,23 +7,16 @@ fullnameOverride: ""
 # uses this on first start (no admin row in DB) -- subsequent management
 # goes through Terraform / the admin console.
 bootstrapSecret:
-  enabled: true
   adminUsername: "admin"
   adminPassword: ""
 
 # CloudNativePG-managed Postgres cluster backing Keycloak.
 postgres:
-  enabled: true
-  # Tracked by Renovate's helm-values manager (image.repository + image.tag).
-  # The playbook overrides only `tag` (image_versions.postgresql in the inventory).
+  # Required tag comes from image_versions.postgresql in the inventory.
   image:
     repository: "ghcr.io/cloudnative-pg/postgresql"
-    tag: "18.6"
+    tag: ""
   instances: 2
-  # CNPG pod anti-affinity across nodes (topologyKey kubernetes.io/hostname).
-  # `required` keeps the primary and the standby on different nodes.
-  # `preferred` lets them share a node when the scheduler finds no other node.
-  podAntiAffinityType: "required"
   database: "keycloak"
   username: "keycloak"
   password: ""
@@ -43,14 +36,10 @@ postgres:
 # on port 8080 (we terminate TLS at Envoy Gateway, so http is enabled in
 # the CR).
 ingress:
-  enabled: true
   host: "auth.app"
   gateway:
     name: ""
     namespace: ""
-    port: 443
-    sectionName: ""
   serviceName: "keycloak"
-  servicePort: 8080
   # Empty denies access to the admin rule; public realm paths stay reachable.
   trustedSetupIPs: []

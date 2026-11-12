@@ -101,6 +101,7 @@ jobs:
                 --set domain=example.com \
                 --set hostname=keycloak.example.com --set bootstrapAdminSecretName=fake --set database.host=db --set database.credentialsSecretName=fake \
                 --set bootstrapSecret.adminPassword=FAKE --set postgres.password=FAKE \
+                --set image.tag=0.0.0 --set postgres.image.tag=0.0.0 \
                 --set 'clusterIssuer.acme.dnsZones={example.com}' --set cloudflareApiToken.token=FAKE >/dev/null; then
               echo "ok   $chart"
             else

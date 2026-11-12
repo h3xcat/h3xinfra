@@ -1,4 +1,3 @@
-{{- if .Values.ingress.enabled }}
 ---
 # Single HTTPRoute with named rules.
 #
@@ -18,11 +17,7 @@ spec:
   parentRefs:
     - name: {{ .Values.ingress.gateway.name }}
       namespace: {{ .Values.ingress.gateway.namespace }}
-      {{- if .Values.ingress.gateway.sectionName }}
-      sectionName: {{ .Values.ingress.gateway.sectionName | quote }}
-      {{- else }}
-      port: {{ .Values.ingress.gateway.port | default 443 }}
-      {{- end }}
+      port: 443
   hostnames:
     - {{ .Values.ingress.host | quote }}
   rules:
@@ -43,7 +38,7 @@ spec:
             value: /robots.txt
       backendRefs:
         - name: {{ .Values.ingress.serviceName }}
-          port: {{ .Values.ingress.servicePort }}
+          port: 8080
     # Admin / metrics / health -- IP-restricted via SecurityPolicy
     - name: admin
       matches:
@@ -58,5 +53,4 @@ spec:
             value: /health
       backendRefs:
         - name: {{ .Values.ingress.serviceName }}
-          port: {{ .Values.ingress.servicePort }}
-{{- end }}
+          port: 8080

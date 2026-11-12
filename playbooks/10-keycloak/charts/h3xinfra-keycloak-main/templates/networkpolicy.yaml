@@ -80,7 +80,7 @@ spec:
             cnpg.io/cluster: {{ . | quote }}
       toPorts:
         - ports:
-            - port: {{ $.Values.database.port | default 5432 | quote }}
+            - port: "5432"
               protocol: TCP
     {{- end }}
     {{- with .Values.networkPolicy.egress.smtpPorts }}
@@ -122,7 +122,7 @@ spec:
             {{- include "h3xinfra-keycloak-main.podSelectorLabels" $ | nindent 12 }}
       toPorts:
         - ports:
-            - port: {{ $.Values.database.port | default 5432 | quote }}
+            - port: "5432"
               protocol: TCP
     # Replication, join jobs and instance manager calls between instances.
     - fromEndpoints:

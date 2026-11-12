@@ -24,10 +24,11 @@ def render(component, chart, values):
 
 def keycloak(allowlist):
     return render("10-keycloak", "h3xinfra-keycloak-pre", {
-        "bootstrapSecret": {"enabled": False}, "postgres": {"enabled": False},
-        "ingress": {"enabled": True, "host": "auth.app.example.test",
+        "bootstrapSecret": {"adminPassword": "fake"},
+        "postgres": {"password": "fake", "image": {"tag": "0.0.0"}},
+        "ingress": {"host": "auth.app.example.test",
                     "gateway": {"name": "shared", "namespace": "gateway"},
-                    "serviceName": "keycloak", "servicePort": 8080,
+                    "serviceName": "keycloak",
                     "trustedSetupIPs": allowlist},
     })
 
@@ -35,6 +36,7 @@ def keycloak(allowlist):
 def keycloak_main(**values):
     base = {
         "fullnameOverride": "kc", "hostname": "auth.app.example.test",
+        "image": {"tag": "0.0.0"},
         "bootstrapAdminSecretName": "admin",
         "database": {"host": "kc-pg-rw", "credentialsSecretName": "db",
                      "clusterName": "kc-pg"},
@@ -97,6 +99,7 @@ class CoreSecurityRouting(unittest.TestCase):
         self.assertEqual(route["spec"]["parentRefs"][0]["port"], 443)
         self.assertNotIn("sectionName", route["spec"]["parentRefs"][0])
         self.assertEqual({r["name"] for r in route["spec"]["rules"]}, {"public", "admin"})
+        self.assertEqual([r["backendRefs"][0]["port"] for r in route["spec"]["rules"]], [8080, 8080])
         public = next(r for r in route["spec"]["rules"] if r["name"] == "public")
         self.assertIn("/realms/", {m["path"]["value"] for m in public["matches"]})
         self.assertEqual(policy["spec"]["targetRefs"], [{
@@ -215,19 +218,18 @@ class CoreSecurityRouting(unittest.TestCase):
         self.assertNotIn("additionalOptions", cr["spec"])
 
     def test_keycloak_trusts_proxy_headers_only_from_listed_sources(self):
-        docs = keycloak_main(proxyTrustedAddresses=["10.42.0.0/16", "2001:db8:cafe::/96"],
-                             additionalOptions=[{"name": "log-level", "value": "info"}])
+        docs = keycloak_main(proxyTrustedAddresses=["10.42.0.0/16", "2001:db8:cafe::/96"])
         cr = next(d for d in docs if d["kind"] == "Keycloak")
         self.assertEqual(cr["spec"]["proxy"], {"headers": "xforwarded"})
         self.assertEqual(cr["spec"]["additionalOptions"], [
-            {"name": "proxy-trusted-addresses", "value": "10.42.0.0/16,2001:db8:cafe::/96"},
-            {"name": "log-level", "value": "info"}])
+            {"name": "proxy-trusted-addresses", "value": "10.42.0.0/16,2001:db8:cafe::/96"}])
 
     def test_keycloak_http_port_admits_only_the_gateway(self):
         docs = keycloak_policy()
         cr = next(d for d in docs if d["kind"] == "Keycloak")
         # The operator policy allows 8080 from every pod; Cilium adds allows.
         self.assertEqual(cr["spec"]["networkPolicy"], {"enabled": False})
+        self.assertEqual(cr["spec"]["db"]["port"], 5432)
         kc = policies(docs)["kc"]
         self.assertEqual(kc["spec"]["endpointSelector"]["matchLabels"], {
             "app": "keycloak", "app.kubernetes.io/instance": "kc",

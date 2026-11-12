@@ -2,9 +2,10 @@
 nameOverride: ""
 fullnameOverride: ""
 
+# Required tag comes from chart_versions.keycloak in the inventory.
 image:
   repository: "quay.io/keycloak/keycloak"
-  tag: "26.8.2"
+  tag: ""
 
 # Replica count for the Keycloak StatefulSet the operator renders.
 # 2+ enables Infinispan distributed cache for session replication
@@ -25,7 +26,6 @@ bootstrapAdminSecretName: ""
 # of the CNPG Cluster created in the pre-chart.
 database:
   host: ""
-  port: 5432
   database: "keycloak"
   credentialsSecretName: ""
   # CNPG Cluster name. Its pods carry the `cnpg.io/cluster: <name>` label.
@@ -63,7 +63,3 @@ networkPolicy:
     # TCP ports of the realm SMTP server (world or in-cluster). Empty: no
     # SMTP egress.
     smtpPorts: []
-
-# Extra Keycloak --<option>=<value> args. List of {name, value} or
-# {name, secret: {name, key}} dicts; passed verbatim into the CR.
-additionalOptions: []
