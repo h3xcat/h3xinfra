@@ -72,7 +72,6 @@
           labelFilter: external-dns.alpha.kubernetes.io/publish=true
           policy: sync
           sources:
-          - ingress
           - service
         set_values:
         - value: "domainFilters={{ externaldns.domain_filters | to_json }}"
