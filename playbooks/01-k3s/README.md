@@ -136,7 +136,7 @@ inventory path and first server; from a private checkout prefix the playbook
 path with `h3xinfra/`.
 
 ```bash
-ansible-playbook -i /path/to/inventory playbooks/01-k3s/apiserver-config.yml --check --limit first-server --forks 1
+ansible-playbook -i /path/to/inventory playbooks/01-k3s/apiserver-config.yml --check --forks 1
 ansible-playbook -i /path/to/inventory playbooks/01-k3s/apiserver-config.yml --limit first-server --forks 1
 ansible-playbook -i /path/to/inventory playbooks/01-k3s/apiserver-config.yml --forks 1
 ```
