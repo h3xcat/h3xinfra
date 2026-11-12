@@ -32,7 +32,7 @@ class ControllerAvailabilityTests(unittest.TestCase):
 
     def test_envoy_proxy_is_dual_stack_and_spans_nodes(self):
         values = {
-            "wildcardCertificate": {"commonName": "example.invalid", "dnsNames": ["example.invalid"]},
+            "domain": "example.invalid",
             "ipPool": {"ipAddressPools": {"addresses": {"ipv4": "192.0.2.10/32"}}},
         }
         result = subprocess.run(

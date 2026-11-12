@@ -98,6 +98,7 @@ jobs:
           for chart in playbooks/*/charts/*/; do
             helm lint --strict "$chart" >/dev/null || { echo "::error::helm lint $chart"; rc=1; }
             if helm template t "$chart" -n test-ns \
+                --set domain=example.com \
                 --set hostname=keycloak.example.com --set bootstrapAdminSecretName=fake --set database.host=db --set database.credentialsSecretName=fake \
                 --set bootstrapSecret.adminPassword=FAKE --set postgres.password=FAKE \
                 --set 'clusterIssuer.acme.dnsZones={example.com}' --set cloudflareApiToken.token=FAKE >/dev/null; then

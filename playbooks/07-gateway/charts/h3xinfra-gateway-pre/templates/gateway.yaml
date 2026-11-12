@@ -1,3 +1,4 @@
+{{- $domain := required "domain is required" .Values.domain -}}
 {{- $secretName := include "h3xinfra-gateway-pre.wildcardSecretName" . -}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
@@ -9,11 +10,10 @@ metadata:
 spec:
   gatewayClassName: {{ .Values.gateway.className | quote }}
   listeners:
-    {{- if .Values.gateway.listeners.http.enabled }}
     - name: http
       protocol: HTTP
-      port: {{ .Values.gateway.listeners.http.port }}
-      hostname: {{ .Values.gateway.listeners.http.hostname | quote }}
+      port: 80
+      hostname: {{ printf "*.%s" $domain | quote }}
       allowedRoutes:
         namespaces:
           from: {{ .Values.gateway.allowedRoutesFrom | quote }}
@@ -28,17 +28,15 @@ spec:
     # matches multi-label subdomains like `qb.app.example.com`.
     - name: http-apex
       protocol: HTTP
-      port: {{ .Values.gateway.listeners.http.port }}
-      hostname: {{ .Values.gateway.listeners.httpsApex.hostname | quote }}
+      port: 80
+      hostname: {{ $domain | quote }}
       allowedRoutes:
         namespaces:
           from: {{ .Values.gateway.allowedRoutesFrom | quote }}
-    {{- end }}
-    {{- if .Values.gateway.listeners.https.enabled }}
     - name: https
       protocol: HTTPS
-      port: {{ .Values.gateway.listeners.https.port }}
-      hostname: {{ .Values.gateway.listeners.https.hostname | quote }}
+      port: 443
+      hostname: {{ printf "*.%s" $domain | quote }}
       tls:
         mode: Terminate
         certificateRefs:
@@ -47,12 +45,10 @@ spec:
       allowedRoutes:
         namespaces:
           from: {{ .Values.gateway.allowedRoutesFrom | quote }}
-    {{- end }}
-    {{- if .Values.gateway.listeners.httpsApp.enabled }}
     - name: https-app
       protocol: HTTPS
-      port: {{ .Values.gateway.listeners.httpsApp.port }}
-      hostname: {{ .Values.gateway.listeners.httpsApp.hostname | quote }}
+      port: 443
+      hostname: {{ printf "*.app.%s" $domain | quote }}
       tls:
         mode: Terminate
         certificateRefs:
@@ -61,12 +57,10 @@ spec:
       allowedRoutes:
         namespaces:
           from: {{ .Values.gateway.allowedRoutesFrom | quote }}
-    {{- end }}
-    {{- if .Values.gateway.listeners.httpsApex.enabled }}
     - name: https-apex
       protocol: HTTPS
-      port: {{ .Values.gateway.listeners.httpsApex.port }}
-      hostname: {{ .Values.gateway.listeners.httpsApex.hostname | quote }}
+      port: 443
+      hostname: {{ $domain | quote }}
       tls:
         mode: Terminate
         certificateRefs:
@@ -75,12 +69,8 @@ spec:
       allowedRoutes:
         namespaces:
           from: {{ .Values.gateway.allowedRoutesFrom | quote }}
-    {{- end }}
-{{- if .Values.gateway.listeners.http.enabled }}
 ---
 # Global HTTP -> HTTPS redirect for every host accepted by the HTTP listeners.
-# Only rendered when the HTTP listeners exist; otherwise the parentRefs would
-# point at non-existent listener sections and the route would fail to attach.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -100,4 +90,3 @@ spec:
           requestRedirect:
             scheme: https
             statusCode: 301
-{{- end }}

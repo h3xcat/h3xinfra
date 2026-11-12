@@ -5,10 +5,6 @@ metadata:
   namespace: {{ .Values.ipPool.namespace }}
   labels:
     {{- include "h3xinfra-gateway-pre.labels" . | nindent 4 }}
-  {{- with .Values.ipPool.ipAddressPools.annotations }}
-  annotations:
-    {{- . | nindent 4 }}
-  {{- end }}
 spec:
   addresses:
   {{- if .Values.ipPool.ipAddressPools.addresses.ipv4 }}
@@ -26,10 +22,6 @@ metadata:
   namespace: {{ .Values.ipPool.namespace }}
   labels:
     {{- include "h3xinfra-gateway-pre.labels" . | nindent 4 }}
-  {{- with .Values.ipPool.l2Advertisement.annotations }}
-  annotations:
-    {{- . | nindent 4 }}
-  {{- end }}
 spec:
   ipAddressPools:
   - {{ include "h3xinfra-gateway-pre.fullname" . }}-pool

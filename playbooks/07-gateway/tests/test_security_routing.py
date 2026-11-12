@@ -1,4 +1,5 @@
 """Render edge security contracts locally with synthetic values."""
+import base64
 import json
 from pathlib import Path
 import subprocess
@@ -59,6 +60,35 @@ def ports(rule):
 
 
 class CoreSecurityRouting(unittest.TestCase):
+    def test_cloudflare_secrets_preserve_token_bytes(self):
+        token = "FAKE_cloudflare-token+/=\n"
+        for component, chart in [
+            ("05-certmanager", "h3xinfra-certmanager-post"),
+            ("06-externaldns", "h3xinfra-externaldns-pre"),
+        ]:
+            with self.subTest(chart=chart):
+                docs = render(component, chart, {
+                    "clusterIssuer": {"acme": {"dnsZones": ["example.test"]}},
+                    "cloudflareApiToken": {"token": token},
+                })
+                secret = next(doc for doc in docs if doc["kind"] == "Secret")
+                self.assertEqual(secret["type"], "Opaque")
+                self.assertEqual(base64.b64decode(secret["data"]["api-token"]), token.encode())
+
+    def test_cloudflare_secrets_reject_missing_empty_or_null_tokens(self):
+        for component, chart in [
+            ("05-certmanager", "h3xinfra-certmanager-post"),
+            ("06-externaldns", "h3xinfra-externaldns-pre"),
+        ]:
+            for token_values in [{}, {"token": ""}, {"token": None}]:
+                with self.subTest(chart=chart, token_values=token_values):
+                    with self.assertRaises(subprocess.CalledProcessError) as failure:
+                        render(component, chart, {
+                            "clusterIssuer": {"acme": {"dnsZones": ["example.test"]}},
+                            "cloudflareApiToken": token_values,
+                        })
+                    self.assertIn("cloudflareApiToken.token is required", failure.exception.stderr)
+
     def test_keycloak_restriction_targets_only_admin_rule(self):
         cidrs = ["192.0.2.0/24", "2001:db8::/64"]
         docs = keycloak(cidrs)
@@ -78,11 +108,7 @@ class CoreSecurityRouting(unittest.TestCase):
 
     def test_keycloak_attaches_to_the_listener_selected_by_app_sni(self):
         gateway = next(d for d in render("07-gateway", "h3xinfra-gateway-pre", {
-            "gateway": {"listeners": {
-                "https": {"hostname": "*.example.test"},
-                "httpsApp": {"hostname": "*.app.example.test"},
-                "httpsApex": {"hostname": "example.test"},
-            }},
+            "domain": "example.test",
         }) if d["kind"] == "Gateway")
         route = next(d for d in keycloak([]) if d["kind"] == "HTTPRoute")
         host = route["spec"]["hostnames"][0]
@@ -128,14 +154,48 @@ class CoreSecurityRouting(unittest.TestCase):
             self.assertEqual(route["spec"]["parentRefs"][0]["port"], 443)
             self.assertNotIn("sectionName", route["spec"]["parentRefs"][0])
 
+    def test_gateway_domain_keeps_listener_and_certificate_coverage(self):
+        docs = render("07-gateway", "h3xinfra-gateway-pre", {"domain": "example.test"})
+        gateway = next(d for d in docs if d["kind"] == "Gateway")
+        certificate = next(d for d in docs if d["kind"] == "Certificate")
+        listeners = gateway["spec"]["listeners"]
+        self.assertEqual([
+            (listener["name"], listener["protocol"], listener["port"], listener["hostname"])
+            for listener in listeners
+        ], [
+            ("http", "HTTP", 80, "*.example.test"),
+            ("http-apex", "HTTP", 80, "example.test"),
+            ("https", "HTTPS", 443, "*.example.test"),
+            ("https-app", "HTTPS", 443, "*.app.example.test"),
+            ("https-apex", "HTTPS", 443, "example.test"),
+        ])
+        self.assertEqual(certificate["spec"]["commonName"], "example.test")
+        self.assertEqual(certificate["spec"]["dnsNames"],
+                         ["example.test", "*.example.test", "*.app.example.test"])
+        for listener in listeners:
+            self.assertEqual(listener["allowedRoutes"], {"namespaces": {"from": "All"}})
+            if listener["protocol"] == "HTTPS":
+                self.assertEqual(listener["tls"], {
+                    "mode": "Terminate", "certificateRefs": [{
+                        "kind": "Secret", "name": certificate["spec"]["secretName"],
+                    }],
+                })
+
+    def test_gateway_requires_domain(self):
+        for values in [{}, {"domain": ""}, {"domain": None}]:
+            with self.subTest(values=values):
+                with self.assertRaises(subprocess.CalledProcessError) as failure:
+                    render("07-gateway", "h3xinfra-gateway-pre", values)
+                self.assertIn("domain is required", failure.exception.stderr)
+
     def test_global_redirect_stays_on_http(self):
-        docs = render("07-gateway", "h3xinfra-gateway-pre", {})
+        docs = render("07-gateway", "h3xinfra-gateway-pre", {"domain": "example.test"})
         redirect = next(d for d in docs if d["kind"] == "HTTPRoute")
         self.assertEqual({p["sectionName"] for p in redirect["spec"]["parentRefs"]}, {"http", "http-apex"})
         self.assertEqual(redirect["spec"]["rules"][0]["filters"][0]["requestRedirect"]["scheme"], "https")
 
     def test_gateway_replaces_client_proxy_headers(self):
-        docs = render("07-gateway", "h3xinfra-gateway-pre", {})
+        docs = render("07-gateway", "h3xinfra-gateway-pre", {"domain": "example.test"})
         gateway = next(d for d in docs if d["kind"] == "Gateway")
         policy = next(d for d in docs if d["kind"] == "ClientTrafficPolicy")
         self.assertEqual(policy["spec"]["targetRefs"], [{
