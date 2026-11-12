@@ -34,14 +34,14 @@ server_config_yaml: |
   - "anonymous-auth=true"
   - "enable-aggregator-routing=true"
 
-# kube-apiserver audit logging (playbooks/01-k3s/apiserver-audit.yml).
+# kube-apiserver audit logging (playbooks/01-k3s/apiserver-config.yml).
 apiserver_audit:
   enabled: true
   max_size_mb: 100
   max_backups: 10
   max_age_days: 30
 
-# Cluster-wide Pod Security Admission defaults (playbooks/01-k3s/apiserver-admission.yml).
+# Cluster-wide Pod Security Admission defaults (playbooks/01-k3s/apiserver-config.yml).
 # They apply only to namespaces without pod-security.kubernetes.io/* labels.
 # Keep enforce at privileged until each namespace has its labels.
 apiserver_pod_security:
