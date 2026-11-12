@@ -6,10 +6,9 @@
   gather_facts: false
 
   tasks:
-    # Pod Security: the controller pods pass restricted. The controller
-    # generates the Envoy proxy pods, so the rendered charts do not show them.
-    # Enforcement is opt-in: set gateway.pod_security_enforce to restricted
-    # after a server-side dry-run label check (see 01-k3s/README.md).
+    # The pinned controller and generated proxy defaults pass restricted.
+    # Before first enforcement, verify the live controller, hook and proxy
+    # pods with the attended server-side dry-run procedure in README.md.
     - name: Create Gateway namespace
       kubernetes.core.k8s:
         state: present
@@ -20,7 +19,7 @@
           metadata:
             name: "{{ gateway.namespace }}"
             labels:
-              pod-security.kubernetes.io/enforce: "{{ gateway.pod_security_enforce | default('privileged') }}"
+              pod-security.kubernetes.io/enforce: "{{ gateway.pod_security_enforce | default('restricted') }}"
               pod-security.kubernetes.io/audit: restricted
               pod-security.kubernetes.io/warn: restricted
 
