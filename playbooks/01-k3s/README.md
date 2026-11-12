@@ -184,7 +184,7 @@ and `enforce` set to the strictest level that its pods pass:
 | `metallb.namespace` | `privileged` | L2 speaker: hostNetwork, NET_RAW |
 | `certmanager.namespace` | `restricted` | All pods pass `restricted`. |
 | `externaldns.namespace` | `restricted` | All pods pass `restricted`. |
-| `gateway.namespace` | `privileged` (opt-in `restricted`) | The controller generates the Envoy proxy pods. |
+| `gateway.namespace` | `restricted` by default | Review controller, certgen hook and generated proxy Pods through the [attended Gateway PSA gate](../07-gateway/README.md#attended-deployment-gate). |
 | `longhorn.namespace` | `privileged` | Privileged containers, hostPath `/dev`, `/proc`, `/var/lib/longhorn` |
 | `argocd.namespace` | `restricted` | All pods pass `restricted`. |
 | `keycloak.namespace` | `privileged` (opt-in `baseline`) | The operators generate the Keycloak and Postgres pods. |
@@ -206,6 +206,10 @@ The labels and the defaults use the `latest` policy version. A K3s upgrade
 can add new Pod Security checks. Then Kubernetes can reject new pods in an
 enforced namespace. Before you upgrade K3s, read the Pod Security Standards
 changes in the Kubernetes release notes.
+
+Gateway's restricted default takes effect only when deployed. Follow its
+[attended admission and rollout checks](../07-gateway/README.md) before changing
+the live namespace; merging source does not establish live enforcement.
 
 To make an opt-in level active, do these steps:
 
