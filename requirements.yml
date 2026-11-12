@@ -21,7 +21,7 @@ collections:
   - name: kubernetes.core
     version: 6.6.0
   # community.general.{ini_file,pam_limits,sudoers,terraform} are used directly
-  # by the playbooks (keycloak_{user,group} only by 10-keycloak/teardown.yml).
+  # by the playbooks, including Terraform-based Keycloak standup and teardown.
   # 14.x has `requires_ansible: >=2.19.0`: the devcontainer (Ubuntu 24.04, PPA
   # ansible-core 2.21) and CI (ANSIBLE_CORE_VERSION 2.21) satisfy it. It also
   # shadows the older copy the PPA `ansible` bundle ships in site-packages

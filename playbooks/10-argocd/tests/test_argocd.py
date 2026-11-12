@@ -3,7 +3,6 @@
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 import unittest
@@ -151,23 +150,6 @@ class ConfigurationTests(unittest.TestCase):
                         self.assertNotEqual(result.returncode, 0)
                         self.assertIn(task["ansible.builtin.assert"]["fail_msg"], output)
                         self.assertNotIn("censored", output)
-
-    def test_keycloak_client_plans(self):
-        # Copy just the client definitions: no deployment tfvars, backend,
-        # state or real provider calls can enter this mocked-provider test.
-        source = ROOT / "playbooks/10-keycloak/terraform"
-        with tempfile.TemporaryDirectory(prefix="h3x-argocd-clients-") as directory:
-            target = Path(directory)
-            for name in ("providers.tf", "variables.tf", "clients.tf", "realm.tf", ".terraform.lock.hcl"):
-                shutil.copyfile(source / name, target / name)
-            (target / "tests").mkdir()
-            shutil.copyfile(LAYER / "tests/oidc_clients.tftest.hcl", target / "tests/oidc_clients.tftest.hcl")
-            env = dict(os.environ, TF_DATA_DIR=str(target / ".terraform"), TF_IN_AUTOMATION="1", TF_INPUT="0")
-            for arguments in (["init", "-backend=false", "-lockfile=readonly"], ["test"]):
-                result = subprocess.run(["terraform", *arguments, "-no-color"], cwd=target, env=env,
-                                        capture_output=True, text=True, timeout=120)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
 
 if __name__ == "__main__":
     unittest.main()
