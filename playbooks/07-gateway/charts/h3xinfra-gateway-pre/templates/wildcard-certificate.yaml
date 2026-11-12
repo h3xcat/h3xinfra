@@ -4,10 +4,6 @@ metadata:
   name: {{ include "h3xinfra-gateway-pre.wildcardSecretName" . }}
   labels:
     {{- include "h3xinfra-gateway-pre.labels" . | nindent 4 }}
-  {{- with .Values.wildcardCertificate.annotations }}
-  annotations:
-    {{- . | nindent 4 }}
-  {{- end }}
 spec:
   secretName: {{ include "h3xinfra-gateway-pre.wildcardSecretName" . }}
   issuerRef:

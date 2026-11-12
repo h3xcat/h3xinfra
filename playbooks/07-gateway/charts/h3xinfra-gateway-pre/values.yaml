@@ -3,7 +3,6 @@ fullnameOverride: ""
 
 # Wildcard certificate served by the shared Gateway HTTPS listener.
 wildcardCertificate:
-  annotations: {}
   dnsNames: []
   commonName: ""
 
@@ -14,12 +13,9 @@ clusterIssuerName: cloudflare-clusterissuer
 ipPool:
   namespace: metallb-system
   ipAddressPools:
-    annotations: {}
     addresses:
       ipv4: ""
       ipv6: ""
-  l2Advertisement:
-    annotations: {}
   autoAssign: false
 
 # GatewayClass + Gateway configuration.

@@ -4,10 +4,6 @@ metadata:
   name: {{ include "h3xinfra-certmanager-post.fullname" . }}-default-clusterissuer
   labels:
     {{- include "h3xinfra-certmanager-post.labels" . | nindent 4 }}
-  {{- with .Values.clusterIssuer.annotations }}
-  annotations:
-    {{- . | nindent 4 }}
-  {{- end }}
 spec:
   acme:
     server: {{ .Values.clusterIssuer.acme.server }}

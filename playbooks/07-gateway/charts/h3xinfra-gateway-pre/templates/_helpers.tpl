@@ -1,13 +1,4 @@
-{{/*
-Expand the name of the chart.
-*/}}
-{{- define "h3xinfra-gateway-pre.name" -}}
-{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
-{{- end }}
-
-{{/*
-Create a default fully qualified app name.
-*/}}
+{{/* Preserve release-based names unless fullnameOverride is set. */}}
 {{- define "h3xinfra-gateway-pre.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
@@ -21,31 +12,15 @@ Create a default fully qualified app name.
 {{- end }}
 {{- end }}
 
-{{/*
-Create chart name and version as used by the chart label.
-*/}}
-{{- define "h3xinfra-gateway-pre.chart" -}}
-{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
-{{- end }}
-
-{{/*
-Common labels
-*/}}
+{{/* Common resource labels; these charts do not create workload selectors. */}}
 {{- define "h3xinfra-gateway-pre.labels" -}}
-helm.sh/chart: {{ include "h3xinfra-gateway-pre.chart" . }}
-{{ include "h3xinfra-gateway-pre.selectorLabels" . }}
+helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+app.kubernetes.io/name: {{ default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{- end }}
-
-{{/*
-Selector labels
-*/}}
-{{- define "h3xinfra-gateway-pre.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "h3xinfra-gateway-pre.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*

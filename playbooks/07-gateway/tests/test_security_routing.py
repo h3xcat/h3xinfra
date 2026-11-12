@@ -1,4 +1,5 @@
 """Render edge security contracts locally with synthetic values."""
+import base64
 import json
 from pathlib import Path
 import subprocess
@@ -59,6 +60,35 @@ def ports(rule):
 
 
 class CoreSecurityRouting(unittest.TestCase):
+    def test_cloudflare_secrets_preserve_token_bytes(self):
+        token = "FAKE_cloudflare-token+/=\n"
+        for component, chart in [
+            ("05-certmanager", "h3xinfra-certmanager-post"),
+            ("06-externaldns", "h3xinfra-externaldns-pre"),
+        ]:
+            with self.subTest(chart=chart):
+                docs = render(component, chart, {
+                    "clusterIssuer": {"acme": {"dnsZones": ["example.test"]}},
+                    "cloudflareApiToken": {"token": token},
+                })
+                secret = next(doc for doc in docs if doc["kind"] == "Secret")
+                self.assertEqual(secret["type"], "Opaque")
+                self.assertEqual(base64.b64decode(secret["data"]["api-token"]), token.encode())
+
+    def test_cloudflare_secrets_reject_missing_empty_or_null_tokens(self):
+        for component, chart in [
+            ("05-certmanager", "h3xinfra-certmanager-post"),
+            ("06-externaldns", "h3xinfra-externaldns-pre"),
+        ]:
+            for token_values in [{}, {"token": ""}, {"token": None}]:
+                with self.subTest(chart=chart, token_values=token_values):
+                    with self.assertRaises(subprocess.CalledProcessError) as failure:
+                        render(component, chart, {
+                            "clusterIssuer": {"acme": {"dnsZones": ["example.test"]}},
+                            "cloudflareApiToken": token_values,
+                        })
+                    self.assertIn("cloudflareApiToken.token is required", failure.exception.stderr)
+
     def test_keycloak_restriction_targets_only_admin_rule(self):
         cidrs = ["192.0.2.0/24", "2001:db8::/64"]
         docs = keycloak(cidrs)
