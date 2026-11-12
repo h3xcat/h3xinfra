@@ -125,6 +125,25 @@ If you reinstall a node, do these steps:
 
 Do not set `host_key_checking=False` to bypass this error. If you do, Ansible can send credentials to a host that is not your node.
 
+### Recovering Older Node Images
+
+The November 2026 audit recorded all eight nodes clean of the retired iTCO
+modules-load file and Pi hugepage migration remnants. Normal `00-prep` no
+longer removes that file, strips Pi `hugepages=N` boot arguments, or zeros the
+Pi hugepage pool on every run. That last change also retires automatic repair
+of later Pi hugepage drift. Hardware watchdog loading, CPU C-state limits and
+the separate capture-kernel zero-hugepage controls remain active.
+
+For an image from before May 2026, use a fresh supported installation or
+review and perform only the applicable legacy cleanup from the
+[pre-retirement source](https://github.com/h3xcat/h3xinfra/blob/82e7d2d7ee9ec5a654fdc8e267ee92ea74038b4d/playbooks/00-prep/standup.yml)
+before running current automation. Check the restored host's configuration
+and runtime state when selecting that cleanup; do not replay the entire old
+prep playbook. This recovery constraint does not require deleting retained
+images or backups. Installed amd64 Longhorn V2 sysctl files and hugepage pools
+still need their separate attended cleanup; retiring Pi migration tasks does
+not clean that host state.
+
 ### Access to Cluster Nodes
 
 ```bash

@@ -32,10 +32,10 @@ keeps all three namespace PSA labels at `restricted`. This lets a fresh
 cluster create the Keycloak database before private application layers run.
 The operator is shared with Open WebUI and is retained by Keycloak teardown.
 
-An existing installation requires the coordinated ownership handoff described
+Moving the existing shared operator requires the coordinated ownership handoff
 in [CNPG operator ownership](CNPG-OWNERSHIP.md). A namespace marker makes later
-public runs idempotent; it does not prove that another Terraform state has
-forgotten the release. The installer refuses unexpected ownership, values,
+public runs idempotent; it does not prove that the private `20-openwebui`
+Terraform state has forgotten the release. The installer refuses unexpected ownership, values,
 controller images or adoption schemas. It reuses existing Helm values and
 never forces release ownership or replaces/uninstalls the operator.
 
@@ -188,8 +188,9 @@ Kubernetes groups. The public client must not receive `k8s-cluster`.
 #### Migrating the existing Open WebUI/MCP resources
 
 Update the client inventory together with this module. Keep `oidc-moved.tf`
-until every existing workspace has applied the migration: deleting the old
-optional-scope resources without their moves detaches those scope assignments.
+until the owner's NAS-backed state has applied the migration. Removing these
+move declarations before state records the new addresses can detach the
+optional-scope assignments.
 
 Source publication does not perform this migration. Before the first deployment
 or apply, the owner must inspect a plan against the real workspace and state,
@@ -210,8 +211,12 @@ The moved audience mapper also changes its display name from
 anything to ID tokens. There must be no creation, replacement, client or scope
 detachment, or authentication change. Resolve any unexpected action before apply.
 
-After applying, verify Open WebUI login and its MCP exchange, then remove the
-temporary moves only after all existing workspaces have recorded the new addresses.
+After applying, verify that the three new addresses retain the original IDs,
+require a fresh no-change plan, and verify Open WebUI login and MCP exchange.
+Record completion, then remove the temporary moves and transition-only tests
+in a follow-up source change; retain current authentication and scope tests.
+Use [Terraform state recovery](#terraform-state) for older copies; other
+checkouts sharing this NAS state are not separate deployments.
 The mocked migration checks establish source behavior; they do not replace the
 owner's live plan or runtime checks.
 
@@ -430,6 +435,16 @@ at `/h3xinfra` in the controller, so workspace clones share the same state.
 The playbook creates the state directory before Terraform runs. The Ansible
 Terraform module uses `force_init: true` to initialize the configured backend
 on each run.
+
+The completed MFA module migration no longer needs its old address moves in
+current source. Before restoring older state, pause normal applies and use the
+recorded compatible migration-bearing source revision for that backup. The
+pre-cleanup MFA moves remain in Git history. Use an isolated recovery checkout;
+do not replay the historical stack or overwrite adopted state merely to
+retire compatibility code. Review the state upgrade before resuming automation;
+unexpected flow, client or authentication changes are a stop condition. Keep
+the recovery copy intact; its age does not require keeping obsolete bridges in
+the normal deployment configuration.
 
 The playbook renders a new `terraform.tfvars.json` file at each run.
 
