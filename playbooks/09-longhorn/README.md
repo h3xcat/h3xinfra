@@ -83,35 +83,68 @@ For a setting-only rollout, do these steps:
 Do not run the full standup playbook as a shortcut. A rollback changes the
 failure handling again. A rollback requires an explicit operational decision.
 
-## Unused V2 Engine
+## Parked V2 Engine
 
-V2 is off by default. The audit on 2026-09-19 found no V2 volumes, no block
-disks, and no engine/replica processes in the three V2 managers. Each of those
-idle managers reserved 6.138 CPU and ran SPDK polling loops, although every
-attached volume used V1.
+V2 and dedicated block disks are parked. `standup.yml` sets the literal
+`v2DataEngine: false`; the former inventory opt-in no longer enables V2.
+The V1/V2 instance-manager CPU reservations remain 12%/31%.
 
-Before the play disables V2, it does these checks:
+Before changing the setting, the play requires either a clean first install
+(both Volume and InstanceManager CRDs absent) or both APIs available. It stops
+if any V2 volume or V2 engine, frontend, replica, shard or shard-group process
+exists. A real run waits for the native setting to be false and V2 instance
+managers to disappear. Check mode retains preflight but skips those waits;
+it cannot prove the setting changed or processes stopped. Do not bypass these
+checks or force-delete managers to finish a rollout.
 
-- If a V2 volume exists, the play stops.
-- If a V2 instance manager reports engine/replica processes, the play stops.
+Post chart 0.3.0 removes its V2 StorageClass, normally `longhorn-v2`. Before
+reconciling that chart, inspect saved release values for a customized class
+name, and verify that no PVC (including Pending claims), PV or workload
+configuration references it. Inspect V2 volumes, block disks and backing-image
+data separately; an empty process map does not prove stored data is disposable.
+Pause provisioning writers during this review and reconciliation. Stop if a
+consumer or V2 data exists and plan its migration with the owner. Deleting the
+class does not migrate volumes or provide data recovery.
 
-The play skips these checks only before the initial Longhorn CRD installation.
-Do these checks again immediately before a narrowly staged live setting update.
-Do not create V2 volumes at the same time.
+Prepare a narrow post-chart reconciliation at the unchanged upstream version;
+review the rendered deletion and the harmless chart-version label changes.
+Verify storage health and backups before the attended change, then confirm the
+class is absent, V1 volumes remain healthy, and scheduled jobs are unchanged.
+Do not run the full standup or prep playbook as a host-cleanup shortcut.
 
-For a future intentional V2 deployment, do these steps:
+Removing preparation from source does not delete installed files, unload
+modules, release reserved memory, or remove existing arm64 disable labels.
+Keep those labels until a separately reviewed future V2 design. Host cleanup
+is a separate attended operation after the source change:
 
-1. Register suitable block disks.
-2. Verify the prerequisites.
-3. Set `longhorn_v2_data_engine: true` where both `k3s_cluster` and `k8s`
-   inventory hosts receive it.
+1. Confirm V2 is disabled and has no volumes, instance managers or their Pods;
+   inventory other hugepage and kernel-module consumers. Empty process maps
+   alone do not prove an idle or unreachable manager has released its hugepages.
+   Record each node's current sysctl, boot configuration and module files for
+   recovery.
+2. On the former amd64 V2 nodes, remove only the reviewed legacy
+   `/etc/sysctl.d/99-longhorn-v2.conf` and
+   `/etc/modules-load.d/longhorn-v2.conf`. Release runtime hugepages only after
+   confirming there are no consumers and no other reservation sources.
+3. On affected nodes, remove the obsolete `vfio_pci.conf`,
+   `uio_pci_generic.conf` and `nvme-tcp.conf` module-load files only after checking
+   their consumers. Do not automatically unload active modules.
+4. Verify the resulting reservation and available memory per node. The former
+   source reserved 1,024 two-MiB pages (2 GiB); installed values can differ, so
+   do not assume a fixed amount of memory was freed. Let kubelet capacity refresh
+   with the next planned reboot; do not restart k3s-agent to force a refresh.
 
-This setting enables the amd64 hugepage/module preparation and the Helm setting.
-Arm64 nodes stay excluded.
+Keep Pi kernel-command-line migration and crash-capture hugepage overrides:
+legacy files can remain until cleanup, and other hugepage settings can still
+reach the capture kernel. If a consumer or degraded volume appears, stop and
+preserve data. Restore reviewed host files/settings only through an attended
+recovery plan. Reverting source or recreating the StorageClass does not restore
+data or safely re-enable V2; future V2 use needs a new design and prerequisites.
 
-When you disable V2, the unused V2 managers are removed. But the host keeps its
-existing hugepage reservation and its kernel module configuration. This change
-intentionally does not change those host settings.
+The guards follow the [pinned V2 setting validation](https://github.com/longhorn/longhorn-manager/blob/v1.13.0/datastore/longhorn.go)
+and [instance-manager status fields](https://github.com/longhorn/longhorn-manager/blob/v1.13.0/k8s/pkg/apis/longhorn/v1beta2/instancemanager.go).
+They are not a lock against concurrent changes; healthy API access and an
+attended inventory remain prerequisites.
 
 ## Resource Maintenance
 
@@ -153,8 +186,8 @@ Do not delete them only because the manager/chart version is newer.
 The playbooks no longer install or remove `longhornctl`; their only invocation
 was its version check. Existing nodes keep the binary until the owner removes
 `/usr/local/bin/longhornctl` after checking for local maintenance-script users.
-Do that separately from a storage rollout. The V2 prerequisites, volume and
-instance-manager checks, CSI settings, and authentication guards remain in
+Do that separately from a storage rollout. The volume and instance-manager
+checks, CSI settings, and authentication guards remain in
 `standup.yml`.
 
 ## Verification

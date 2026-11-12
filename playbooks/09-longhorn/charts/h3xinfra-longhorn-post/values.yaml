@@ -52,13 +52,6 @@ recurringJobs:
   #     concurrency: 1
   #     groups: ["default"]
 
-# StorageClass for V2 (SPDK) data engine volumes; see
-# templates/storageclass-v2.yaml. Volumes only schedule once block-type
-# disks exist on the amd64 servers.
-v2StorageClass:
-  enabled: true
-  name: longhorn-v2
-
 # NetworkPolicy that lets Prometheus scrape longhorn-manager metrics (:9500);
 # pairs with `metrics.serviceMonitor.enabled` on the upstream chart. See
 # templates/networkpolicy-metrics.yaml.

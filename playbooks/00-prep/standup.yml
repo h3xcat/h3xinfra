@@ -113,9 +113,6 @@
         - br_netfilter
         - overlay
         - dm_crypt
-        - vfio_pci
-        - uio_pci_generic
-        - nvme-tcp
         # Loaded ahead of the BBR sysctl so net.ipv4.tcp_congestion_control=bbr
         # below applies on first run without a reboot.
         - tcp_bbr
@@ -314,11 +311,10 @@
 
     # Hugepages: the Pis once pre-allocated 1024 * 2 MiB = 2 GiB of dead
     # weight, so the runtime allocation is zeroed here and `hugepages=N` is
-    # stripped from the Pi kernel cmdline below. The amd64 servers are
-    # EXCLUDED: 09-longhorn reserves vm.nr_hugepages=1024 on them for the
-    # Longhorn V2 (SPDK) instance manager via /etc/sysctl.d/99-longhorn-v2.conf,
-    # and zeroing the pool underneath a running instance manager leaves its
-    # replacement unable to start until the next reboot re-applies the sysctl.
+    # stripped from the Pi kernel cmdline below. The amd64 servers stay
+    # excluded: legacy Longhorn V2 sysctl files may still reserve hugepages.
+    # Their removal and runtime release require separate attended checks;
+    # removing V2 preparation from source does not clean installed host state.
     - name: Check current huge page allocation
       shell: cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
       register: hugepage_current

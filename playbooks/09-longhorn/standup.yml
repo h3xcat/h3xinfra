@@ -1,44 +1,6 @@
 ---
 - import_playbook: ../99-utils/kube-connect.yml
 
-# V2 (SPDK) prerequisites are opt-in until block disks and V2 volumes are needed.
-# Only the amd64 servers may run V2:
-# the Pis are excluded (hugepage + dedicated-CPU cost on 4-core/16GB
-# nodes, and arm64+NVMe stuck-I/O bug longhorn/longhorn#13243), so they
-# need no hugepages or nvme-tcp.
-- name: Prepare amd64 nodes for the Longhorn V2 data engine
-  hosts: k3s_cluster
-  gather_facts: true
-  become: true
-  tasks:
-    - name: Configure V2 data engine prerequisites (amd64 only)
-      when:
-        - ansible_architecture == 'x86_64'
-        - longhorn_v2_data_engine | default(false) | bool
-      block:
-        - name: Reserve 2MiB hugepages for SPDK (2 GiB total)
-          ansible.posix.sysctl:
-            name: vm.nr_hugepages
-            value: "1024"
-            sysctl_file: /etc/sysctl.d/99-longhorn-v2.conf
-            reload: true
-
-        - name: Verify hugepages were actually allocated
-          ansible.builtin.command: grep HugePages_Total /proc/meminfo
-          register: hugepages_total
-          changed_when: false
-          failed_when: (hugepages_total.stdout.split()[1] | int) < 1024
-
-        - name: Load nvme-tcp kernel module at boot
-          ansible.builtin.copy:
-            dest: /etc/modules-load.d/longhorn-v2.conf
-            content: "nvme_tcp\n"
-            mode: "0644"
-
-        - name: Load nvme-tcp kernel module now
-          ansible.builtin.command: modprobe nvme_tcp
-          changed_when: false
-
 - name: Deploy Longhorn via Helm
   hosts: k8s
   gather_facts: true
@@ -64,10 +26,25 @@
         name: volumes.longhorn.io
       register: longhorn_volume_crd
 
+    - name: Check whether Longhorn instance manager CRDs already exist
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: instancemanagers.longhorn.io
+      register: longhorn_instance_manager_crd
+
+    - name: Require complete Longhorn APIs before changing the V2 setting
+      ansible.builtin.assert:
+        that:
+          - longhorn_volume_crd.api_found | default(false)
+          - longhorn_instance_manager_crd.api_found | default(false)
+          - longhorn_volume_crd.resources | length == longhorn_instance_manager_crd.resources | length
+        fail_msg: >-
+          Cannot establish whether V2 is unused: the Longhorn APIs are unavailable
+          or partly installed. Restore API access and investigate before proceeding.
+
     - name: Verify the V2 data engine is unused before disabling it
-      when:
-        - not (longhorn_v2_data_engine | default(false) | bool)
-        - longhorn_volume_crd.resources | length > 0
+      when: longhorn_volume_crd.resources | length > 0
       block:
         - name: Read existing Longhorn volumes
           kubernetes.core.k8s_info:
@@ -79,10 +56,11 @@
         - name: Refuse to disable V2 while any V2 volume exists
           ansible.builtin.assert:
             that:
+              - longhorn_existing_volumes.api_found | default(false)
               - longhorn_existing_volumes.resources | selectattr('spec.dataEngine', 'equalto', 'v2') | list | length == 0
             fail_msg: >-
-              V2 volumes exist. Keep longhorn_v2_data_engine=true and plan
-              their migration separately; this play never detaches or deletes them.
+              V2 volumes exist. Stop and plan their migration separately before
+              using this V2-disabled configuration; this play never detaches or deletes them.
             quiet: true
 
         - name: Read existing Longhorn instance managers
@@ -92,11 +70,19 @@
             namespace: "{{ longhorn.namespace }}"
           register: longhorn_existing_instance_managers
 
+        - name: Require successful instance manager discovery
+          ansible.builtin.assert:
+            that: longhorn_existing_instance_managers.api_found | default(false)
+            fail_msg: Cannot inspect Longhorn instance managers; refusing to change V2.
+
         - name: Refuse to disable V2 while its instance managers contain processes
           ansible.builtin.assert:
             that:
               - item.status.instanceEngines | default({}) | length == 0
+              - item.status.instanceEngineFrontends | default({}) | length == 0
               - item.status.instanceReplicas | default({}) | length == 0
+              - item.status.instanceShards | default({}) | length == 0
+              - item.status.instanceShardGroups | default({}) | length == 0
             fail_msg: >-
               V2 instance manager {{ item.metadata.name }} still owns processes.
               Investigate before disabling V2; do not force-delete its Pod.
@@ -104,28 +90,6 @@
           loop: "{{ longhorn_existing_instance_managers.resources | selectattr('spec.dataEngine', 'equalto', 'v2') | list }}"
           loop_control:
             label: "{{ item.metadata.name }}"
-
-    - name: Get cluster nodes for V2 engine node selection
-      kubernetes.core.k8s_info:
-        kind: Node
-      register: cluster_nodes
-
-    # Must happen before any opt-in Helm deploy enables v2DataEngine, so the
-    # Pis never attempt to start a V2 instance manager (which would
-    # crashloop without hugepages).
-    - name: Exclude arm64 nodes from the V2 data engine
-      kubernetes.core.k8s:
-        state: patched
-        kind: Node
-        name: "{{ item.metadata.name }}"
-        definition:
-          metadata:
-            labels:
-              node.longhorn.io/disable-v2-data-engine: "true"
-      loop: "{{ cluster_nodes.resources }}"
-      loop_control:
-        label: "{{ item.metadata.name }}"
-      when: item.metadata.labels['kubernetes.io/arch'] == 'arm64'
 
     - name: Add Longhorn Helm repository
       kubernetes.core.helm_repository:
@@ -289,9 +253,9 @@
               v1: "12"
               v2: "31"
 
-            # No V2 volumes or block disks exist. Avoid three idle SPDK managers.
-            # A future opt-in must be shared by k3s_cluster and k8s inventory hosts.
-            v2DataEngine: "{{ longhorn_v2_data_engine | default(false) }}"
+            # V2 and dedicated block disks are parked. Re-enabling requires a new
+            # storage design and prerequisites; there is no inventory opt-in.
+            v2DataEngine: false
 
             # Backup and Maintenance
             createDefaultDiskLabeledNodes: "false"
@@ -316,7 +280,7 @@
         timeout: "600s"
 
     - name: Verify the V2 data engine has stopped after disabling it
-      when: not (longhorn_v2_data_engine | default(false) | bool)
+      when: not ansible_check_mode
       block:
         - name: Wait for the native V2 setting to be disabled
           kubernetes.core.k8s_info:
@@ -337,7 +301,9 @@
             kind: InstanceManager
             namespace: "{{ longhorn.namespace }}"
           register: longhorn_remaining_instance_managers
-          until: longhorn_remaining_instance_managers.resources | selectattr('spec.dataEngine', 'equalto', 'v2') | list | length == 0
+          until: >-
+            (longhorn_remaining_instance_managers.api_found | default(false)) and
+            (longhorn_remaining_instance_managers.resources | selectattr('spec.dataEngine', 'equalto', 'v2') | list | length == 0)
           retries: 60
           delay: 5
 
