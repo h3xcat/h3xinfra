@@ -772,11 +772,13 @@ metadata:
 **Wildcard certificate for the shared Gateway:**
 ```yaml
 gateway:
-  dns_names:
-  - "*.app.example.com"
-  - "*.example.com"
-  - "example.com"
+  domain: "example.com"  # Certificate covers apex, *.example.com and *.app.example.com.
 ```
+
+Gateway chart 0.4.0 derives its five listeners and certificate DNS names from
+`gateway.domain`. Replace the old `gateway.dns_names` and `gateway.listeners`
+inventory fields with this apex domain when upgrading the chart. HTTP stays
+on port 80 and HTTPS on port 443; the listener names and TLS Secret stay the same.
 
 ---
 

@@ -1,3 +1,4 @@
+{{- $domain := required "domain is required" .Values.domain -}}
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -9,8 +10,8 @@ spec:
   issuerRef:
     name: {{ .Values.clusterIssuerName }}
     kind: ClusterIssuer
-  commonName: {{ .Values.wildcardCertificate.commonName }}
-  {{- with .Values.wildcardCertificate.dnsNames }}
+  commonName: {{ $domain | quote }}
   dnsNames:
-    {{- . | toYaml | nindent 4 }}
-  {{- end }}
+    - {{ $domain | quote }}
+    - {{ printf "*.%s" $domain | quote }}
+    - {{ printf "*.app.%s" $domain | quote }}

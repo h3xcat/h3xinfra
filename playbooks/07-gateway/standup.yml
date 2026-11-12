@@ -182,8 +182,7 @@
         create_namespace: false
         values:
           fullnameOverride: "{{ gateway.release_name_prefix }}-pre"
-          wildcardCertificate:
-            commonName: "{{ gateway.dns_names | first }}"
+          domain: "{{ gateway.domain }}"
           clusterIssuerName: "{{ certmanager.release_name_prefix }}-post-default-clusterissuer"
           ipPool:
             namespace: "{{ metallb.namespace }}"
@@ -194,22 +193,10 @@
           gateway:
             className: "{{ gateway.release_name_prefix }}"
             allowedRoutesFrom: "All"
-            listeners:
-              http:
-                hostname: "{{ gateway.listeners.http.hostname }}"
-              https:
-                hostname: "{{ gateway.listeners.https.hostname }}"
-              httpsApp:
-                hostname: "{{ gateway.listeners.httpsApp.hostname }}"
-              httpsApex:
-                hostname: "{{ gateway.listeners.httpsApex.hostname }}"
             # Removes client-supplied proxy headers on every listener. Set
             # the inventory key to false to roll back.
             clientTrafficPolicy:
               enabled: "{{ gateway.client_traffic_policy.enabled | default(true) }}"
-        set_values:
-          - value: "wildcardCertificate.dnsNames={{ gateway.dns_names | to_json }}"
-            value_type: json
         state: present
         wait: true
         timeout: "300s"
