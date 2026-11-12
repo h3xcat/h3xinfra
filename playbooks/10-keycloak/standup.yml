@@ -4,9 +4,10 @@
 # -----------------------------------------------------------------------------
 # Phase 1: Install the Keycloak Operator + deploy a CNPG-backed Keycloak.
 #
-# The operator owns the StatefulSet, the Service, anti-affinity, the PDB and
-# JGroups KUBE_PING discovery for multi-instance Infinispan cache. Postgres
-# is a CloudNativePG `Cluster` so a node failure does not take auth down.
+# The operator owns the StatefulSet, Service, soft topology spread constraints
+# and JGroups KUBE_PING discovery for multi-instance Infinispan cache. The main
+# chart owns the PDB. Postgres is a CloudNativePG `Cluster` with required pod
+# anti-affinity by default to keep the primary and standby on different nodes.
 # -----------------------------------------------------------------------------
 - name: Deploy Keycloak (Operator + CNPG)
   hosts: k8s
@@ -127,8 +128,8 @@
       delay: 5
 
     # -------------------------------------------------------------------------
-    # main-chart: the Keycloak CR. The operator reconciles it into a
-    # StatefulSet, Service, PDB, and JGroups-clustered Infinispan cache.
+    # main-chart: the Keycloak CR and PDB. The operator reconciles the CR into
+    # a StatefulSet, Service and JGroups-clustered Infinispan cache.
     # -------------------------------------------------------------------------
     - name: Deploy Keycloak CR via Helm
       kubernetes.core.helm:
@@ -267,10 +268,10 @@
 # -----------------------------------------------------------------------------
 # Phase 2: Configure realm + clients via Terraform.
 #
-# The Terraform state is kept locally under the terraform/ directory and
-# committed as `terraform.tfstate.d/...` -- see terraform/.gitignore. For a
-# shared/remote backend, drop a `backend.tf` under terraform/ and `terraform
-# init -reconfigure` will migrate automatically on the next run.
+# terraform/backend.tf uses a local backend at
+# /h3xinfra/state/keycloak/terraform.tfstate on the controller's NAS mount.
+# Workspace clones share this state; rendered tfvars stay in terraform/ and
+# are ignored by Git because they contain plaintext secrets.
 # -----------------------------------------------------------------------------
 - name: Configure Keycloak realm via Terraform
   hosts: k8s

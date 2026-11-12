@@ -76,12 +76,12 @@ h3xinfra/
 
 ### Layer Numbering System
 
-Each layer has a number. The numbers set the deployment order and the dependency relations:
+Each layer has a number. The numbers group related layers. The imports in `playbooks/stack-standup.yml` set the deployment order:
 
 #### Core Infrastructure (00-09)
 - **00-prep**: Server preparation, system configuration, and package installation.
 - **01-k3s**: Deploys the K3s Kubernetes cluster.
-- **01-priorityclasses**: Custom `PriorityClass` definitions (`h3xinfra-platform-critical`, `h3xinfra-app-background`). Downstream layers use these classes to control the eviction order.
+- **01-priorityclasses**: Custom `PriorityClass` definitions (`h3xinfra-platform-critical`, `h3xinfra-app-background`). Their numeric priorities influence scheduling, preemption and node-pressure eviction; resource usage relative to requests also affects eviction.
 - **02-cilium**: Cilium CNI with eBPF networking.
 - **03-metallb**: MetalLB load balancer for bare metal.
 - **04-health**: Health check endpoints and monitoring.
@@ -202,7 +202,7 @@ XX-servicename/
       kubernetes.core.helm:
         name: "{{ servicename.release_name_prefix }}-main"
         chart_ref: "{repo-name}/{chart-name}"
-        chart_version: "{{ servicename.chart_version }}"
+        chart_version: "{{ chart_versions.servicename }}"
         namespace: "{{ servicename.namespace }}"
         create_namespace: false
         values:
@@ -234,6 +234,9 @@ XX-servicename/
 
 ```yaml
 ---
+- name: Require confirmation before teardown
+  import_playbook: ../99-utils/confirm-destroy.yml
+
 - import_playbook: ../99-utils/kube-connect.yml
 
 - name: Teardown {Service} deployment
@@ -288,7 +291,7 @@ h3xinfra-{service}-{phase}
 
 **Components:**
 - `h3xinfra-`: The fixed prefix for all releases.
-- `{service}`: The service name. Use lowercase letters. Do not use hyphens in the name.
+- `{service}`: The service name. Use lowercase letters and digits, with hyphens between words when needed.
 - `{phase}`: The deployment phase: `pre`, `main`, or `post`.
 
 **Examples:**
@@ -361,7 +364,7 @@ namespace: "mailu"
   kubernetes.core.helm:
     name: "{{ service.release_name_prefix }}-main"
     chart_ref: "{repo}/{chart}"
-    chart_version: "{{ service.chart_version }}"
+    chart_version: "{{ chart_versions.service }}"
     # ... main application
 
 # Post-chart creates ClusterIssuers, etc.
@@ -370,19 +373,6 @@ namespace: "mailu"
     name: "{{ service.release_name_prefix }}-post"
     chart_ref: "{{ playbook_dir }}/charts/h3xinfra-service-post"
     # ... post-configuration
-```
-
-**Example:** cert-manager
-```yaml
-# Pre: Creates Cloudflare API secret
-chart_ref: "{{ playbook_dir }}/charts/h3xinfra-certmanager-pre"
-
-# Main: Deploys cert-manager
-chart_ref: "jetstack/cert-manager"
-chart_version: "v1.17.2"
-
-# Post: Creates Let's Encrypt ClusterIssuer
-chart_ref: "{{ playbook_dir }}/charts/h3xinfra-certmanager-post"
 ```
 
 ### Pattern 2: Simple External Chart
@@ -395,7 +385,7 @@ chart_ref: "{{ playbook_dir }}/charts/h3xinfra-certmanager-post"
   kubernetes.core.helm:
     name: "{{ service.release_name_prefix }}-main"
     chart_ref: "{repo}/{chart}"
-    chart_version: "{{ service.chart_version }}"
+    chart_version: "{{ chart_versions.service }}"
     values:
       # Simple inline configuration
 ```
@@ -425,10 +415,6 @@ values:
     enabled: "{{ service.persistence.enabled | default(true) }}"
     storageClass: "{{ service.persistence.storageClass | default('longhorn') }}"
     size: "{{ service.persistence.size | default('10Gi') }}"
-  
-  ingress:
-    enabled: "{{ service.ingress.enabled | default(false) }}"
-    className: "{{ service.ingress.class | default('nginx') }}"
 ```
 
 #### Complex Values (JSON)
@@ -513,14 +499,15 @@ inventory/production/
 
 ### Service Variable Structure
 
-Each service file in `host_vars/k8s/` uses this pattern:
+Service files in `host_vars/k8s/` hold configuration. Chart versions live in
+`group_vars/all/versions.yml` as `chart_versions.<service>`. Use each chart's
+values schema; this is an example for a service with Gateway routing:
 
 ```yaml
 ---
 servicename:
   namespace: "servicename"
   release_name_prefix: "h3xinfra-servicename"
-  chart_version: "x.y.z"
   
   # Service exposure
   service:
@@ -530,7 +517,9 @@ servicename:
   ingress:
     enabled: true
     hostname: "service.domain.com"
-    class: "nginx"
+    gateway:
+      name: "h3xinfra-gateway-pre-shared"
+      namespace: "envoy-gateway-system"
   
   # Persistence
   persistence:
@@ -540,27 +529,6 @@ servicename:
   
   # Service-specific configuration
   # ...
-```
-
-**Example: `certmanager.yml`**
-```yaml
----
-certmanager:
-  namespace: "cert-manager"
-  release_name_prefix: "h3xinfra-certmanager"
-  chart_version: "v1.17.2"
-  
-  cloudflare_email: "admin@example.com"
-  
-  clusterissuer:
-    name: "default-clusterissuer"
-    acme:
-      email: "admin@example.com"
-      server: "https://acme-v02.api.letsencrypt.org/directory"
-      solvers:
-      - dns01:
-          cloudflare:
-            email: "admin@example.com"
 ```
 
 ### Secrets Management
@@ -599,9 +567,8 @@ servicename:
 One shared **Envoy Gateway** Gateway does all HTTP routing. The name of
 this Gateway is `{{ gateway.release_name_prefix }}-pre-shared`, in the
 namespace `{{ gateway.namespace }}`. The Gateway terminates TLS with one
-wildcard certificate. This certificate covers all internal/external
-hostnames. The chart of each app renders Gateway-API resources, not
-`Ingress` objects.
+wildcard certificate configured for the Gateway hostnames. The chart of each
+app renders Gateway-API resources, not `Ingress` objects.
 
 #### Standard chart `ingress` schema
 ```yaml
@@ -631,17 +598,21 @@ ingress:
 |---------------------|-------------------------------------------------|
 | Routing             | `gateway.networking.k8s.io/v1 HTTPRoute`        |
 | AuthN/AuthZ         | `gateway.envoyproxy.io/v1alpha1 SecurityPolicy` |
-| Upstream TLS verify | `gateway.networking.k8s.io/v1alpha3 BackendTLSPolicy` |
+| Upstream TLS verify | `gateway.networking.k8s.io/v1 BackendTLSPolicy` |
 
 #### Public Services
-The shared wildcard certificate covers all hostnames. The charts do not
-provision a `Certificate` for each app. This is an intentional privacy
-decision. A certificate for one host goes into the public **Certificate
+Gateway-facing apps normally use the shared wildcard certificate instead of
+a `Certificate` for each app. Mailu retains a separate certificate for its
+mail protocols and HTTPS backend. The shared wildcard is an intentional
+privacy decision: a certificate for one host goes into the public **Certificate
 Transparency logs**. Then anyone can easily find each service with CT
 search engines, for example crt.sh. A wildcard (`*.app.example.com`)
-shows only the wildcard label. The specific subdomains behind it never
-appear in CT. external-dns uses labels on the Gateway service to publish
-a record. This record points to the MetalLB IP of the Gateway.
+shows the wildcard label instead of each service name in that certificate's
+CT entry. ExternalDNS watches Service and Ingress resources with the
+`external-dns.alpha.kubernetes.io/publish=true` label. The shared Gateway's
+managed Service has no publish metadata in this repository; creating a
+Gateway or HTTPRoute does not itself publish a DNS record. Configure DNS
+for the Gateway addresses separately.
 
 #### Internal Services
 A service that only internal networks can access uses `trustedIPs`
@@ -651,11 +622,11 @@ principal.clientCIDRs: <trustedIPs>}]}`. This policy replaces the previous
 `nginx.ingress.kubernetes.io/whitelist-source-range` annotation.
 
 #### Pre-Provisioned / Upstream HTTPS Backends
-Some backends serve HTTPS themselves, for example Home Assistant through
-nginxproxy. For these backends, the chart renders a `BackendTLSPolicy`.
-This policy targets the backing `Service` with `validation.{caCertificateRefs |
-wellKnownCACertificates, hostname, subjectAltNames}`. A self-signed
-backend must have a `ConfigMap` with the key `ca.crt`.
+Some backends serve HTTPS themselves. The Mailu pre-chart renders a
+`BackendTLSPolicy` targeting its front Service, with
+`wellKnownCACertificates: System` and the certificate hostname. For a backend
+with a private CA, configure a trusted CA reference instead of disabling
+certificate verification; a ConfigMap CA reference uses the key `ca.crt`.
 
 ### Network Policy Pattern
 
@@ -682,6 +653,10 @@ trusted_ips:
 ---
 
 ## Node Scheduling
+
+Priority values influence eviction, but they do not define a complete eviction
+order. Kubernetes also considers usage relative to resource requests; see
+[pod selection for kubelet eviction](https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#pod-selection-for-kubelet-eviction).
 
 ### Dedicated control-plane with the `CriticalAddonsOnly` taint
 
@@ -780,10 +755,18 @@ externaldns:
   domain_filters:
   - "example.com"
   - "*.example.com"
-  
-  # Services publish via label
-  extraLabels:
+```
+
+The playbook uses Service/Ingress sources and a publish-label filter. To
+publish a Service, its metadata must include the label and the desired DNS
+hostname annotation; these are not `externaldns` inventory fields:
+
+```yaml
+metadata:
+  labels:
     external-dns.alpha.kubernetes.io/publish: "true"
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: "service.example.com"
 ```
 
 **Wildcard certificate for the shared Gateway:**
@@ -849,9 +832,11 @@ mkdir -p playbooks/XX-servicename/charts
 newservice:
   namespace: "newservice"
   release_name_prefix: "h3xinfra-newservice"
-  chart_version: "1.0.0"
   # ... configuration
 ```
+
+Add its upstream chart pin to `inventory/production/group_vars/all/versions.yml`
+and consume it as `chart_versions.newservice` in the Helm task.
 
 #### 5. Add the Layer to the Stack Orchestration
 
@@ -923,7 +908,7 @@ fullnameOverride: ""
 - **Document service-specific requirements** in the README files of the layers.
 - **Encrypt all secrets** with Ansible Vault.
 - **Import the `kube-connect`** utility in all k8s-related playbooks.
-- **Pin the version** of all Helm charts with `chart_version`.
+- **Pin upstream chart versions** in `chart_versions` and pass the matching value to the Helm task's `chart_version`. Bespoke charts keep their version in `Chart.yaml`.
 - **Tolerate all taints with `[{operator: Exists}]`** for DaemonSets that must run on every node (CNI agents, reboot daemon, node-local CSI plugins). Refer to [Node Scheduling](#node-scheduling).
 
 ### ❌ DO NOT:
@@ -968,7 +953,7 @@ kube-connect
 # Check resources
 kubectl get all -n <namespace>
 kubectl get certificates -A
-kubectl get ingress -A
+kubectl get gateways,httproutes -A
 ```
 
 ---

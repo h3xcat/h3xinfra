@@ -85,8 +85,9 @@
 
         # L4: semantic OIDC check. /readyz only proves the process is up; a
         # syntactically-valid but wrong issuer/audience starts cleanly and would
-        # be rolled to every server by serial:1. Runs once, on the first server,
-        # after it reports ready; a failure halts the play before the next node.
+        # be rolled to every server by serial:1. run_once applies per batch,
+        # so serial:1 checks each changed server after it reports ready;
+        # a failure halts the play before the next node.
         # Opt-in: skipped unless a viewer token is supplied in inventory.
         - name: Smoke-test OIDC auth mapping before serial proceeds (opt-in)
           ansible.builtin.command: >-

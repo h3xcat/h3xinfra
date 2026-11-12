@@ -4,7 +4,7 @@ This project deploys and manages a production-ready dual-stack (IPv4/IPv6) K3s c
 
 ## Overview
 
-This project gives Ansible playbooks and configurations to deploy and manage a 3-node K3s Kubernetes cluster. The cluster has these items:
+This project gives Ansible playbooks and configurations to deploy and manage a K3s cluster with separate server and agent nodes. The cluster has these items:
 
 - Dual-stack IPv4/IPv6 networking
 - Cilium CNI for networking with eBPF
@@ -113,7 +113,7 @@ This project includes a complete devcontainer setup. The devcontainer gives the 
 ### Using the Devcontainer
 
 The devcontainer gives these items:
-- **Ubuntu 22.04 (jammy)** base environment
+- **Ubuntu 24.04 (noble)** base environment
 - **Pre-installed tools**: Ansible, kubectl, Helm, Docker CLI
 - **Integrated scripts**: All `bin/` scripts are available in PATH
 - **SSH key mounting**: Your host SSH keys are available at `/tmp/host-ssh`

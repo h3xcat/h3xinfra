@@ -4,9 +4,8 @@
 {{- fail "postgres.podAntiAffinityType must be preferred or required" }}
 {{- end }}
 ---
-# CloudNativePG-managed Postgres cluster backing Keycloak.
-# Replaces the previous single-pod StatefulSet so a node failure does
-# not take the auth database offline.
+# CloudNativePG-managed Postgres cluster backing Keycloak. Required pod
+# anti-affinity keeps the primary and standby on different nodes by default.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:

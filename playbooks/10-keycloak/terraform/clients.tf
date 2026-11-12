@@ -68,8 +68,8 @@ resource "keycloak_openid_client" "clients" {
   login_theme = "keycloak"
 }
 
-# Expose the email claim by default — most downstream consumers (oauth2-proxy
-# etc.) require it to identify users.
+# Expose the email claim by default so downstream OIDC consumers can use it
+# to identify users.
 resource "keycloak_openid_user_attribute_protocol_mapper" "email_mapper" {
   for_each = keycloak_openid_client.clients
 

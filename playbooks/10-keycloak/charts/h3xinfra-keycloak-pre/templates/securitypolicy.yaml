@@ -1,4 +1,4 @@
-{{- /* Envoy Gateway 1.9 supports rule-level SecurityPolicy attachment.
+{{- /* Use Envoy Gateway's rule-level SecurityPolicy attachment.
 Restrict only the admin rule; public realm/discovery routes stay reachable.
 An empty allowlist keeps admin access denied. */ -}}
 {{- if .Values.ingress.enabled }}

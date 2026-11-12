@@ -8,7 +8,7 @@ usage() {
     echo ""
     echo "Examples:"
     echo "  $0                    # Connect and set context to 'default' namespace"
-    echo "  $0 nginx             # Connect and set context to first namespace containing 'nginx'"
+    echo "  $0 gateway           # Connect and set context to first namespace containing 'gateway'"
     echo "  $0 keycloak          # Connect and set context to first namespace containing 'keycloak'"
     echo ""
     exit 1

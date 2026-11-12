@@ -1,15 +1,15 @@
 ---
-# Cluster-wide PriorityClass definitions used to control eviction order
-# under node pressure. Two custom tiers in addition to the K8s built-ins:
+# Cluster-wide priorities used by scheduling, preemption and eviction.
+# Eviction also depends on resource usage relative to requests. Two custom
+# tiers in addition to the K8s built-ins:
 #
 #   h3xinfra-platform-critical (100000): infrastructure that, if lost,
 #     breaks auth/networking/storage for everything else — Keycloak,
 #     CNPG Postgres, Mailu, Longhorn engine, Envoy Gateway, cert-manager.
 #
-#   h3xinfra-app-background (10000): workloads where a few minutes of
-#     downtime is acceptable and the pod is the first thing to evict
-#     under memory pressure — sabnzbd, qbittorrent, flaresolverr,
-#     recyclarr.
+#   h3xinfra-app-background (10000): below platform-critical, but above
+#     ordinary priority-0 pods. The name does not mean first to evict.
+#     Examples: sabnzbd, qbittorrent, flaresolverr, recyclarr.
 #
 # Apps not explicitly assigned a priorityClassName run at priority 0
 # (default) — *arr stack, Plex, monitoring, etc.
