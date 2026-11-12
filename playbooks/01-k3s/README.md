@@ -86,7 +86,7 @@ option is off when its variable is not set.
 
 | Variable | Effect |
 | --- | --- |
-| `apiserver_audit.enabled` | `apiserver-audit.yml` writes an audit policy and an audit log on each server. It restarts one server at a time and waits for `/readyz`. |
+| `apiserver_audit.enabled` | `apiserver-config.yml` writes an audit policy and an audit log on each server. It restarts one server at a time and waits for `/readyz`. |
 | `kubelet_protect_kernel_defaults` | The kubelet stops at start if a kernel tunable is not the kubelet value. `standup.yml` sets and checks the six values first. |
 | `kubelet_seccomp_default` | Containers without a seccomp profile get the runtime default profile. |
 | `kubelet_allowed_unsafe_sysctls` | A list of exact sysctl names that pods on the node may set in their own namespaces (`spec.securityContext.sysctls`). See [Unsafe Sysctls](#unsafe-sysctls). |
@@ -107,9 +107,62 @@ encryption status on the first server, for example when k3s does not run.
 The audit log stays on each server. A root user on the server can change it.
 To keep a copy that is safe from changes, send the log to a central log store.
 
+# Apiserver configuration and staged rollout
+
+`apiserver-config.yml` replaces the separate OIDC, admission and audit plays.
+It reconciles **all three** feature settings from the selected inventory on
+one server, then performs at most one plain K3s restart and a local `/readyz`
+wait before advancing. It does not require a Ready node or CNI. Use the complete
+production inventory even when changing only OIDC: missing/false PSA and audit
+settings request their removal.
+
+The existing disable behavior is preserved:
+
+- OIDC disabled leaves both authentication files in place. Disabling its
+  inventory flag is not an OIDC removal procedure.
+- PSA disabled removes its drop-in before its AdmissionConfiguration.
+- Audit disabled removes only its drop-in; the audit policy and logs remain.
+
+File contents, paths, root ownership, `0600` file modes, `0700` directories and
+audit rotation settings are unchanged. Directory-only corrections do not
+restart K3s. The audit-policy source is intentionally retained byte-for-byte.
+A supplied viewer token still runs the `get pods` allowed / `create pods`
+denied OIDC smoke test after readiness on each server whose OIDC files changed;
+its command and results remain hidden with `no_log`.
+
+Before deploying this refactor, preserve the existing configuration and current
+K3s start times, then perform the operator checks below. Substitute the actual
+inventory path and first server; from a private checkout prefix the playbook
+path with `h3xinfra/`.
+
+```bash
+ansible-playbook -i /path/to/inventory playbooks/01-k3s/apiserver-config.yml --check --forks 1
+ansible-playbook -i /path/to/inventory playbooks/01-k3s/apiserver-config.yml --limit first-server --forks 1
+ansible-playbook -i /path/to/inventory playbooks/01-k3s/apiserver-config.yml --forks 1
+```
+
+Review each step before continuing. With unchanged live configuration, expect
+no file changes or restarts; investigate differences rather than assuming a
+render comparison proves the live state. Verify unchanged start times,
+readiness and real OIDC access on the first server before proceeding to all
+servers. After the all-server run, verify these same checks on every server
+before declaring the rollout complete. `--check` predicts file and service
+changes; it skips readiness and token commands, so it does not establish
+operational health. These checks gate deployment; merging the source does not
+deploy it.
+
+A failed write, restart, readiness check or smoke test stops the serial play.
+Earlier file writes may already be staged. Stop and compare/restore those files
+before retrying: unchanged staged files do not trigger another restart or OIDC
+smoke test by themselves. For recovery, restore the previous contents and modes
+of every changed file, restart only the affected server and verify readiness
+and OIDC access before advancing. For deliberate rollback of a feature, remove
+the OIDC drop-in before its authentication file; PSA and audit can use their
+existing disable settings described above. Preserve audit logs during recovery.
+
 # Pod Security Admission
 
-`apiserver-admission.yml` sets the cluster-wide Pod Security Admission
+`apiserver-config.yml` sets the cluster-wide Pod Security Admission
 defaults. It writes an `AdmissionConfiguration` to
 `/etc/rancher/k3s/pod-security-admission.yaml` and a
 `config.yaml.d/20-pod-security.yaml` drop-in on each server. Then it restarts

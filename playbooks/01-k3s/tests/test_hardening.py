@@ -107,11 +107,11 @@ class AuditPolicyTests(unittest.TestCase):
 
 class AuditPlaybookTests(unittest.TestCase):
     def test_serial_rollout_and_policy_path(self):
-        playbook = load(LAYER / "apiserver-audit.yml")
+        playbook = load(LAYER / "apiserver-config.yml")
         self.assertEqual(playbook[0]["serial"], 1)
         steps = list(tasks(playbook))
         policy_task = next(t for t in steps if t.get("ansible.builtin.copy", {}).get("src") == "files/apiserver-audit-policy.yaml")
-        dropin_task = next(t for t in steps if "kube-apiserver-arg+" in t.get("ansible.builtin.copy", {}).get("content", ""))
+        dropin_task = next(t for t in steps if t.get("register") == "audit_dropin")
         dest = policy_task["ansible.builtin.copy"]["dest"]
         self.assertIn(f'"audit-policy-file={dest}"', dropin_task["ansible.builtin.copy"]["content"])
         self.assertTrue(any("readyz" in str(t.get("ansible.builtin.command", "")) for t in steps))

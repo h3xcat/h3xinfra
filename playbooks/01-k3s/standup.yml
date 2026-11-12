@@ -283,14 +283,7 @@
 
 - import_playbook: kubelet-watchdog.yml
 
-# Enable kube-apiserver OIDC trust (Keycloak) once the cluster is up. serial: 1
-# with a per-node readiness gate, so a bad config only affects one server.
-- import_playbook: apiserver-oidc.yml
-
-# Set the cluster-wide Pod Security Admission defaults. serial: 1 with a
-# per-node readiness gate, so a bad config only affects one server.
-- import_playbook: apiserver-admission.yml
-
-# Enable kube-apiserver audit logging, with the same serial: 1 readiness gate.
-- name: Enable kube-apiserver audit logging
-  import_playbook: apiserver-audit.yml
+# Configure each apiserver after k3s starts, with one serial restart/readiness
+# gate for authentication, admission and audit changes. No CNI is required yet.
+- name: Configure kube-apiserver settings
+  import_playbook: apiserver-config.yml

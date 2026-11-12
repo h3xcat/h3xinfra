@@ -62,6 +62,15 @@ check. Before changing any server:
 
 ## Serial rollout and verification
 
+Before the storage rollout, complete the [apiserver configuration and staged
+rollout](README.md#apiserver-configuration-and-staged-rollout) with the same
+complete production inventory: all-server check/drift review, first-server
+verification, then all-server verification. The full standup entry point now
+includes that consolidated play; it must not be used to bypass its deployment
+gate. The standalone apiserver play expects unchanged start times only when
+its live configuration is already unchanged. That expectation does not apply
+to the intentional K3s orchestration restarts in the storage procedure below.
+
 Use the full production inventory and the normal `01-k3s/standup.yml`
 entry point with `--forks 1`. For this attended rollout, also limit each
 invocation to **one server by its inventory hostname**, in inventory order:

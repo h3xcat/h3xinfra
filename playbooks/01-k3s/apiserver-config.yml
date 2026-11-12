@@ -1,0 +1,233 @@
+---
+# Configure each server before one restart and a local /readyz gate. No CNI or
+# Node Ready prerequisite: this also runs during a new-cluster standup.
+#
+# Config drop-ins append kube-apiserver-arg+ without replacing collection-owned
+# config.yaml. Keep all generated file bytes/modes and audit rotation settings.
+# OIDC disabled leaves its files untouched; PSA disabled removes its drop-in
+# before its policy; audit disabled removes only its drop-in, retaining logs.
+# See README.md for staged rollout, semantic OIDC verification and recovery.
+- name: Configure kube-apiserver authentication, admission and audit
+  hosts: server
+  become: true
+  serial: 1
+  gather_facts: false
+
+  vars:
+    pod_security_enabled: "{{ apiserver_pod_security.enabled | default(false) | bool }}"
+    pod_security_defaults: "{{ apiserver_pod_security.defaults | default({}) }}"
+    pod_security_exempt_namespaces: "{{ apiserver_pod_security.exemptions.namespaces | default(['kube-system']) }}"
+    apiserver_audit_dropin: /etc/rancher/k3s/config.yaml.d/20-apiserver-audit.yaml
+    apiserver_audit_log_dir: /var/lib/rancher/k3s/server/logs
+    apiserver_config_changed: >-
+      {{ oidc_auth_file.changed | default(false) or
+         oidc_dropin.changed | default(false) or
+         pod_security_file.changed | default(false) or
+         pod_security_dropin.changed | default(false) or
+         pod_security_removed.changed | default(false) or
+         audit_policy_file.changed | default(false) or
+         audit_dropin.changed | default(false) or
+         audit_dropin_removed.changed | default(false) }}
+
+  tasks:
+    - name: Validate the Pod Security levels
+      ansible.builtin.assert:
+        that:
+          - (pod_security_defaults.enforce | default('privileged')) in pod_security_levels
+          - (pod_security_defaults.audit | default('restricted')) in pod_security_levels
+          - (pod_security_defaults.warn | default('restricted')) in pod_security_levels
+        fail_msg: Use privileged, baseline or restricted for each Pod Security default.
+        quiet: true
+      vars:
+        pod_security_levels: [privileged, baseline, restricted]
+      when: pod_security_enabled | bool
+
+    - name: Ensure k3s config.yaml.d drop-in directory exists
+      ansible.builtin.file:
+        path: /etc/rancher/k3s/config.yaml.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      when: >-
+        (apiserver_oidc.enabled | default(false)) or
+        (pod_security_enabled | bool) or
+        (apiserver_audit.enabled | default(false))
+
+    - name: Configure apiserver OIDC
+      when: apiserver_oidc.enabled | default(false)
+      block:
+        - name: Deploy AuthenticationConfiguration
+          ansible.builtin.copy:
+            dest: /etc/rancher/k3s/oidc-auth.yaml
+            owner: root
+            group: root
+            mode: "0600"
+            content: |
+              apiVersion: apiserver.config.k8s.io/v1
+              kind: AuthenticationConfiguration
+              jwt:
+              - issuer:
+                  url: {{ apiserver_oidc.issuer_url }}
+              {% if (apiserver_oidc.issuer_ca | default('')) | length > 0 %}
+                  certificateAuthority: {{ apiserver_oidc.issuer_ca | to_json }}
+              {% endif %}
+                  audiences: {{ apiserver_oidc.audiences | to_json }}
+                claimMappings:
+                  username:
+                    claim: {{ apiserver_oidc.username_claim }}
+                    prefix: "{{ apiserver_oidc.username_prefix }}"
+                  groups:
+                    claim: {{ apiserver_oidc.groups_claim }}
+                    prefix: "{{ apiserver_oidc.groups_prefix }}"
+          register: oidc_auth_file
+
+        - name: Deploy kube-apiserver-arg drop-in (append authentication-config)
+          ansible.builtin.copy:
+            dest: /etc/rancher/k3s/config.yaml.d/10-oidc-auth.yaml
+            owner: root
+            group: root
+            mode: "0600"
+            content: |
+              kube-apiserver-arg+:
+              - "authentication-config=/etc/rancher/k3s/oidc-auth.yaml"
+          register: oidc_dropin
+
+    - name: Deploy the Pod Security AdmissionConfiguration
+      ansible.builtin.copy:
+        dest: /etc/rancher/k3s/pod-security-admission.yaml
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          apiVersion: apiserver.config.k8s.io/v1
+          kind: AdmissionConfiguration
+          plugins:
+          - name: PodSecurity
+            configuration:
+              apiVersion: pod-security.admission.config.k8s.io/v1
+              kind: PodSecurityConfiguration
+              defaults:
+                enforce: {{ pod_security_defaults.enforce | default('privileged') | to_json }}
+                enforce-version: "latest"
+                audit: {{ pod_security_defaults.audit | default('restricted') | to_json }}
+                audit-version: "latest"
+                warn: {{ pod_security_defaults.warn | default('restricted') | to_json }}
+                warn-version: "latest"
+              exemptions:
+                usernames: []
+                runtimeClasses: []
+                namespaces: {{ pod_security_exempt_namespaces | to_json }}
+      register: pod_security_file
+      when: pod_security_enabled | bool
+
+    - name: Deploy kube-apiserver-arg drop-in (append admission-control-config-file)
+      ansible.builtin.copy:
+        dest: /etc/rancher/k3s/config.yaml.d/20-pod-security.yaml
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          kube-apiserver-arg+:
+          - "admission-control-config-file=/etc/rancher/k3s/pod-security-admission.yaml"
+      register: pod_security_dropin
+      when: pod_security_enabled | bool
+
+    # Remove the drop-in before the file it points to. On a fresh or never
+    # configured server, both files are absent and nothing restarts.
+    - name: Remove the Pod Security drop-in and AdmissionConfiguration when disabled
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher/k3s/config.yaml.d/20-pod-security.yaml
+        - /etc/rancher/k3s/pod-security-admission.yaml
+      register: pod_security_removed
+      when: not (pod_security_enabled | bool)
+
+    - name: Configure apiserver audit logging
+      when: apiserver_audit.enabled | default(false)
+      block:
+        # The log records who read which Secret; keep it root-only.
+        - name: Ensure the audit log directory exists
+          ansible.builtin.file:
+            path: "{{ apiserver_audit_log_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0700"
+
+        - name: Deploy the audit policy
+          ansible.builtin.copy:
+            src: files/apiserver-audit-policy.yaml
+            dest: /etc/rancher/k3s/audit-policy.yaml
+            owner: root
+            group: root
+            mode: "0600"
+          register: audit_policy_file
+
+        - name: Deploy kube-apiserver-arg drop-in (append audit flags)
+          ansible.builtin.copy:
+            dest: "{{ apiserver_audit_dropin }}"
+            owner: root
+            group: root
+            mode: "0600"
+            content: |
+              kube-apiserver-arg+:
+              - "audit-policy-file=/etc/rancher/k3s/audit-policy.yaml"
+              - "audit-log-path={{ apiserver_audit_log_dir }}/audit.log"
+              - "audit-log-maxsize={{ apiserver_audit.max_size_mb | default(100) | int }}"
+              - "audit-log-maxbackup={{ apiserver_audit.max_backups | default(10) | int }}"
+              - "audit-log-maxage={{ apiserver_audit.max_age_days | default(30) | int }}"
+              - "audit-log-compress=true"
+          register: audit_dropin
+
+    - name: Remove apiserver audit logging
+      when: not (apiserver_audit.enabled | default(false))
+      ansible.builtin.file:
+        path: "{{ apiserver_audit_dropin }}"
+        state: absent
+      register: audit_dropin_removed
+
+    # Directory-only changes do not restart k3s. systemd predicts the restart
+    # under --check; readyz and token commands must not run against old config.
+    - name: Restart k3s to apply the apiserver configuration
+      ansible.builtin.systemd:
+        name: k3s
+        state: restarted
+      when: apiserver_config_changed | bool
+
+    - name: Wait for the local kube-apiserver to report ready
+      ansible.builtin.command: k3s kubectl get --raw=/readyz
+      register: apiserver_readyz
+      changed_when: false
+      retries: 40
+      delay: 5
+      until: apiserver_readyz.rc == 0 and 'ok' in apiserver_readyz.stdout
+      when:
+        - apiserver_config_changed | bool
+        - not ansible_check_mode
+
+    # L4: semantic OIDC check. /readyz only proves the process is up; a
+    # syntactically-valid but wrong issuer/audience starts cleanly and would
+    # be rolled to every server by serial:1. run_once applies per batch,
+    # so serial:1 checks each changed server after it reports ready;
+    # a failure halts the play before the next node.
+    # Opt-in: skipped unless a viewer token is supplied in inventory.
+    - name: Smoke-test OIDC auth mapping before serial proceeds (opt-in)
+      ansible.builtin.command: >-
+        k3s kubectl auth can-i {{ item.verb }} pods
+        --token={{ apiserver_oidc.smoke_test_token }}
+      register: oidc_smoke
+      changed_when: false
+      failed_when: item.expect not in oidc_smoke.stdout
+      run_once: true
+      no_log: true
+      loop:
+        - { verb: "get", expect: "yes" }
+        - { verb: "create", expect: "no" }
+      when:
+        - not ansible_check_mode
+        - apiserver_oidc.enabled | default(false)
+        - (apiserver_oidc.smoke_test_token | default('')) | length > 0
+        - oidc_auth_file.changed or oidc_dropin.changed
