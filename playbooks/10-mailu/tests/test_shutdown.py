@@ -2,7 +2,6 @@ import copy
 import importlib.util
 from pathlib import Path
 import subprocess
-import shutil
 import tempfile
 import unittest
 from unittest import mock
@@ -21,7 +20,14 @@ def module(name, path):
 
 renderer = module('renderer', ROOT / 'shutdown-post-renderer.py')
 stop = module('stop', ROOT / 'graceful-stop.py')
-resources = module('resources', ROOT / 'tests/test_resources.py')
+
+
+def helm_values():
+    for play in yaml.safe_load((ROOT / 'standup.yml').read_text()):
+        for task in play.get('tasks', []):
+            if task.get('name') == 'Deploy Mailu via Helm':
+                return task['kubernetes.core.helm']['values']
+    raise AssertionError('Mailu Helm task not found')
 
 
 def fixtures():
@@ -33,8 +39,8 @@ def fixtures():
 
 class ShutdownTests(unittest.TestCase):
     def test_all_ten_components_have_sufficient_grace(self):
-        values = resources.helm_values()
-        for name in resources.EXPECTED:
+        values = helm_values()
+        for name in ('admin', 'clamav', 'dovecot', 'front', 'oletools', 'postfix', 'rspamd', 'tika', 'webmail'):
             self.assertEqual(values[name]['terminationGracePeriodSeconds'], 120)
         self.assertEqual(values['redis']['master']['terminationGracePeriodSeconds'], 120)
 
@@ -57,32 +63,18 @@ class ShutdownTests(unittest.TestCase):
             if mode == 'grace': docs[0]['spec']['template']['spec']['terminationGracePeriodSeconds'] = 2
             with self.subTest(mode=mode), self.assertRaises(AssertionError): renderer.render(docs)
 
-    @unittest.skipUnless(shutil.which('ansible-playbook'), 'Ansible is required for renderer selection')
-    def test_ansible_selects_matching_helm_renderer_and_plugin_tasks(self):
+    def test_helm4_shutdown_plugin_is_installed_before_deployment(self):
         plays = yaml.safe_load((ROOT / 'standup.yml').read_text())
         tasks = plays[1]['tasks']
         deployment = next(t for t in tasks if t['name'] == 'Deploy Mailu via Helm')
-        expression = deployment['kubernetes.core.helm']['post_renderer']
-        plugin_tasks = [t for t in tasks if 'when' in t]
-        with tempfile.TemporaryDirectory() as directory:
-            for version in ('v4.3.0+gbec5b06', 'v3.19.0'):
-                expected = ('h3xinfra-mailu-shutdown' if version.startswith('v4.')
-                            else directory + '/shutdown-post-renderer.py')
-                checks = ["selected_renderer == expected_renderer"]
-                checks += ["(" + t['when'] + ") == expect_plugin" for t in plugin_tasks]
-                play = [{'hosts': 'localhost', 'gather_facts': False, 'vars': {
-                    'mailu_helm_version': {'stdout': version},
-                    'selected_renderer': expression, 'expected_renderer': expected,
-                    'expect_plugin': version.startswith('v4.'),
-                }, 'tasks': [{'ansible.builtin.assert': {'that': checks}}]}]
-                path = Path(directory) / 'check.yml'
-                path.write_text(yaml.safe_dump(play))
-                result = subprocess.run(
-                    ['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(path)],
-                    capture_output=True, text=True, timeout=60,
-                )
-                with self.subTest(version=version):
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        plugin = yaml.safe_load((ROOT / 'plugin.yaml').read_text())
+        self.assertEqual(deployment['kubernetes.core.helm']['post_renderer'], plugin['name'])
+        install = next(t for t in tasks if t['name'].startswith('Keep the installed Helm 4'))
+        self.assertLess(tasks.index(install), tasks.index(deployment))
+        self.assertNotIn('when', install)
+        self.assertCountEqual(install['loop'], [
+            'plugin.yaml', 'shutdown-post-renderer.py', 'graceful-stop.py', 'graceful-stop-clamav.sh',
+        ])
 
     def test_no_signal_to_reused_pid(self):
         before = {2: {'parent': 1, 'start': 'old'}}
