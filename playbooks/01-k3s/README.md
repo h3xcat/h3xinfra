@@ -130,7 +130,7 @@ A supplied viewer token still runs the `get pods` allowed / `create pods`
 denied OIDC smoke test after readiness on each server whose OIDC files changed;
 its command and results remain hidden with `no_log`.
 
-Before adopting this refactor, preserve the existing configuration and current
+Before deploying this refactor, preserve the existing configuration and current
 K3s start times, then perform the operator checks below. Substitute the actual
 inventory path and first server; from a private checkout prefix the playbook
 path with `h3xinfra/`.
@@ -145,8 +145,11 @@ Review each step before continuing. With unchanged live configuration, expect
 no file changes or restarts; investigate differences rather than assuming a
 render comparison proves the live state. Verify unchanged start times,
 readiness and real OIDC access on the first server before proceeding to all
-servers. `--check` predicts file and service changes; it skips readiness and
-token commands, so it does not establish operational health.
+servers. After the all-server run, verify these same checks on every server
+before declaring the rollout complete. `--check` predicts file and service
+changes; it skips readiness and token commands, so it does not establish
+operational health. These checks gate deployment; merging the source does not
+deploy it.
 
 A failed write, restart, readiness check or smoke test stops the serial play.
 Earlier file writes may already be staged. Stop and compare/restore those files
