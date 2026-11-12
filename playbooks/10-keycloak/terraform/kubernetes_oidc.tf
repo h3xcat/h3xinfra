@@ -130,10 +130,10 @@ resource "keycloak_openid_client_optional_scopes" "k8s_mcp" {
   ]
 }
 
-# Realm groups mapped to Kubernetes RBAC by ClusterRoleBindings
-# (layer 29-kubernetes-mcp): oidc:k8s-admins -> view + h3xinfra:k8s-mcp-admin-write,
-# oidc:k8s-viewers -> view. Membership is assigned manually in the Keycloak
-# admin console (consistent with how client-role assignment is handled).
+# Realm groups for downstream Kubernetes RBAC. Group membership alone grants
+# no Kubernetes permissions; downstream role bindings define the scope.
+# The k8s-admins name does not imply the built-in cluster-admin role.
+# Assign membership manually in the Keycloak admin console.
 resource "keycloak_group" "k8s_admins" {
   realm_id = keycloak_realm.main.id
   name     = "k8s-admins"
