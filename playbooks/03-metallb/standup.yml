@@ -13,8 +13,8 @@
       force_update: true
     changed_when: false
 
-  # Pod Security: privileged. The speaker and frr-k8s DaemonSets use
-  # hostNetwork and NET_RAW/NET_ADMIN/SYS_ADMIN for L2 and BGP announcements.
+  # Pod Security: privileged. The L2 speaker uses hostNetwork and NET_RAW
+  # for ARP/NDP announcements; no FRR backend is deployed.
   - name: Create MetalLB namespace
     kubernetes.core.k8s:
       state: present
@@ -40,27 +40,7 @@
       - "{{ playbook_dir }}/metallb-values.yaml"
       state: present
       wait: true
-      # The speaker and frr-k8s DaemonSets roll one node at a time, and the Pis
-      # are slow to pull and start them: an upgrade needs several minutes. With
+      # The speaker DaemonSet rolls one node at a time, and the Pis are slow
+      # to pull and start it: an upgrade needs several minutes. With
       # 120s, helm marked the release `failed` although the rollout completed.
       timeout: "600s"
-
-  - name: Deploy MetalLB configuration via Helm chart
-    kubernetes.core.helm:
-      name: "{{ metallb.release_name_prefix }}-post"
-      chart_ref: "{{ playbook_dir }}/charts/h3xinfra-metallb-post"
-      namespace: "{{ metallb.namespace }}"
-      create_namespace: false
-      values:
-        fullnameOverride: "{{ metallb.release_name_prefix }}-post"
-        ipPool:
-          # Opt-in. Keep false so that only annotated Services get an address.
-          autoAssign: "{{ metallb.auto_assign | default(false) | bool }}"
-      set_values:
-      - value: "ipPool.ipAddressPools.addresses.ipv4={{ metallb.loadbalancer_pools.ipv4 }}"
-        value_type: string
-      - value: "ipPool.ipAddressPools.addresses.ipv6={{ metallb.loadbalancer_pools.ipv6 }}"
-        value_type: string
-      state: present
-      wait: true
-      timeout: "120s"

@@ -729,15 +729,9 @@ service_cidr:
 
 ### MetalLB Load Balancer Pools
 
-**Dynamic pool for general use:**
-```yaml
-metallb:
-  loadbalancer_pools:
-    ipv4:
-    - "192.168.100.10-192.168.100.250"
-    ipv6:
-    - "2001:db8:face:1::10-2001:db8:face:1::fa"
-```
+Each LoadBalancer Service must name a dedicated pool with
+`metallb.universe.tf/address-pool`. Pools keep `autoAssign: false`; the core
+MetalLB layer does not create a fallback address pool.
 
 **Dedicated pool for the shared Envoy Gateway:**
 ```yaml
