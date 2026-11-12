@@ -1,0 +1,353 @@
+---
+# Shared by Keycloak and Open WebUI. An existing Terraform-owned release must
+# be forgotten with destroy=false before the explicit handoff below.
+- name: Read the shared CloudNativePG namespace
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: cnpg-system
+  register: cnpg_namespace
+
+- name: Read all states of the shared CloudNativePG Helm release
+  kubernetes.core.helm_info:
+    name: cloudnative-pg
+    release_namespace: cnpg-system
+    # Helm 4 lists every state by default; helm_info's `all` adds a removed --all flag.
+  register: cnpg_release
+  no_log: true
+
+- name: Read CloudNativePG controllers across namespaces
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    label_selectors:
+      - app.kubernetes.io/name=cloudnative-pg
+  register: cnpg_controllers
+
+- name: Read any existing CNPG Cluster CRD before installation
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: clusters.postgresql.cnpg.io
+  register: cnpg_existing_crd
+
+- name: Require the Kubernetes APIs used by CNPG ownership preflight
+  ansible.builtin.assert:
+    that:
+      - cnpg_namespace.api_found | default(false)
+      - cnpg_controllers.api_found | default(false)
+      - cnpg_existing_crd.api_found | default(false)
+    fail_msg: Required Kubernetes API discovery failed; an unknown resource is not an empty installation.
+    quiet: true
+
+- name: Refuse orphaned CNPG schemas without their Helm release
+  ansible.builtin.assert:
+    that:
+      - cnpg_release.status is defined or cnpg_existing_crd.resources | length == 0
+    fail_msg: >-
+      CNPG schemas already exist without the expected Helm release. Stop and
+      recover the existing owner; do not install a second operator over them.
+    quiet: true
+
+- name: Describe the expected CloudNativePG ownership and values
+  ansible.builtin.set_fact:
+    cnpg_namespace_metadata: "{{ (cnpg_namespace.resources | first | default({})).get('metadata', {}) }}"
+    cnpg_expected_values: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/cnpg-values.yaml') | from_yaml }}"
+
+- name: Read the namespace ownership marker
+  ansible.builtin.set_fact:
+    cnpg_owner: "{{ (cnpg_namespace_metadata.get('annotations', {}) or {}).get('h3xinfra.io/cnpg-operator-owner', '') }}"
+
+- name: Require the fixed CloudNativePG namespace and security labels
+  ansible.builtin.assert:
+    that:
+      - cnpg_namespace.resources | length <= 1
+      - cnpg_namespace_metadata.get('name', 'cnpg-system') == 'cnpg-system'
+      - cnpg_namespace_metadata.get('deletionTimestamp') == none
+      - cnpg_owner in ['', '10-keycloak']
+      - (cnpg_namespace_metadata.get('annotations', {}) or {}).get('meta.helm.sh/release-name', 'cloudnative-pg') == 'cloudnative-pg'
+      - (cnpg_namespace_metadata.get('annotations', {}) or {}).get('meta.helm.sh/release-namespace', 'cnpg-system') == 'cnpg-system'
+      - (cnpg_namespace_metadata.get('labels', {}) or {}).get('pod-security.kubernetes.io/enforce', 'restricted') == 'restricted'
+      - (cnpg_namespace_metadata.get('labels', {}) or {}).get('pod-security.kubernetes.io/audit', 'restricted') == 'restricted'
+      - (cnpg_namespace_metadata.get('labels', {}) or {}).get('pod-security.kubernetes.io/warn', 'restricted') == 'restricted'
+    fail_msg: >-
+      The shared CNPG namespace has unexpected ownership, deletion or PSA
+      settings. Stop and review the existing installation; do not replace it.
+    quiet: true
+
+- name: Reject another CloudNativePG controller
+  ansible.builtin.assert:
+    that:
+      - item.metadata.name == 'cloudnative-pg'
+      - item.metadata.namespace == 'cnpg-system'
+      - cnpg_release.status is defined
+    fail_msg: An unexpected or orphaned CNPG controller requires an owner review.
+    quiet: true
+  loop: "{{ cnpg_controllers.resources }}"
+  loop_control:
+    label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
+
+# A pre-created empty namespace is safe; refuse existing workloads and
+# configuration. Ignore only Kubernetes' default ServiceAccount and root-CA ConfigMap.
+- name: Inspect an existing namespace without a Helm release
+  kubernetes.core.k8s_info:
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    namespace: cnpg-system
+  loop:
+    - {api_version: apps/v1, kind: Deployment}
+    - {api_version: apps/v1, kind: StatefulSet}
+    - {api_version: apps/v1, kind: DaemonSet}
+    - {api_version: apps/v1, kind: ReplicaSet}
+    - {api_version: v1, kind: ReplicationController}
+    - {api_version: batch/v1, kind: Job}
+    - {api_version: batch/v1, kind: CronJob}
+    - {api_version: v1, kind: Pod}
+    - {api_version: v1, kind: Service}
+    - {api_version: v1, kind: Secret}
+    - {api_version: v1, kind: PersistentVolumeClaim}
+    - {api_version: v1, kind: ServiceAccount}
+    - {api_version: v1, kind: ConfigMap}
+    - {api_version: v1, kind: ResourceQuota}
+    - {api_version: v1, kind: LimitRange}
+    - {api_version: rbac.authorization.k8s.io/v1, kind: Role}
+    - {api_version: rbac.authorization.k8s.io/v1, kind: RoleBinding}
+    - {api_version: networking.k8s.io/v1, kind: NetworkPolicy}
+    - {api_version: cilium.io/v2, kind: CiliumNetworkPolicy}
+  register: cnpg_namespace_objects
+  no_log: true  # Existing Secrets may contain credentials.
+  when: cnpg_namespace.resources | length > 0 and cnpg_release.status is not defined
+
+- name: Require an empty namespace before a fresh installation
+  ansible.builtin.assert:
+    that:
+      - item.api_found | default(false)
+      - >-
+        (item.resources | rejectattr('metadata.name', 'equalto',
+          'default' if item.item.kind == 'ServiceAccount' else
+          'kube-root-ca.crt' if item.item.kind == 'ConfigMap' else '') | list | length) == 0
+    fail_msg: >-
+      cnpg-system could not be verified empty without its Helm release. Stop and
+      recover the existing installation; a handoff acknowledgement cannot bypass this check.
+    quiet: true
+  loop: "{{ cnpg_namespace_objects.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.kind }}"
+  no_log: true
+  when: cnpg_namespace.resources | length > 0 and cnpg_release.status is not defined
+
+# Adoption preserves the exact existing values. Once publicly owned, the
+# reviewed values file can reconcile configuration using Helm's reuse-values.
+- name: Require the existing release identity and retained values
+  ansible.builtin.assert:
+    that:
+      - cnpg_namespace.resources | length == 1
+      - cnpg_release.status.name == 'cloudnative-pg'
+      - cnpg_release.status.namespace == 'cnpg-system'
+      - cnpg_release.status.chart is match('^cloudnative-pg-[0-9]')
+      - cnpg_release.status.status | lower in (['deployed', 'failed'] if cnpg_owner == '10-keycloak' else ['deployed'])
+      - cnpg_owner == '10-keycloak' or cnpg_release.status.release_values == cnpg_expected_values
+      - cnpg_owner == '10-keycloak' or cnpg_controllers.resources | length == 1
+      - cnpg_release.status.status | lower != 'failed' or cnpg_release.status.chart == 'cloudnative-pg-' ~ chart_versions.cloudnative_pg
+    fail_msg: >-
+      The existing CNPG release has an unexpected identity, state or values.
+      Preserve it and investigate; never reset values or reinstall to make adoption pass.
+    quiet: true
+  when: cnpg_release.status is defined
+
+- name: Require the live controller to match its Helm-owned image
+  ansible.builtin.assert:
+    that:
+      - (item.metadata.annotations | default({})).get('meta.helm.sh/release-name') == 'cloudnative-pg'
+      - (item.metadata.annotations | default({})).get('meta.helm.sh/release-namespace') == 'cnpg-system'
+      - item.metadata.labels['app.kubernetes.io/managed-by'] == 'Helm'
+      - >-
+        (item.spec.template.spec.containers | map(attribute='image') | list) ==
+        ((cnpg_release.status.manifest | selectattr('kind', 'equalto', 'Deployment') | first)
+          .spec.template.spec.containers | map(attribute='image') | list)
+    fail_msg: The live CNPG controller has unexpected Helm ownership or image drift.
+    quiet: true
+  loop: "{{ cnpg_controllers.resources }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when: cnpg_release.status is defined
+
+- name: Require the reviewed Terraform handoff for an existing release
+  ansible.builtin.assert:
+    that:
+      - cnpg_operator_handoff | default('') == 'yes-terraform-forgot-cnpg'
+    fail_msg: >-
+      Terraform must first forget helm_release.cnpg and kubernetes_labels.cnpg_pod_security
+      with destroy=false in 20-openwebui. After the owner verifies that handoff,
+      pass -e cnpg_operator_handoff=yes-terraform-forgot-cnpg once.
+      The namespace marker is not evidence that Terraform state was forgotten.
+    quiet: true
+  when: cnpg_release.status is defined and cnpg_owner != '10-keycloak'
+
+- name: Add the pinned CloudNativePG chart repository
+  kubernetes.core.helm_repository:
+    name: cnpg
+    repo_url: https://cloudnative-pg.github.io/charts
+
+- name: Render the pinned CloudNativePG source for ownership checks
+  kubernetes.core.helm_template:
+    name: cloudnative-pg
+    release_namespace: cnpg-system
+    chart_ref: cnpg/cloudnative-pg
+    chart_version: "{{ chart_versions.cloudnative_pg }}"
+    include_crds: true
+    values_files:
+      - "{{ playbook_dir }}/cnpg-values.yaml"
+  register: cnpg_expected_manifest
+  when: cnpg_release.status is not defined or cnpg_owner != '10-keycloak'
+
+- name: Inspect cluster-scoped objects before a fresh installation
+  kubernetes.core.k8s_info:
+    api_version: "{{ item.apiVersion }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.metadata.name }}"
+  loop: >-
+    {{ cnpg_expected_manifest.stdout | from_yaml_all | reject('none') |
+       rejectattr('metadata.namespace', 'defined') | list }}
+  loop_control:
+    label: "{{ item.kind }}/{{ item.metadata.name }}"
+  register: cnpg_unowned_objects
+  when: cnpg_release.status is not defined
+
+- name: Refuse orphaned cluster-scoped operator objects
+  ansible.builtin.assert:
+    that:
+      - item.api_found | default(false)
+      - item.resources | length == 0
+    fail_msg: >-
+      CNPG cluster-scoped objects could not be verified absent without their Helm release. Stop and
+      recover the existing owner; acknowledgement cannot permit silent adoption.
+    quiet: true
+  loop: "{{ cnpg_unowned_objects.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.kind }}/{{ item.item.metadata.name }}"
+  when: cnpg_release.status is not defined
+
+- name: Require exact pinned manifests before adopting an existing release
+  ansible.builtin.assert:
+    that:
+      - cnpg_release.status.chart == 'cloudnative-pg-' ~ chart_versions.cloudnative_pg
+      - >-
+        (cnpg_release.status.manifest | sort(attribute='metadata.name') | sort(attribute='kind')) ==
+        (cnpg_expected_manifest.stdout | from_yaml_all | reject('none') | list |
+          sort(attribute='metadata.name') | sort(attribute='kind'))
+    fail_msg: >-
+      The CNPG chart, controller or CRD schemas differ from the pinned source.
+      Stop and review that difference separately; this handoff must not upgrade or recreate resources.
+    quiet: true
+  when: cnpg_release.status is defined and cnpg_owner != '10-keycloak'
+
+- name: Read live CNPG schemas before adoption
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: "{{ item.metadata.name }}"
+  loop: "{{ cnpg_release.status.manifest | selectattr('kind', 'equalto', 'CustomResourceDefinition') | list }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  register: cnpg_adoption_crds
+  when: cnpg_release.status is defined and cnpg_owner != '10-keycloak'
+
+- name: Require existing Helm ownership and exact served CNPG schemas
+  ansible.builtin.assert:
+    that:
+      - item.api_found | default(false)
+      - item.resources | length == 1
+      - item.resources[0].metadata.annotations['meta.helm.sh/release-name'] == 'cloudnative-pg'
+      - item.resources[0].metadata.annotations['meta.helm.sh/release-namespace'] == 'cnpg-system'
+      - item.resources[0].metadata.labels['app.kubernetes.io/managed-by'] == 'Helm'
+      - item.resources[0].spec.group == item.item.spec.group
+      - item.resources[0].spec.names == item.item.spec.names
+      - item.resources[0].spec.scope == item.item.spec.scope
+      - item.resources[0].spec.get('conversion', {'strategy':'None'}) == item.item.spec.get('conversion', {'strategy':'None'})
+      - item.resources[0].spec.get('preserveUnknownFields', false) == item.item.spec.get('preserveUnknownFields', false)
+      - (item.resources[0].spec.versions | map(attribute='name') | list) == (item.item.spec.versions | map(attribute='name') | list)
+      - (item.resources[0].spec.versions | map(attribute='served') | list) == (item.item.spec.versions | map(attribute='served') | list)
+      - (item.resources[0].spec.versions | map(attribute='storage') | list) == (item.item.spec.versions | map(attribute='storage') | list)
+      - (item.resources[0].spec.versions | map(attribute='schema') | list) == (item.item.spec.versions | map(attribute='schema') | list)
+      - (item.resources[0].spec.versions | map(attribute='subresources', default={}) | list) == (item.item.spec.versions | map(attribute='subresources', default={}) | list)
+      - (item.resources[0].spec.versions | map(attribute='additionalPrinterColumns', default=[]) | list) == (item.item.spec.versions | map(attribute='additionalPrinterColumns', default=[]) | list)
+      - (item.resources[0].spec.versions | map(attribute='selectableFields', default=[]) | list) == (item.item.spec.versions | map(attribute='selectableFields', default=[]) | list)
+      - (item.resources[0].spec.versions | map(attribute='deprecated', default=false) | list) == (item.item.spec.versions | map(attribute='deprecated', default=false) | list)
+      - (item.resources[0].spec.versions | map(attribute='deprecationWarning', default='') | list) == (item.item.spec.versions | map(attribute='deprecationWarning', default='') | list)
+    fail_msg: >-
+      The live CNPG CRD ownership or schema differs from the pinned Helm release.
+      Stop; this migration must not overwrite an unrelated or changed schema.
+    quiet: true
+  loop: "{{ cnpg_adoption_crds.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.metadata.name }}"
+  when: cnpg_release.status is defined and cnpg_owner != '10-keycloak'
+
+- name: Manage the shared CloudNativePG namespace security labels
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    server_side_apply:
+      field_manager: h3xinfra-pod-security
+      force_conflicts: true
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: cnpg-system
+        annotations:
+          h3xinfra.io/cnpg-operator-owner: 10-keycloak
+        labels:
+          pod-security.kubernetes.io/enforce: restricted
+          pod-security.kubernetes.io/audit: restricted
+          pod-security.kubernetes.io/warn: restricted
+
+- name: Manage the shared CloudNativePG operator via Helm
+  kubernetes.core.helm:
+    name: cloudnative-pg
+    chart_ref: cnpg/cloudnative-pg
+    chart_version: "{{ chart_versions.cloudnative_pg }}"
+    release_namespace: cnpg-system
+    create_namespace: false
+    values_files:
+      - "{{ playbook_dir }}/cnpg-values.yaml"
+    reset_values: false
+    reuse_values: true
+    atomic: false
+    cleanup_on_fail: false
+    state: present
+    wait: true
+    timeout: 300s
+
+- name: Wait for the CNPG Cluster schema before creating database clusters
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: clusters.postgresql.cnpg.io
+  register: cnpg_cluster_crd
+  until: >-
+    cnpg_cluster_crd.resources | length == 1
+    and (cnpg_cluster_crd.resources[0].status.conditions | default([])
+         | selectattr('type', 'equalto', 'Established')
+         | selectattr('status', 'equalto', 'True') | list | length) == 1
+    and (cnpg_cluster_crd.resources[0].spec.versions
+         | selectattr('name', 'equalto', 'v1')
+         | selectattr('served', 'equalto', true) | list | length) == 1
+  retries: 30
+  delay: 5
+
+- name: Wait for the shared CloudNativePG controller to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: cloudnative-pg
+    namespace: cnpg-system
+  register: cnpg_ready
+  until: >-
+    cnpg_ready.resources | length == 1
+    and (cnpg_ready.resources[0].status.observedGeneration | default(-1))
+        == cnpg_ready.resources[0].metadata.generation
+    and (cnpg_ready.resources[0].status.availableReplicas | default(0)) >= 1
+  retries: 30
+  delay: 5

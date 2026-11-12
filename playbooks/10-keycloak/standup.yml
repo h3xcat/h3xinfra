@@ -1,5 +1,6 @@
 ---
 - import_playbook: ../99-utils/kube-connect.yml
+  tags: [cnpg-operator]
 
 # -----------------------------------------------------------------------------
 # Phase 1: Install the Keycloak Operator + deploy a CNPG-backed Keycloak.
@@ -14,6 +15,10 @@
   gather_facts: false
 
   tasks:
+    - name: Ensure the shared CloudNativePG operator is ready
+      ansible.builtin.import_tasks: tasks/cnpg-operator.yml
+      tags: [cnpg-operator]
+
     # Pod Security: the operator, Keycloak and CloudNativePG pods pass
     # baseline. The operators generate the Keycloak and Postgres pods, so
     # the rendered manifests do not show them. Enforcement is opt-in: set

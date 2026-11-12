@@ -22,6 +22,9 @@ chart_versions:
   cert_manager: "v1.21.3"
   # renovate: datasource=docker depName=quay.io/keycloak/keycloak
   keycloak: "26.8.2"
+  # Shared database operator, installed before Keycloak or Open WebUI clusters.
+  # renovate: datasource=helm depName=cloudnative-pg registryUrl=https://cloudnative-pg.github.io/charts
+  cloudnative_pg: "0.29.1"
 
   # Infrastructure - Storage
   # renovate: datasource=helm depName=longhorn registryUrl=https://charts.longhorn.io
