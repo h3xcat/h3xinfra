@@ -14,17 +14,17 @@ CLIENT_PORTS = {993, 995, 4190}
 WORLD_PORTS = {25, 465}
 
 
-def render(values):
+def render(values, namespace="mailu"):
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "values.json"
         path.write_text(json.dumps(values))
         result = subprocess.run([
-            "helm", "template", "test", str(CHART), "-n", "mailu", "-f", str(path),
+            "helm", "template", "test", str(CHART), "-n", namespace, "-f", str(path),
         ], capture_output=True, text=True, check=True)
     return [doc for doc in yaml.safe_load_all(result.stdout) if doc]
 
 
-def services(extra_networks, policy_enabled=True):
+def services(extra_networks, policy_enabled=True, namespace="mailu"):
     docs = render({
         "fullnameOverride": "mailu-pre",
         "mailuInstanceName": "mailu-main",
@@ -34,14 +34,14 @@ def services(extra_networks, policy_enabled=True):
             "ipv4": "192.0.2.10/32", "ipv6": "2001:db8::10/128"}}},
         "networkPolicy": {"enabled": policy_enabled,
                           "allowedIPv6Networks": extra_networks},
-    })
+    }, namespace)
     return {d["metadata"]["name"]: d for d in docs if d["kind"] == "Service"}, docs
 
 
 @unittest.skipUnless(shutil.which("helm"), "helm is not installed")
 class MailuExternalService(unittest.TestCase):
-    def test_client_ports_are_limited_to_the_policy_cidrs(self):
-        svcs, docs = services(["2001:db8:1::/64"])
+    def test_client_ports_are_limited_to_private_ranges(self):
+        svcs, _ = services(["2001:db8:1::/64"])
         self.assertEqual(set(svcs), {"mailu-pre-external", "mailu-pre-external-clients"})
         clients = svcs["mailu-pre-external-clients"]["spec"]
         self.assertEqual({p["port"] for p in clients["ports"]}, CLIENT_PORTS)
@@ -49,14 +49,38 @@ class MailuExternalService(unittest.TestCase):
         # loadBalancerSourceRanges does not apply to NodePorts, so the client
         # Service must not open NodePorts.
         self.assertIs(clients["allocateLoadBalancerNodePorts"], False)
-        # The Cilium policy must allow the same CIDRs on the same client ports.
-        policy = next(d for d in docs if d["kind"] == "CiliumNetworkPolicy")
-        for rule in policy["spec"]["ingress"]:
-            ports = {int(p["port"]) for t in rule.get("toPorts", []) for p in t["ports"]}
-            if ports & CLIENT_PORTS:
-                self.assertEqual([c["cidr"] for c in rule["fromCIDRSet"]],
-                                 clients["loadBalancerSourceRanges"])
-        self.assertEqual(sum(1 for r in policy["spec"]["ingress"] if "fromCIDRSet" in r), 3)
+
+    def test_policy_allows_only_the_expected_sources_and_ports(self):
+        for namespace in ("mailu", "custom-mail"):
+            for extra_networks in ([], ["2001:db8:1::/64", "2001:db8:2::/64"]):
+                with self.subTest(namespace=namespace, extra_networks=extra_networks):
+                    svcs, docs = services(extra_networks, namespace=namespace)
+                    policy, = [d for d in docs if d["kind"] == "CiliumNetworkPolicy"]
+                    self.assertEqual(policy["metadata"]["namespace"], namespace)
+                    client_cidrs = svcs["mailu-pre-external-clients"]["spec"]["loadBalancerSourceRanges"]
+                    self.assertEqual(client_cidrs, PRIVATE + extra_networks)
+                    self.assertEqual(policy["spec"], {
+                        "endpointSelector": {"matchLabels": {
+                            "app.kubernetes.io/component": "front",
+                            "app.kubernetes.io/instance": "mailu-main",
+                            "app.kubernetes.io/name": "mailu",
+                        }},
+                        "ingress": [
+                            {"fromEntities": ["world"], "toPorts": [{"ports": [
+                                {"port": str(port), "protocol": "TCP"}
+                                for port in sorted(WORLD_PORTS)
+                            ]}]},
+                            {"fromCIDRSet": [{"cidr": cidr} for cidr in client_cidrs],
+                             "toPorts": [{"ports": [
+                                 {"port": str(port), "protocol": "TCP"}
+                                 for port in sorted(CLIENT_PORTS)
+                             ]}]},
+                            {"fromEntities": ["cluster", "kube-apiserver"]},
+                            {"fromEndpoints": [{"matchLabels": {
+                                "k8s:io.kubernetes.pod.namespace": namespace,
+                            }}]},
+                        ],
+                    })
 
     def test_mail_transfer_ports_stay_open_to_all_sources(self):
         svcs, _ = services([])

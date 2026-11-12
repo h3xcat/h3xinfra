@@ -68,17 +68,6 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Create the name of the service account to use
-*/}}
-{{- define "h3xinfra-mailu-pre.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create }}
-{{- default (include "h3xinfra-mailu-pre.fullname" .) .Values.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.serviceAccount.name }}
-{{- end }}
-{{- end }}
-
-{{/*
 Pod selector of the Mailu front Deployment (upstream chart labels).
 */}}
 {{- define "h3xinfra-mailu-pre.frontSelector" -}}

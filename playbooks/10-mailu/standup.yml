@@ -129,27 +129,18 @@
           look for MetalLB AllocationFailed events.
         quiet: true
 
-  - name: Read Helm version for shutdown renderer compatibility
-    ansible.builtin.command:
-      argv: [helm, version, --short]
-    register: mailu_helm_version
-    changed_when: false
-    check_mode: false
-
   - name: Read the Helm 4 plugin directory
     ansible.builtin.command:
       argv: [helm, env, HELM_PLUGINS]
     register: mailu_helm_plugins
     changed_when: false
     check_mode: false
-    when: mailu_helm_version.stdout.startswith('v4.')
 
   - name: Create the Mailu shutdown plugin directory
     ansible.builtin.file:
       path: "{{ mailu_helm_plugins.stdout }}/h3xinfra-mailu-shutdown"
       state: directory
       mode: "0755"
-    when: mailu_helm_version.stdout.startswith('v4.')
 
   - name: Keep the installed Helm 4 shutdown plugin in sync with the repository
     ansible.builtin.copy:
@@ -161,7 +152,6 @@
     - shutdown-post-renderer.py
     - graceful-stop.py
     - graceful-stop-clamav.sh
-    when: mailu_helm_version.stdout.startswith('v4.')
 
   - name: Deploy Mailu via Helm
     kubernetes.core.helm:
@@ -170,9 +160,7 @@
       chart_version: "{{ chart_versions.mailu }}"
       namespace: "{{ mailu.namespace }}"
       create_namespace: false
-      post_renderer: >-
-        {{ 'h3xinfra-mailu-shutdown' if mailu_helm_version.stdout.startswith('v4.')
-           else playbook_dir ~ '/shutdown-post-renderer.py' }}
+      post_renderer: h3xinfra-mailu-shutdown
       
       values:
         global:
@@ -202,11 +190,8 @@
           password: "{{ mailu.external_relay_password }}"
 
         ingress:
-          # Mailu's front LB Service is the single entry point for SMTP/IMAP
-          # AND HTTP/HTTPS (admin/webmail). The chart's Ingress block was an
-          # optional shortcut for ingress-nginx; with Envoy Gateway gone for
-          # mail traffic, we rely on the front LB exclusively. IP allowlist
-          # for HTTP/HTTPS is enforced by Mailu itself.
+          # The pre-chart routes the browser UI through Envoy Gateway and
+          # publishes mail protocols on its own LoadBalancer Services.
           enabled: false
           # The chart's `front` Deployment still mounts /certs from a TLS
           # Secret regardless of whether an Ingress is rendered. Point it
@@ -223,24 +208,13 @@
           terminationGracePeriodSeconds: 120
           resources:
             requests:
-              cpu: "{{ mailu.resources.front.requests.cpu | default('100m') }}"
-              memory: "{{ mailu.resources.front.requests.memory | default('384Mi') }}"
+              cpu: "100m"
+              memory: "384Mi"
             limits:
-              cpu: "{{ mailu.resources.front.limits.cpu | default('1') }}"
-              memory: "{{ mailu.resources.front.limits.memory | default('1Gi') }}"
+              cpu: "1"
+              memory: "1Gi"
           hostPort:
             enabled: false
-          externalService:
-            type: "LoadBalancer"
-            annotations:
-              metallb.universe.tf/address-pool: "{{ mailu.release_name_prefix }}-pre-pool"
-
-        mariadb:
-          primary:
-            persistence:
-              enabled: true
-              storageClass: "longhorn"
-              size: "100Gi"
 
         redis:
           master:
@@ -252,11 +226,11 @@
           terminationGracePeriodSeconds: 120
           resources:
             requests:
-              cpu: "{{ mailu.resources.admin.requests.cpu | default('100m') }}"
-              memory: "{{ mailu.resources.admin.requests.memory | default('256Mi') }}"
+              cpu: "100m"
+              memory: "256Mi"
             limits:
-              cpu: "{{ mailu.resources.admin.limits.cpu | default('1') }}"
-              memory: "{{ mailu.resources.admin.limits.memory | default('768Mi') }}"
+              cpu: "1"
+              memory: "768Mi"
           persistence:
             storageClass: "longhorn"
           updateStrategy:
@@ -266,11 +240,11 @@
           terminationGracePeriodSeconds: 120
           resources:
             requests:
-              cpu: "{{ mailu.resources.webmail.requests.cpu | default('100m') }}"
-              memory: "{{ mailu.resources.webmail.requests.memory | default('192Mi') }}"
+              cpu: "100m"
+              memory: "192Mi"
             limits:
-              cpu: "{{ mailu.resources.webmail.limits.cpu | default('1') }}"
-              memory: "{{ mailu.resources.webmail.limits.memory | default('512Mi') }}"
+              cpu: "1"
+              memory: "512Mi"
           persistence:
             storageClass: "longhorn"
           updateStrategy:
@@ -280,11 +254,11 @@
           terminationGracePeriodSeconds: 120
           resources:
             requests:
-              cpu: "{{ mailu.resources.postfix.requests.cpu | default('100m') }}"
-              memory: "{{ mailu.resources.postfix.requests.memory | default('128Mi') }}"
+              cpu: "100m"
+              memory: "128Mi"
             limits:
-              cpu: "{{ mailu.resources.postfix.limits.cpu | default('1') }}"
-              memory: "{{ mailu.resources.postfix.limits.memory | default('512Mi') }}"
+              cpu: "1"
+              memory: "512Mi"
           persistence:
             storageClass: "longhorn"
           updateStrategy:
@@ -294,11 +268,11 @@
           terminationGracePeriodSeconds: 120
           resources:
             requests:
-              cpu: "{{ mailu.resources.dovecot.requests.cpu | default('100m') }}"
-              memory: "{{ mailu.resources.dovecot.requests.memory | default('256Mi') }}"
+              cpu: "100m"
+              memory: "256Mi"
             limits:
-              cpu: "{{ mailu.resources.dovecot.limits.cpu | default('1') }}"
-              memory: "{{ mailu.resources.dovecot.limits.memory | default('1Gi') }}"
+              cpu: "1"
+              memory: "1Gi"
           persistence:
             storageClass: "longhorn"
           updateStrategy:
@@ -308,11 +282,11 @@
           terminationGracePeriodSeconds: 120
           resources:
             requests:
-              cpu: "{{ mailu.resources.rspamd.requests.cpu | default('100m') }}"
-              memory: "{{ mailu.resources.rspamd.requests.memory | default('384Mi') }}"
+              cpu: "100m"
+              memory: "384Mi"
             limits:
-              cpu: "{{ mailu.resources.rspamd.limits.cpu | default('2') }}"
-              memory: "{{ mailu.resources.rspamd.limits.memory | default('1Gi') }}"
+              cpu: "2"
+              memory: "1Gi"
           persistence:
             storageClass: "longhorn"
           updateStrategy:
@@ -327,11 +301,11 @@
           terminationGracePeriodSeconds: 120
           resources:
             requests:
-              cpu: "{{ mailu.resources.clamav.requests.cpu | default('100m') }}"
-              memory: "{{ mailu.resources.clamav.requests.memory | default('1536Mi') }}"
+              cpu: "100m"
+              memory: "1536Mi"
             limits:
-              cpu: "{{ mailu.resources.clamav.limits.cpu | default('2') }}"
-              memory: "{{ mailu.resources.clamav.limits.memory | default('4Gi') }}"
+              cpu: "2"
+              memory: "4Gi"
           persistence:
             storageClass: "longhorn"
 
@@ -339,38 +313,21 @@
           terminationGracePeriodSeconds: 120
           resources:
             requests:
-              cpu: "{{ mailu.resources.oletools.requests.cpu | default('50m') }}"
-              memory: "{{ mailu.resources.oletools.requests.memory | default('64Mi') }}"
+              cpu: "50m"
+              memory: "64Mi"
             limits:
-              cpu: "{{ mailu.resources.oletools.limits.cpu | default('500m') }}"
-              memory: "{{ mailu.resources.oletools.limits.memory | default('256Mi') }}"
+              cpu: "500m"
+              memory: "256Mi"
 
         tika:
           terminationGracePeriodSeconds: 120
           resources:
             requests:
-              cpu: "{{ mailu.resources.tika.requests.cpu | default('100m') }}"
-              memory: "{{ mailu.resources.tika.requests.memory | default('768Mi') }}"
+              cpu: "100m"
+              memory: "768Mi"
             limits:
-              cpu: "{{ mailu.resources.tika.limits.cpu | default('2') }}"
-              memory: "{{ mailu.resources.tika.limits.memory | default('2Gi') }}"
-
-        webdav:
-          persistence:
-            storageClass: "longhorn"
-          updateStrategy:
-            type: "Recreate"
-
-        fetchmail:
-          persistence:
-            storageClass: "longhorn"
-          updateStrategy:
-            type: "Recreate"
-
-        postgresql:
-          primary:
-            persistence:
-              storageClass: "longhorn"
+              cpu: "2"
+              memory: "2Gi"
 
       set_values:
       - value: "hostnames={{ mailu.dns_names | to_json }}"
