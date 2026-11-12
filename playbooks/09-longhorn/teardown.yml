@@ -76,19 +76,3 @@
         name: "{{ longhorn.namespace }}"
         wait: true
         wait_timeout: 300
-
-        
-- name: Remove Longhorn CLI
-  hosts: k3s_cluster
-  gather_facts: false
-  become: true
-
-  tasks:
-    - name: Remove Longhorn CLI binary
-      file:
-        path: /usr/local/bin/longhornctl
-        state: absent
-
-    - name: Display CLI removal completion
-      debug:
-        msg: "Longhorn CLI binary removed from {{ inventory_hostname }}"

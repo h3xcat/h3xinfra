@@ -148,6 +148,15 @@ an upstream change. Do not use hidden live-only patches.
 At audit time, all six installed engine-image generations still had references.
 Do not delete them only because the manager/chart version is newer.
 
+## Longhorn CLI cleanup
+
+The playbooks no longer install or remove `longhornctl`; their only invocation
+was its version check. Existing nodes keep the binary until the owner removes
+`/usr/local/bin/longhornctl` after checking for local maintenance-script users.
+Do that separately from a storage rollout. The V2 prerequisites, volume and
+instance-manager checks, CSI settings, and authentication guards remain in
+`standup.yml`.
+
 ## Verification
 
 From the core repository, run

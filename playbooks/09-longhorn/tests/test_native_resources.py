@@ -44,13 +44,6 @@ def v2_enabled(context=None):
 
 
 class LonghornNativeResourceTests(unittest.TestCase):
-    def test_cli_download_is_checksum_verified(self):
-        play = next(play for play in plays() if play.get("name", "").startswith("Setup Longhorn CLI"))
-        download = next(task for task in play["tasks"] if task["name"] == "Download Longhorn CLI")["get_url"]
-        self.assertEqual(download["url"], "{{ longhorn_cli_url }}")
-        self.assertEqual(download["checksum"], "sha256:{{ longhorn_cli_url }}.sha256")
-        self.assertTrue(play["vars"]["longhorn_cli_url"].startswith("https://github.com/longhorn/cli/releases/download/"))
-
     def test_manager_budget_and_serial_rollout(self):
         manager = helm_values()["longhornManager"]
         self.assertEqual(manager["resources"], MANAGER)

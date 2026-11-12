@@ -41,11 +41,6 @@ chart_versions:
   # renovate: datasource=helm depName=mailu registryUrl=https://mailu.github.io/helm-charts
   mailu: "2.8.0"
 
-# CLI Tools
-cli_versions:
-  # renovate: datasource=github-releases depName=longhorn/cli
-  longhorn_cli: "v1.13.0"
-
 # =============================================================================
 # CENTRALIZED IMAGE VERSIONS
 # =============================================================================
