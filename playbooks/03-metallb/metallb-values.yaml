@@ -1,6 +1,8 @@
 # Configuration for MetalLB Helm chart
 # Reference: https://metallb.universe.tf/installation/
 # Reference: https://github.com/metallb/metallb/tree/main/charts/metallb
+# Resource completeness is checked by h3xinfra-private/tests/helm against the
+# pinned chart, including the FRR-K8s init containers and status-cleaner.
 
 controller:
   enabled: true

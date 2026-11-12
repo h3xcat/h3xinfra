@@ -188,9 +188,10 @@ Do not delete them only because the manager/chart version is newer.
 ## Verification
 
 From the core repository, run
-`python -m unittest discover -s playbooks/09-longhorn/tests -v`. To include the
-native setting serialization checks and the manager DaemonSet render checks, set
-`LONGHORN_CHART_PATH` to an unpacked deployed-version chart.
+`python -m unittest discover -s playbooks/09-longhorn/tests -v` for the storage,
+rollout, authentication and V2 safety checks. The shared
+`h3xinfra-private/tests/helm` suite renders the inventory-pinned Longhorn chart
+and checks manager/container budgets and native CSI, CPU and V2 settings.
 
 References: [Longhorn settings](https://longhorn.io/docs/1.12.1/references/settings/),
 [the 1.12.1 settings implementation](https://github.com/longhorn/longhorn-manager/blob/v1.12.1/types/setting.go).
