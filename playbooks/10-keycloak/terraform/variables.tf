@@ -119,11 +119,6 @@ variable "clients" {
     condition     = alltrue([for client in var.clients : alltrue([for aud in client.audiences : aud != client.name])])
     error_message = "audiences must not contain the client's own name; Keycloak already sets azp to it."
   }
-
-  validation {
-    condition     = alltrue([for client in var.clients : client.optional_scopes == null || !contains(["openwebui", "k8s-mcp"], client.name)])
-    error_message = "kubernetes_oidc.tf manages the optional scopes of openwebui and k8s-mcp; do not set optional_scopes on them."
-  }
 }
 
 variable "groups" {

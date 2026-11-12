@@ -147,9 +147,55 @@ an Envoy Gateway JWT policy) can then accept the tokens. ID tokens do not get
 the audience.
 
 `optional_scopes`, when set, is the complete list of optional client scopes of
-the client. It replaces the realm defaults. Use it on a public client to keep
-it from requesting a scope that it must not get. Do not set it on `openwebui`
-or `k8s-mcp`: `terraform/kubernetes_oidc.tf` manages their optional scopes.
+the client. It replaces the realm defaults. Review this list when adding a
+public client: keep `k8s-cluster` exclusive to the confidential `k8s-mcp`
+exchanger. The scope remains optional and is requested only during exchange.
+
+For Open WebUI to call Kubernetes MCP, add these fields to its existing client:
+
+```yaml
+audiences: ["k8s-mcp"]
+optional_scopes: ["address", "phone", "offline_access", "microprofile-jwt"]
+```
+
+Set the exchanger's complete optional-scope list on its existing client:
+
+```yaml
+optional_scopes: ["address", "phone", "offline_access", "microprofile-jwt", "k8s-cluster"]
+```
+
+The exchanger still needs confidential client authentication and
+`standard_token_exchange_enabled: true`. Open WebUI's ordinary access token
+carries `k8s-mcp`; the exchanged token carries the `kubernetes` audience and
+Kubernetes groups. The public client must not receive `k8s-cluster`.
+
+#### Migrating the existing Open WebUI/MCP resources
+
+Update the client inventory together with this module. Keep `oidc-moved.tf`
+until every existing workspace has applied the migration: deleting the old
+optional-scope resources without their moves detaches those scope assignments.
+
+Before merging this migration, the owner must inspect a plan against the real
+workspace and state, using the paired inventory. Expect these three address moves:
+
+- `keycloak_openid_audience_protocol_mapper.openwebui_k8s_mcp_audience` to
+  `keycloak_openid_audience_protocol_mapper.client_audiences["openwebui:k8s-mcp"]`.
+- `keycloak_openid_client_optional_scopes.openwebui` to
+  `keycloak_openid_client_optional_scopes.clients["openwebui"]`.
+- `keycloak_openid_client_optional_scopes.k8s_mcp` to
+  `keycloak_openid_client_optional_scopes.clients["k8s-mcp"]`.
+
+The moved audience mapper also changes its display name from
+`k8s-mcp-audience` to `audience-k8s-mcp` in place. The only destruction must be
+`keycloak_openid_audience_protocol_mapper.openwebui_self_audience`, which added
+`openwebui` to access tokens. MCP checks for `k8s-mcp`; this mapper did not add
+anything to ID tokens. There must be no creation, replacement, client or scope
+detachment, or authentication change. Resolve any unexpected action before merge.
+
+After applying, verify Open WebUI login and its MCP exchange, then remove the
+temporary moves only after all existing workspaces have recorded the new addresses.
+The mocked migration checks establish source behavior; they do not replace the
+owner's live plan or runtime checks.
 
 Example: a public PKCE client for MCP clients on a workstation (RFC 8252). For
 an `http` loopback redirect (`localhost`, `127.0.0.1`, `[::1]`), Keycloak

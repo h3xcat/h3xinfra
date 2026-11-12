@@ -144,4 +144,7 @@ resource "keycloak_openid_client_optional_scopes" "clients" {
   realm_id        = keycloak_realm.main.id
   client_id       = keycloak_openid_client.clients[each.key].id
   optional_scopes = each.value.optional_scopes
+
+  # Inventory names the custom scope as a string; create it before assigning it.
+  depends_on = [keycloak_openid_client_scope.k8s_cluster]
 }
