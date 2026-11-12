@@ -8,8 +8,64 @@
 - name: Remove Longhorn via Helm
   hosts: k8s
   gather_facts: false
+  any_errors_fatal: true
 
   tasks:
+    - name: Inspect the Longhorn Helm release before teardown
+      kubernetes.core.helm_info:
+        name: "{{ longhorn.release_name_prefix }}-main"
+        namespace: "{{ longhorn.namespace }}"
+        release_state: [deployed, failed, pending, superseded, uninstalled, uninstalling]
+      register: longhorn_teardown_release
+      no_log: true
+
+    - name: Inspect Longhorn CRDs before teardown
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+      register: longhorn_teardown_crds
+
+    - name: Read the existing Longhorn deletion confirmation
+      kubernetes.core.k8s_info:
+        api_version: longhorn.io/v1beta2
+        kind: Setting
+        name: deleting-confirmation-flag
+        namespace: "{{ longhorn.namespace }}"
+      register: longhorn_teardown_confirmation
+
+    - name: Refuse an incomplete or concurrent Longhorn uninstall
+      ansible.builtin.assert:
+        that:
+          - longhorn_teardown_crds.api_found | default(false)
+          - longhorn_release_state in ['absent', 'uninstalled', 'deployed', 'failed']
+          - >-
+            longhorn_release_state not in ['absent', 'uninstalled'] or
+            longhorn_teardown_crds.resources | selectattr('spec.group', 'equalto', 'longhorn.io') | list | length == 0
+          - >-
+            longhorn_release_state in ['absent', 'uninstalled'] or
+            longhorn_teardown_confirmation.resources | length == 1
+        fail_msg: >-
+          Longhorn is partly installed or another Helm operation is in progress.
+          Stop and inspect the release and uninstall Job. Restore the matching
+          Longhorn release if needed, then use its supported uninstall procedure.
+          Do not strip finalizers or delete the namespace to bypass this check.
+      vars:
+        longhorn_release_state: "{{ (longhorn_teardown_release.status | default({})).status | default('absent') }}"
+
+    - name: Enable the existing Longhorn deletion confirmation for this teardown
+      kubernetes.core.k8s_json_patch:
+        api_version: longhorn.io/v1beta2
+        kind: Setting
+        name: deleting-confirmation-flag
+        namespace: "{{ longhorn.namespace }}"
+        patch:
+          - op: replace
+            path: /value
+            value: "true"
+      when:
+        - longhorn_teardown_confirmation.resources | length == 1
+        - longhorn_teardown_confirmation.resources[0].value != 'true'
+
     - name: Uninstall Longhorn configuration via Helm
       kubernetes.core.helm:
         name: "{{ longhorn.release_name_prefix }}-post"
@@ -23,8 +79,29 @@
         name: "{{ longhorn.release_name_prefix }}-main"
         namespace: "{{ longhorn.namespace }}"
         state: absent
+        disable_hook: false
         wait: true
-        timeout: "300s"
+        # The pinned chart's pre-delete Job has a 900-second deadline.
+        timeout: "1200s"
+
+    - name: Verify the supported uninstall removed the Longhorn CRDs
+      when: not ansible_check_mode
+      block:
+        - name: Inspect CRDs after the Longhorn uninstall hook
+          kubernetes.core.k8s_info:
+            api_version: apiextensions.k8s.io/v1
+            kind: CustomResourceDefinition
+          register: longhorn_remaining_crds
+
+        - name: Stop if Longhorn CRDs remain
+          ansible.builtin.assert:
+            that:
+              - longhorn_remaining_crds.api_found | default(false)
+              - longhorn_remaining_crds.resources | selectattr('spec.group', 'equalto', 'longhorn.io') | list | length == 0
+            fail_msg: >-
+              Longhorn CRDs remain after Helm uninstall. Preserve the pre-release
+              and namespace, inspect the uninstall Job and release, and follow
+              the matching Longhorn recovery procedure. Do not strip finalizers.
 
     - name: Uninstall Longhorn pre-configuration via Helm
       kubernetes.core.helm:
@@ -33,40 +110,6 @@
         state: absent
         wait: true
         timeout: "300s"
-
-    - name: Force remove longhorn resources if still stuck
-      ansible.builtin.shell: |
-        CHANGES_MADE=0
-        echo "Deleting webhook configurations..."
-        if kubectl delete ValidatingWebhookConfiguration longhorn-webhook-validator 2>/dev/null; then
-          echo "Deleted ValidatingWebhookConfiguration longhorn-webhook-validator"
-          CHANGES_MADE=1
-        fi
-        if kubectl delete MutatingWebhookConfiguration longhorn-webhook-mutator 2>/dev/null; then
-          echo "Deleted MutatingWebhookConfiguration longhorn-webhook-mutator"
-          CHANGES_MADE=1
-        fi
-        echo "Processing Longhorn CRDs..."
-        for crd in $(kubectl get crd -o jsonpath={.items[*].metadata.name} | tr ' ' '\n' | grep longhorn.io); do
-          echo "Processing CRD: $crd"
-          kubectl -n {{longhorn.namespace}} get $crd -o yaml | sed "s/\- longhorn.io//g" | kubectl apply -f -
-          if kubectl -n {{longhorn.namespace}} delete $crd --all 2>/dev/null; then
-            echo "Deleted $crd instances"
-            CHANGES_MADE=1
-          fi
-          if kubectl delete crd/$crd 2>/dev/null; then
-            echo "Deleted CRD $crd"
-            CHANGES_MADE=1
-          fi
-        done
-        echo "Force removal completed."
-        echo "CHANGES_MADE=$CHANGES_MADE"
-      register: force_removal_output
-      changed_when: "'CHANGES_MADE=1' in force_removal_output.stdout"
-
-    - name: Show force removal output
-      debug:
-        var: force_removal_output.stdout_lines
 
     - name: Remove Longhorn namespace
       kubernetes.core.k8s:
