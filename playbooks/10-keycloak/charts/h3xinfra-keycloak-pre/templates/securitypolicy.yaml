@@ -1,7 +1,6 @@
 {{- /* Use Envoy Gateway's rule-level SecurityPolicy attachment.
 Restrict only the admin rule; public realm/discovery routes stay reachable.
 An empty allowlist keeps admin access denied. */ -}}
-{{- if .Values.ingress.enabled }}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: SecurityPolicy
@@ -26,5 +25,4 @@ spec:
             {{- range .Values.ingress.trustedSetupIPs }}
             - {{ . | quote }}
             {{- end }}
-{{- end }}
 {{- end }}

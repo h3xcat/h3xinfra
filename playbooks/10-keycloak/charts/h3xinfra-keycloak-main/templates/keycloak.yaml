@@ -21,7 +21,7 @@ metadata:
     {{- include "h3xinfra-keycloak-main.labels" . | nindent 4 }}
 spec:
   instances: {{ .Values.instances | default 2 }}
-  image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
+  image: {{ printf "%s:%s" .Values.image.repository (required "image.tag is required" .Values.image.tag | toString) | quote }}
   startOptimized: false
   hostname:
     # Public hostname Keycloak advertises for the issuer and redirect
@@ -53,7 +53,7 @@ spec:
   db:
     vendor: postgres
     host: {{ required "database.host is required" .Values.database.host | quote }}
-    port: {{ .Values.database.port | default 5432 }}
+    port: 5432
     database: {{ .Values.database.database | quote }}
     usernameSecret:
       name: {{ required "database.credentialsSecretName is required" .Values.database.credentialsSecretName | quote }}
@@ -65,13 +65,8 @@ spec:
   resources:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- if or .Values.additionalOptions .Values.proxyTrustedAddresses }}
+  {{- with .Values.proxyTrustedAddresses }}
   additionalOptions:
-    {{- with .Values.proxyTrustedAddresses }}
     - name: proxy-trusted-addresses
       value: {{ join "," . | quote }}
-    {{- end }}
-    {{- with .Values.additionalOptions }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
   {{- end }}

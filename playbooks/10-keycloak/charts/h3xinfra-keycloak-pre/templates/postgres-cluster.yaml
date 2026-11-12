@@ -1,11 +1,6 @@
-{{- if .Values.postgres.enabled }}
-{{- $antiAffinity := .Values.postgres.podAntiAffinityType | default "required" }}
-{{- if not (has $antiAffinity (list "preferred" "required")) }}
-{{- fail "postgres.podAntiAffinityType must be preferred or required" }}
-{{- end }}
 ---
 # CloudNativePG-managed Postgres cluster backing Keycloak. Required pod
-# anti-affinity keeps the primary and standby on different nodes by default.
+# anti-affinity keeps the primary and standby on different nodes.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -15,8 +10,8 @@ metadata:
     app.kubernetes.io/component: postgres
 spec:
   instances: {{ .Values.postgres.instances | default 2 }}
-  imageName: {{ printf "%s:%s" .Values.postgres.image.repository (.Values.postgres.image.tag | toString) | quote }}
-  # Keep each instance on a different node. With `required` (the default),
+  imageName: {{ printf "%s:%s" .Values.postgres.image.repository (required "postgres.image.tag is required" .Values.postgres.image.tag | toString) | quote }}
+  # Keep each instance on a different node. With `required`,
   # the primary and the standby never share a node, so one node failure
   # cannot stop both. A drained instance normally finds a free node. These
   # pods have no nodeSelector or toleration, so they can run on every agent
@@ -24,7 +19,7 @@ spec:
   # attach on any node. If no free node is available, the instance stays
   # Pending. It does not share a node with the other instance (intended).
   affinity:
-    podAntiAffinityType: {{ $antiAffinity }}
+    podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
   bootstrap:
     initdb:
@@ -39,4 +34,3 @@ spec:
   resources:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-{{- end }}

@@ -7,7 +7,7 @@
 # The operator owns the StatefulSet, Service, soft topology spread constraints
 # and JGroups KUBE_PING discovery for multi-instance Infinispan cache. The main
 # chart owns the PDB. Postgres is a CloudNativePG `Cluster` with required pod
-# anti-affinity by default to keep the primary and standby on different nodes.
+# anti-affinity to keep the primary and standby on different nodes.
 # -----------------------------------------------------------------------------
 - name: Deploy Keycloak (Operator + CNPG)
   hosts: k8s
@@ -84,11 +84,9 @@
         values:
           fullnameOverride: "{{ keycloak.release_name_prefix }}-pre"
           bootstrapSecret:
-            enabled: true
             adminUsername: "{{ keycloak.admin.username }}"
             adminPassword: "{{ keycloak.admin.password }}"
           postgres:
-            enabled: true
             image:
               tag: "{{ image_versions.postgresql }}"
             instances: "{{ keycloak.postgresql.instances | default(2) }}"
@@ -99,7 +97,6 @@
               storageClass: "{{ keycloak.postgresql.persistence.storageClass | default('longhorn') }}"
               size: "{{ keycloak.postgresql.persistence.size | default('8Gi') }}"
           ingress:
-            enabled: "{{ keycloak.ingress.enabled | default(true) }}"
             host: "{{ keycloak.ingress.hostname }}"
             gateway:
               name: "{{ gateway.release_name_prefix }}-pre-shared"
@@ -107,7 +104,6 @@
             # Service rendered by the Keycloak Operator from the Keycloak CR.
             # Naming convention: `<keycloak-cr-name>-service`.
             serviceName: "{{ keycloak.release_name_prefix }}-main-service"
-            servicePort: 8080
             trustedSetupIPs: "{{ keycloak.ingress.trusted_setup_ips | default([]) }}"
         state: present
         wait: true
@@ -147,7 +143,6 @@
           bootstrapAdminSecretName: "{{ keycloak.release_name_prefix }}-pre-bootstrap-admin"
           database:
             host: "{{ keycloak.release_name_prefix }}-pre-postgres-rw"
-            port: 5432
             database: "{{ keycloak.postgresql.auth.database | default('keycloak') }}"
             credentialsSecretName: "{{ keycloak.release_name_prefix }}-pre-postgres-credentials"
             clusterName: "{{ keycloak.release_name_prefix }}-pre-postgres"

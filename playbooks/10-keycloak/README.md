@@ -16,7 +16,7 @@ with the inventory.
 │   ├── h3xinfra-keycloak-pre/        # Bootstrap Secrets, CNPG Cluster, HTTPRoute/SecurityPolicy
 │   └── h3xinfra-keycloak-main/       # Keycloak CR, chart-owned PDB, optional Cilium policies
 ├── terraform/                      # Realm, clients, groups and MFA; backend.tf points to NAS state
-└── tests/                          # Mocked Terraform groups and rendered CNPG affinity checks
+└── tests/                          # Mocked client/group plans and rendered image/HA checks
 ```
 
 ## Deployment flow
@@ -34,7 +34,7 @@ The standup playbook does these steps:
      admin username/password. The Keycloak CR uses this Secret through
      `spec.bootstrapAdmin.user.secret`.
    - A **CloudNativePG `Cluster`** (`postgresql.cnpg.io/v1`). It is the backend of Keycloak.
-     Its primary and standby use required pod anti-affinity by default, so
+     Its primary and standby use required pod anti-affinity, so
      they stay on different nodes. Keycloak connects through the CNPG-rendered
      `<cluster>-rw` Service. This Service always points to the current primary.
    - One `HTTPRoute` (Gateway API) with named rules. It attaches only to the
@@ -71,7 +71,12 @@ release → namespace.
 
 ## Configuration
 
-All settings are in `inventory/production/host_vars/k8s/keycloak.yml`.
+Service settings are in `inventory/production/host_vars/k8s/keycloak.yml`.
+The charts require explicit image tags: the playbook supplies
+`chart_versions.keycloak` and `image_versions.postgresql` from
+`inventory/production/group_vars/all/versions.yml`. The pre-chart always
+creates its bootstrap Secrets, database and HTTPS route; PostgreSQL instances
+must run on different nodes.
 
 ### Required vault-encrypted fields
 
