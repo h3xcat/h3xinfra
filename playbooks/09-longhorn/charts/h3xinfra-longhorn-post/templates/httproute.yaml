@@ -25,11 +25,7 @@ metadata:
 spec:
   parentRefs:
     - name: {{ $gwName | quote }}
-      {{- if .Values.longhornIngress.gateway.sectionName }}
-      sectionName: {{ .Values.longhornIngress.gateway.sectionName | quote }}
-      {{- else }}
-      port: {{ .Values.longhornIngress.gateway.port | default 443 }}
-      {{- end }}
+      port: 443
       {{- with .Values.longhornIngress.gateway.namespace }}
       namespace: {{ . | quote }}
       {{- end }}

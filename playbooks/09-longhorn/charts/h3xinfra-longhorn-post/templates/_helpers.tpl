@@ -49,14 +49,3 @@ Selector labels
 app.kubernetes.io/name: {{ include "h3xinfra-longhorn-post.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
-
-{{/*
-Create the name of the service account to use
-*/}}
-{{- define "h3xinfra-longhorn-post.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create }}
-{{- default (include "h3xinfra-longhorn-post.fullname" .) .Values.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.serviceAccount.name }}
-{{- end }}
-{{- end }}
