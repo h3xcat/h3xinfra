@@ -1,4 +1,4 @@
-"""Test keycloak.groups: the Terraform plan (mocked provider) and the tfvars pass-through."""
+"""Test mocked Keycloak client/group plans and the groups tfvars pass-through."""
 
 import json
 import os
@@ -14,20 +14,21 @@ import yaml
 
 LAYER = Path(__file__).resolve().parents[1]
 TERRAFORM = os.environ.get("TERRAFORM") or shutil.which("terraform") or "terraform"
-# Only the files that groups.tf needs. No backend, state, tfvars or real
+# Only the client/group module files. No backend, state, tfvars or real
 # provider calls can enter this test.
 MODULE_FILES = ("providers.tf", "variables.tf", "realm.tf", "clients.tf", "groups.tf", ".terraform.lock.hcl")
 
 
 class KeycloakGroupsTests(unittest.TestCase):
-    def test_groups_terraform(self):
+    def test_terraform_contracts(self):
         source = LAYER / "terraform"
         with tempfile.TemporaryDirectory(prefix="h3x-keycloak-groups-") as directory:
             target = Path(directory)
             for name in MODULE_FILES:
                 shutil.copyfile(source / name, target / name)
             (target / "tests").mkdir()
-            shutil.copyfile(LAYER / "tests/groups.tftest.hcl", target / "tests/groups.tftest.hcl")
+            for test in sorted((LAYER / "tests").glob("*.tftest.hcl")):
+                shutil.copyfile(test, target / "tests" / test.name)
             env = dict(os.environ, TF_DATA_DIR=str(target / ".terraform"), TF_IN_AUTOMATION="1", TF_INPUT="0")
             for arguments in (["init", "-backend=false", "-lockfile=readonly"], ["test"]):
                 result = subprocess.run([TERRAFORM, *arguments, "-no-color"], cwd=target, env=env,

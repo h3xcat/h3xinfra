@@ -160,9 +160,9 @@ the actual playbook values with example hosts and a public client. For offline r
 chart that you downloaded before. Render checks cover HTTPS routing,
 PKCE configuration, RBAC, ingress isolation, resources and CRD retention.
 
-More tests check the friendly Ansible validation failures. They also check mocked
-Terraform plans for public PKCE clients and existing confidential clients. The Terraform
-tests copy only the client module definitions into a temporary directory. They
-never load deployment state or generated tfvars. The tests require Helm, Ansible and Terraform.
+More tests check the friendly Ansible validation failures. These tests require
+Helm and Ansible. Mocked Terraform client and group contracts run together under
+[`10-keycloak/tests`](../10-keycloak/tests); they cover public PKCE clients and
+existing confidential clients without loading deployment state or generated tfvars.
 Cluster admission and actual browser/CLI logins still require
 deployment checks.

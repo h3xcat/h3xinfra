@@ -251,8 +251,11 @@ To import a group, do these steps:
 6. Run `ansible-playbook playbooks/10-keycloak/standup.yml`. Terraform then
    sets the role mappings and adds the members.
 
-`playbooks/10-keycloak/tests/groups.tftest.hcl` tests the groups with a mocked
-provider. `tests/test_groups.py` runs it with `terraform test`.
+`tests/test_groups.py` runs all local `*.tftest.hcl` files together with a mocked
+provider: `groups.tftest.hcl` covers groups and memberships, and
+`oidc_clients.tftest.hcl` covers client authentication and claims. It copies only
+the required module definitions into a temporary directory; no deployment state,
+backend or generated tfvars are loaded.
 
 ### Proxy headers
 
