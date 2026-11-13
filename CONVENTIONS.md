@@ -760,7 +760,7 @@ metadata:
   labels:
     external-dns.alpha.kubernetes.io/publish: "true"
   annotations:
-    external-dns.alpha.kubernetes.io/hostname: "service.example.com"
+    external-dns.kubernetes.io/hostname: "service.example.com"
 ```
 
 Ingresses and HTTPRoutes do not publish DNS through this configuration. The

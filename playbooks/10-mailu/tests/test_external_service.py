@@ -104,8 +104,20 @@ class MailuExternalService(unittest.TestCase):
         self.assertEqual(b["spec"]["externalTrafficPolicy"], "Local")
         self.assertFalse({p["port"] for p in a["spec"]["ports"]}
                          & {p["port"] for p in b["spec"]["ports"]})
-        self.assertNotIn("external-dns.alpha.kubernetes.io/hostname", b["metadata"]["annotations"])
+        self.assertNotIn("external-dns.kubernetes.io/hostname", b["metadata"]["annotations"])
         self.assertNotIn("labels", b["metadata"])
+
+    def test_public_dns_uses_the_current_annotation_contract(self):
+        svcs, _ = services([])
+        public = svcs["mailu-pre-external"]["metadata"]
+        # The pinned ExternalDNS ignores legacy alpha annotations by default.
+        # Its publish label filter is a separate, unchanged selection contract.
+        self.assertEqual(public["labels"],
+                         {"external-dns.alpha.kubernetes.io/publish": "true"})
+        self.assertEqual(public["annotations"]["external-dns.kubernetes.io/hostname"],
+                         "mail.example.test")
+        self.assertEqual(public["annotations"]["external-dns.kubernetes.io/target"].split(","),
+                         ["192.0.2.10", "2001:db8::10"])
 
     def test_source_ranges_do_not_depend_on_the_cilium_policy(self):
         svcs, docs = services([], policy_enabled=False)

@@ -20,8 +20,8 @@ metadata:
   annotations:
     metallb.universe.tf/address-pool: {{ include "h3xinfra-mailu-pre.fullname" . }}-pool
     metallb.universe.tf/allow-shared-ip: {{ include "h3xinfra-mailu-pre.fullname" . }}-external
-    external-dns.alpha.kubernetes.io/hostname: {{ .Values.hostname }}
-    external-dns.alpha.kubernetes.io/target: "{{ .Values.publicAddresses.ipv4 }},{{ .Values.publicAddresses.ipv6 }}"
+    external-dns.kubernetes.io/hostname: {{ .Values.hostname }}
+    external-dns.kubernetes.io/target: "{{ .Values.publicAddresses.ipv4 }},{{ .Values.publicAddresses.ipv6 }}"
   labels:
     external-dns.alpha.kubernetes.io/publish: "true"
 spec:
