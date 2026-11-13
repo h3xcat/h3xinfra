@@ -126,7 +126,9 @@ resource "keycloak_openid_audience_protocol_mapper" "client_audiences" {
 
   realm_id  = keycloak_realm.main.id
   client_id = keycloak_openid_client.clients[each.value.client].id
-  name      = "audience-${each.value.audience}"
+  # Keycloak preserves mapper names on update. Keep this installed name while
+  # the moved resource retains its ID; other installed pairs use the prefix.
+  name = each.key == "openwebui:k8s-mcp" ? "k8s-mcp-audience" : "audience-${each.value.audience}"
 
   included_client_audience = each.value.audience
   add_to_id_token          = false
