@@ -5,6 +5,14 @@ It installs the operator before any Keycloak CNPG Cluster. The private Open
 WebUI database consumes the same operator; it must not install a second copy.
 Keycloak teardown retains the shared release, namespace and CRDs.
 
+The owner's private `20-openwebui` handoff completed on 2026-11-13. Both old
+Terraform addresses are absent, the fresh private plan has no changes, and
+the operator-only rerun without acknowledgement passed. Resource UIDs and
+specifications were unchanged, the Helm release was at revision 10, and the
+operator did not restart.
+The completed private forget-only blocks have been retired; normal runs use
+the existing ownership marker and retain the checks described below.
+
 The chart repository is `https://cloudnative-pg.github.io/charts`; the version
 comes from `chart_versions.cloudnative_pg`. `cnpg-values.yaml` retains the
 operator budgets. The namespace keeps enforce/audit/warn PSA labels at
@@ -44,11 +52,11 @@ Keycloak clients/groups, deploy Keycloak charts or apply Keycloak Terraform.
 
 Source preparation is not authorization to migrate a live operator. The
 existing owner must first relinquish both the Helm release and namespace PSA
-labels without deleting either. For the private `20-openwebui` migration,
-use its reviewed `removed` blocks with `lifecycle { destroy = false }` for
-`helm_release.cnpg` and `kubernetes_labels.cnpg_pod_security`. The private
-migration runbook supplies the state backup, forget-only plan and verification
-steps. The namespace itself is not a separate Terraform namespace resource.
+labels without deleting either. Current source no longer contains the completed
+private `20-openwebui` transition. A restored pre-handoff state needs its
+[compatible historical source](README.md#terraform-state) and a separately
+reviewed state upgrade before current automation resumes. The namespace itself
+was not a separate Terraform namespace resource.
 
 The coordinated source can merge after review and CI, before the deployment
 window. An existing normal stack will then stop at this adoption guard until
@@ -90,12 +98,10 @@ namespace labels, CRD identities/schemas and both databases. Review a fresh
 old-owner plan and require no attempt to recreate or delete the operator or
 its labels. Do not revert the old owner's resource declarations and apply;
 returning ownership requires a separate reviewed handoff with public runs
-frozen. After the private `20-openwebui` state has forgotten both addresses,
-public adoption and the no-acknowledgement rerun pass, and the private plan
-has no changes, record completion and retire the two temporary `removed`
-blocks and their transition-only assertions. Preserve resource and ownership
-guards. Older recovery copies follow [state recovery](README.md#terraform-state)
-and do not require retaining these blocks in current source.
+frozen. Keep the state handoff, resource identity and no-acknowledgement rerun
+evidence with the completion record. Older recovery copies follow
+[state recovery](README.md#terraform-state) and do not require retaining
+completed transition blocks in current source.
 
 ## Source validation limits
 

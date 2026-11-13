@@ -187,41 +187,26 @@ Kubernetes groups. The public client must not receive `k8s-cluster`.
 
 #### Migrating the existing Open WebUI/MCP resources
 
-Update the client inventory together with this module. Keep `oidc-moved.tf`
-until the owner's NAS-backed state has applied the migration. Removing these
-move declarations before state records the new addresses can detach the
-optional-scope assignments.
+The owner's state migration completed on 2026-11-13. The audience mapper and
+both optional-scope assignments retain their original IDs at the generic
+`client_audiences["openwebui:k8s-mcp"]`, `clients["openwebui"]` and
+`clients["k8s-mcp"]` addresses. The obsolete Open WebUI self-audience mapper
+was removed, and a fresh full Keycloak plan had no changes or drift. The
+three temporary address moves have therefore been retired from current source.
 
-Source publication does not perform this migration. Before the first deployment
-or apply, the owner must inspect a plan against the real workspace and state,
-using the paired module and inventory. Keep normal Keycloak and stack applies
-paused until that review is complete. Expect these three address moves:
-
-- `keycloak_openid_audience_protocol_mapper.openwebui_k8s_mcp_audience` to
-  `keycloak_openid_audience_protocol_mapper.client_audiences["openwebui:k8s-mcp"]`.
-- `keycloak_openid_client_optional_scopes.openwebui` to
-  `keycloak_openid_client_optional_scopes.clients["openwebui"]`.
-- `keycloak_openid_client_optional_scopes.k8s_mcp` to
-  `keycloak_openid_client_optional_scopes.clients["k8s-mcp"]`.
-
-The moved audience mapper keeps its ID and installed display name
+The Open WebUI audience mapper keeps its installed display name
 `k8s-mcp-audience`. Other audience pairs keep the `audience-<client>` naming
 convention. Keycloak 26.8.2's [mapper update implementation](https://github.com/keycloak/keycloak/blob/26.8.2/model/jpa/src/main/java/org/keycloak/models/jpa/ClientAdapter.java#L460-L474)
 updates configuration but preserves the name, so a rename would remain in every
-plan. Do not delete and recreate the mapper to change its name. The only destruction must be
-`keycloak_openid_audience_protocol_mapper.openwebui_self_audience`, which added
-`openwebui` to access tokens. MCP checks for `k8s-mcp`; this mapper did not add
-anything to ID tokens. There must be no creation, replacement, client or scope
-detachment, or authentication change. Resolve any unexpected action before apply.
+plan. Do not delete and recreate the mapper to change its name.
 
-After applying, verify that the three new addresses retain the original IDs,
-require a fresh no-change plan, and verify Open WebUI login and MCP exchange.
-Record completion, then remove the temporary moves and transition-only tests
-in a follow-up source change; retain current authentication and scope tests.
-Use [Terraform state recovery](#terraform-state) for older copies; other
-checkouts sharing this NAS state are not separate deployments.
-The mocked migration checks establish source behavior; they do not replace the
-owner's live plan or runtime checks.
+State convergence does not establish successful browser login or MCP exchange;
+those user-session checks remain pending. Restore older
+state with its [compatible historical source](#terraform-state), including
+the retired moves, before reviewing the upgrade to current source. Other
+checkouts sharing this NAS state are not separate deployments. Current mocked
+tests continue to enforce client authentication, mapper names and token claims,
+and complete optional-scope assignments.
 
 Example: a public PKCE client for MCP clients on a workstation (RFC 8252). For
 an `http` loopback redirect (`localhost`, `127.0.0.1`, `[::1]`), Keycloak
@@ -439,10 +424,10 @@ The playbook creates the state directory before Terraform runs. The Ansible
 Terraform module uses `force_init: true` to initialize the configured backend
 on each run.
 
-The completed MFA module migration no longer needs its old address moves in
+The completed MFA and Open WebUI/MCP migrations no longer need their old address moves in
 current source. Before restoring older state, pause normal applies and use the
 recorded compatible migration-bearing source revision for that backup. The
-pre-cleanup MFA moves remain in Git history. Use an isolated recovery checkout;
+pre-cleanup moves remain in Git history. Use an isolated recovery checkout;
 do not replay the historical stack or overwrite adopted state merely to
 retire compatibility code. Review the state upgrade before resuming automation;
 unexpected flow, client or authentication changes are a stop condition. Keep
