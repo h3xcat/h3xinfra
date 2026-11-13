@@ -109,11 +109,12 @@ run "client_audiences_and_optional_scopes" {
   assert {
     condition = (
       keys(keycloak_openid_audience_protocol_mapper.client_audiences) == ["mcp-clients:k8s-mcp"] &&
+      keycloak_openid_audience_protocol_mapper.client_audiences["mcp-clients:k8s-mcp"].name == "audience-k8s-mcp" &&
       keycloak_openid_audience_protocol_mapper.client_audiences["mcp-clients:k8s-mcp"].included_client_audience == "k8s-mcp" &&
       keycloak_openid_audience_protocol_mapper.client_audiences["mcp-clients:k8s-mcp"].add_to_access_token &&
       !keycloak_openid_audience_protocol_mapper.client_audiences["mcp-clients:k8s-mcp"].add_to_id_token
     )
-    error_message = "Each listed audience must get one access-token-only audience mapper on its client."
+    error_message = "Each listed audience must keep its generic mapper name and access-token-only claims."
   }
   assert {
     condition = (
@@ -171,12 +172,13 @@ run "openwebui_and_exchanger_use_generic_audiences_and_scopes" {
   assert {
     condition = (
       keys(keycloak_openid_audience_protocol_mapper.client_audiences) == ["openwebui:k8s-mcp"] &&
+      keycloak_openid_audience_protocol_mapper.client_audiences["openwebui:k8s-mcp"].name == "k8s-mcp-audience" &&
       keycloak_openid_audience_protocol_mapper.client_audiences["openwebui:k8s-mcp"].client_id == keycloak_openid_client.clients["openwebui"].id &&
       keycloak_openid_audience_protocol_mapper.client_audiences["openwebui:k8s-mcp"].included_client_audience == "k8s-mcp" &&
       keycloak_openid_audience_protocol_mapper.client_audiences["openwebui:k8s-mcp"].add_to_access_token &&
       !keycloak_openid_audience_protocol_mapper.client_audiences["openwebui:k8s-mcp"].add_to_id_token
     )
-    error_message = "Open WebUI access tokens must carry exactly the MCP audience through the generic mapper."
+    error_message = "Open WebUI must retain its installed mapper name and exactly the MCP access-token audience."
   }
   assert {
     condition = (

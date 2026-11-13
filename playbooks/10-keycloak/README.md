@@ -204,8 +204,11 @@ paused until that review is complete. Expect these three address moves:
 - `keycloak_openid_client_optional_scopes.k8s_mcp` to
   `keycloak_openid_client_optional_scopes.clients["k8s-mcp"]`.
 
-The moved audience mapper also changes its display name from
-`k8s-mcp-audience` to `audience-k8s-mcp` in place. The only destruction must be
+The moved audience mapper keeps its ID and installed display name
+`k8s-mcp-audience`. Other audience pairs keep the `audience-<client>` naming
+convention. Keycloak 26.8.2's [mapper update implementation](https://github.com/keycloak/keycloak/blob/26.8.2/model/jpa/src/main/java/org/keycloak/models/jpa/ClientAdapter.java#L460-L474)
+updates configuration but preserves the name, so a rename would remain in every
+plan. Do not delete and recreate the mapper to change its name. The only destruction must be
 `keycloak_openid_audience_protocol_mapper.openwebui_self_audience`, which added
 `openwebui` to access tokens. MCP checks for `k8s-mcp`; this mapper did not add
 anything to ID tokens. There must be no creation, replacement, client or scope
