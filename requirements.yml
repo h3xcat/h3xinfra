@@ -31,7 +31,7 @@ collections:
   # silently skipped (skipReason invalid-value); keep this pin on a recent
   # release so Renovate can see it.
   - name: community.general
-    version: 14.0.0
+    version: 14.0.1
   # ansible.posix.{mount,sysctl,authorized_key} are used directly by the
   # playbooks.
   - name: ansible.posix

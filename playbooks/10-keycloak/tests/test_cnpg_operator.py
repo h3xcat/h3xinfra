@@ -341,6 +341,55 @@ class CnpgOwnershipTests(unittest.TestCase):
         self.assertLess(next(i for i, call in enumerate(calls) if call["module"] == "helm_template"),
                         next(i for i, call in enumerate(calls) if call["module"] == "k8s"))
 
+    def test_existing_release_ignores_empty_yaml_documents(self):
+        for owned in (False, True):
+            with self.subTest(owned=owned):
+                data = fixture(owned=owned, existing=True)
+                manifest = data["release"]["manifest"]
+                # helm_info parses Helm's YAML stream with safe_load_all. Empty
+                # leading, inter-resource and trailing documents become None.
+                stream = "---\n# empty document\n---\n" + (
+                    "---\n# empty document\n---\n".join(yaml.safe_dump(obj) for obj in manifest)
+                ) + "---\n"
+                data["release"]["manifest"] = list(yaml.safe_load_all(stream))
+                self.assertEqual(data["release"]["manifest"], [None, manifest[0], None, manifest[1], None])
+                calls, _ = self.assert_installed(data, None if owned else HANDOFF)
+                if not owned:
+                    first_write = next(i for i, call in enumerate(calls) if call["module"] == "k8s")
+                    crd_reads = [call for call in calls[:first_write] if call["module"] == "k8s_info"
+                                 and call["args"]["kind"] == "CustomResourceDefinition"]
+                    # Initial discovery and the stored-manifest schema check both run.
+                    self.assertEqual([call["args"]["name"] for call in crd_reads],
+                                     ["clusters.postgresql.cnpg.io"] * 2)
+
+    def test_empty_documents_do_not_hide_malformed_adoption_resources(self):
+        for malformed in ({}, [], False, 0, "", "not a resource"):
+            with self.subTest(malformed=malformed):
+                data = fixture(existing=True)
+                data["release"]["manifest"] += [None, malformed, None]
+                self.assert_rejected(data, "Require the live controller to match its Helm-owned image", HANDOFF)
+
+    def test_empty_documents_preserve_adoption_drift_checks(self):
+        for change in ("image", "stored_schema", "live_schema", "missing", "extra"):
+            with self.subTest(change=change):
+                data = fixture(existing=True)
+                message = "differ from the pinned source"
+                if change == "image":
+                    data["controllers"][0]["spec"]["template"]["spec"]["containers"][0]["image"] = "other"
+                    message = "unexpected Helm ownership or image drift"
+                elif change == "stored_schema":
+                    data["release"]["manifest"][1]["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["description"] = "changed"
+                elif change == "live_schema":
+                    data["objects"][1]["spec"]["group"] = "other"
+                    message = "live CNPG CRD ownership or schema differs"
+                elif change == "missing":
+                    data["release"]["manifest"].pop()
+                else:
+                    data["release"]["manifest"].append({"apiVersion": "v1", "kind": "ConfigMap",
+                                                       "metadata": {"name": "unexpected"}})
+                data["release"]["manifest"] = [None, *data["release"]["manifest"], None]
+                self.assert_rejected(data, message, HANDOFF)
+
     def test_failed_helm_preserves_marker_and_allows_owned_retry(self):
         data = fixture()
         data["fail_module"] = "helm"

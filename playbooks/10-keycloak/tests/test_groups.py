@@ -17,7 +17,7 @@ TERRAFORM = os.environ.get("TERRAFORM") or shutil.which("terraform") or "terrafo
 # Only the client/group/scope module files. No backend, state, tfvars or real
 # provider calls can enter this test.
 MODULE_FILES = ("providers.tf", "variables.tf", "realm.tf", "clients.tf", "groups.tf",
-                "kubernetes_oidc.tf", "oidc-moved.tf", ".terraform.lock.hcl")
+                "kubernetes_oidc.tf", ".terraform.lock.hcl")
 
 
 class KeycloakGroupsTests(unittest.TestCase):

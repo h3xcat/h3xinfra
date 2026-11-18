@@ -3,7 +3,7 @@ ARG BASE_IMAGE_NAME=mcr.microsoft.com/devcontainers/base
 # image (a bare "noble" is skipped as invalid-value); the -noble suffix keeps
 # updates on Ubuntu 24.04. 24.04 (Python 3.12) is needed for ansible-core >= 2.19
 # from ppa:ansible/ansible: the 22.04 PPA build stops at 2.17 (Python 3.10).
-ARG BASE_IMAGE_TAG=3.0.12-noble
+ARG BASE_IMAGE_TAG=3.0.13-noble
 
 FROM ${BASE_IMAGE_NAME}:${BASE_IMAGE_TAG}
 
@@ -36,7 +36,7 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
 # renovate: datasource=github-releases depName=kubernetes/kubernetes extractVersion=^v(?<version>.+)$
 ARG KUBECTL_VERSION=1.37.2
 # renovate: datasource=github-releases depName=helm/helm
-ARG HELM_VERSION=v4.3.1
+ARG HELM_VERSION=v4.3.2
 
 RUN curl -fsSLo /usr/local/bin/kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/$(dpkg --print-architecture)/kubectl" \
     && chmod 0755 /usr/local/bin/kubectl \
