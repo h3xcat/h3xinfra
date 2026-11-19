@@ -59,6 +59,7 @@ image_versions:
   # image releases without a new chart, so pin the tag here (mailuVersion).
   # renovate: datasource=docker depName=ghcr.io/mailu/admin
   mailu: "2024.06.69"
-  # ClamAV for Mailu: the 1.4 LTS line that chart 2.8.0 uses, pinned by digest.
+  # ClamAV for Mailu, pinned by digest. Mailu's 2024.06 compose file uses the
+  # current stable line (1.5); chart 2.8.0 still pins 1.4.
   # renovate: datasource=docker depName=docker.io/clamav/clamav-debian
-  mailu_clamav: "1.4.6@sha256:806639a6e3a45ae1d6f3932722c3e016e5b93452f93d444538f697c39d6af16b"
+  mailu_clamav: "1.5.4@sha256:6982509b9e1415bf23cb49d0c55872fdd57fd2b92be33fa26d487da42d322076"
