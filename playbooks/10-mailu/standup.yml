@@ -172,6 +172,9 @@
         domain: "{{ mailu.domain }}"
 
         secretKey: "{{ mailu.secret_key }}"
+        # Tag of all Mailu images. The chart default trails the 2024.06
+        # security releases.
+        mailuVersion: "{{ image_versions.mailu }}"
         logLevel: "INFO"
         subnet6: "{{ cluster_cidr.ipv6 }}"
 
@@ -298,6 +301,8 @@
           #     sign_headers = (o)from:(x)sender:(o)reply-to:(o)subject:(o)to:(o)cc:(x)mime-version:(x)content-type:(x)content-transfer-encoding:resent-to:resent-cc:resent-from:resent-sender:resent-message-id:(x)in-reply-to:(x)references:list-id:list-help:list-owner:list-unsubscribe:list-unsubscribe-post:list-subscribe:list-post:(x)openpgp:(x)autocrypt:
           #   Message-ID, Date, Return-Path, Bounces-To.
         clamav:
+          image:
+            tag: "{{ image_versions.mailu_clamav }}"
           terminationGracePeriodSeconds: 120
           resources:
             requests:

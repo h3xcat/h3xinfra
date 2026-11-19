@@ -75,8 +75,9 @@ The Python hooks have a total wait limit of 80 seconds. They check the process
 identity and the observed child exit status. Unexpected process layouts or
 deadlines fail the hook, but these failures **do not cancel Kubernetes Pod
 termination**. When you change Mailu images or the process topology, review the
-hooks against the image tags rendered by the pinned `chart_versions.mailu`;
-the chart version alone does not verify its daemon process layout.
+hooks against the image tags pinned in `image_versions.mailu` and
+`image_versions.mailu_clamav`; the chart version alone does not verify its
+daemon process layout.
 
 Existing Pods gain these hooks and grace periods only when replaced. A restore
 of older Pods still needs verified backups and an explicit writer shutdown
