@@ -64,6 +64,13 @@
       "automerge": true
     },
     {
+      "description": "Also automerge minor bumps of the Renovate CLI pin (RENOVATE_VERSION, used only by CI). Renovate ships a minor several times a week, so each one would otherwise wait for a person. The renovate-config job runs the new version against renovate.json, so a broken release turns ci-ok red and the PR stays open; patches of the same pin already automerge, so this adds no new trust. Majors stay manual. Where the pin shares a group PR with other tools (CI tooling), the PR automerges only when every update in it may automerge",
+      "matchDatasources": ["github-releases"],
+      "matchPackageNames": ["renovatebot/renovate"],
+      "matchUpdateTypes": ["minor"],
+      "automerge": true
+    },
+    {
       "description": "Group Kubernetes-related updates (k3s, Gateway API CRDs, kubectl binary/image) into one Monday-morning PR because k3s bumps are a node-rolling event. Regex form because minimatch globs never cross '/' (the old 'kubernetes**'/'k3s**' globs matched nothing). The datasource filter keeps the pypi kubernetes client, the kubernetes.core collection and the hashicorp/kubernetes provider out. Cron schedule (Mon 00:00-09:59 in `timezone`) only gates branch creation; existing branches still rebase",
       "groupName": "Kubernetes",
       "schedule": ["* 0-9 * * 1"],
