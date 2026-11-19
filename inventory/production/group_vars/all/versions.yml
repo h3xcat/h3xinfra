@@ -54,3 +54,11 @@ chart_versions:
 image_versions:
   # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
   postgresql: "18"
+  # Mailu images (admin, front, postfix, dovecot, rspamd, webmail, oletools).
+  # Chart 2.8.0 defaults to 2024.06.58. Mailu ships 2024.06 security fixes as
+  # image releases without a new chart, so pin the tag here (mailuVersion).
+  # renovate: datasource=docker depName=ghcr.io/mailu/admin
+  mailu: "2024.06.69"
+  # ClamAV for Mailu: the 1.4 LTS line that chart 2.8.0 uses, pinned by digest.
+  # renovate: datasource=docker depName=docker.io/clamav/clamav-debian
+  mailu_clamav: "1.4.6@sha256:806639a6e3a45ae1d6f3932722c3e016e5b93452f93d444538f697c39d6af16b"
