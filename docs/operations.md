@@ -16,6 +16,19 @@ package updates on the cluster nodes, run this command:
 ansible k3s_cluster -b -m ansible.builtin.apt -a 'update_cache=true upgrade=safe'
 ```
 
+Kured reboots a node when `/run/reboot-required` exists. On the x86 nodes,
+where Livepatch is enabled, Ubuntu does not create that file for a kernel
+install; `00-prep` adds the kernel hook
+`/etc/kernel/postinst.d/zz-h3xinfra-reboot-required` that creates it.
+
+`00-prep` also installs `h3xinfra-patching-metrics.timer`. Every 15 minutes it
+writes `/var/lib/node_exporter/textfile_collector/h3xinfra_patching.prom`:
+
+| Metric | Value |
+| --- | --- |
+| `h3xinfra_unattended_upgrades_stamp_timestamp_seconds` | Modification time of `/var/lib/apt/periodic/unattended-upgrades-stamp`, which apt touches after each completed unattended-upgrades run (0 if missing). |
+| `h3xinfra_dpkg_audit_lines` | Lines printed by `dpkg --audit`. Not 0 after an interrupted dpkg run; unattended-upgrades then skips every run without an error. Repair the node by hand. |
+
 ### Cluster Status Check
 
 To examine the cluster health, run this command:
@@ -149,6 +162,10 @@ not clean that host state.
 ```bash
 ssh ansible@<node-ip-or-hostname>   # e.g. ssh ansible@node01.example.com
 ```
+
+`00-prep` allows only key-based SSH logins
+(`/etc/ssh/sshd_config.d/10-h3xinfra.conf`). Before the first run on a node,
+check that key login works for each account you use, and keep console access.
 
 ### Logs
 
