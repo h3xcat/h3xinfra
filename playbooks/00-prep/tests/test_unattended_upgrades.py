@@ -75,6 +75,9 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(lines[0], "#!/bin/sh")
         self.assertIn("touch /run/reboot-required || true", lines)
         self.assertEqual(lines[-1], "exit 0")
+        # Livepatch's apt hook removes the flag when reboot-required.pkgs lists
+        # only kernel packages.
+        self.assertNotIn("reboot-required.pkgs", copy["content"])
         # The kernel postinst runs the hooks with --exit-on-error: the hook
         # must exit 0 even when it cannot create the file.
         with tempfile.TemporaryDirectory() as tmp:

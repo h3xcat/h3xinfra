@@ -49,8 +49,9 @@
     # settings, so this file wins over an installer's 50-cloud-init.conf
     # with "PasswordAuthentication yes". Check that key login works for every
     # account you use before you run this; keep console access as fallback.
-    # 'sshd -t -f %s' would test the drop-in as the whole configuration. The
-    # validate command tests what sshd will load: this file, then sshd_config.
+    # validate checks the syntax of this file. The reload below runs the
+    # ExecReload of ssh.service, which tests the whole configuration with
+    # 'sshd -t' before it signals sshd.
     - name: Allow only key-based SSH logins
       ansible.builtin.copy:
         dest: /etc/ssh/sshd_config.d/10-h3xinfra.conf
@@ -61,8 +62,7 @@
           # Managed by h3xinfra 00-prep. Key-based login only.
           PasswordAuthentication no
           KbdInteractiveAuthentication no
-        validate: >-
-          /bin/sh -c 'printf "Include %%s\nInclude /etc/ssh/sshd_config\n" "$1" | /usr/sbin/sshd -t -f /dev/stdin' sh %s
+        validate: /usr/sbin/sshd -t -f %s
       register: sshd_dropin
 
     # A reload keeps open sessions, including this Ansible connection. Like
@@ -74,11 +74,12 @@
         state: reloaded
       when: sshd_dropin.changed  # noqa: no-handler
 
-    # The NFS client mounts (Longhorn RWX volumes) use NFSv4.1, which does not
-    # need the portmapper, so rpcbind is only an unauthenticated listener on
-    # port 111. Stop the socket first: it would start the service again. The
-    # package stays because nfs-common depends on it, and rpc-statd still
-    # starts the socket if an NFSv3 mount ever needs it.
+    # rpcbind is an unauthenticated listener on port 111 that nothing uses:
+    # the nodes have no NFS mounts, and Longhorn RWX volumes mount with
+    # NFSv4.1, which does not need the portmapper. Stop the socket first: it
+    # would start the service again. The package stays because nfs-common
+    # depends on it, and rpc-statd still starts the socket if an NFSv3 mount
+    # ever needs it.
     - name: Disable rpcbind
       ansible.builtin.systemd_service:
         name: "{{ item }}"

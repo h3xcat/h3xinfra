@@ -40,7 +40,8 @@
 # when another package later asks for a reboot. This hook asks for it on every
 # kernel install. The kernel postinst runs these hooks with run-parts
 # --exit-on-error, so the hook must never fail, and run-parts skips names
-# that contain a dot.
+# that contain a dot. Do not write /run/reboot-required.pkgs here: Livepatch's
+# apt hook removes the reboot flag when that file lists only kernel packages.
 - name: Request a reboot after kernel installs (x86)
   ansible.builtin.copy:
     dest: /etc/kernel/postinst.d/zz-h3xinfra-reboot-required
