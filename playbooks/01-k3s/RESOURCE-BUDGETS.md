@@ -16,9 +16,9 @@ for a resource-only change. The separate [local-storage retirement](LOCAL-STORAG
 uninstalls an unused component after consumer and recovery checks; it does not
 replace its manifests with a resource-patched copy.
 
-`01-k3s/standup.yml` imports the pinned `k3s.orchestration.site` collection
-playbook. Operators can also use the collection's standalone serial upgrade
-playbook. Neither path coordinates custom-manifest refresh across servers.
+`01-k3s/standup.yml` runs the roles of the pinned `k3s.orchestration`
+collection in the order of its `site.yml` playbook. Operators can also use
+the collection's standalone serial upgrade playbook. Neither path coordinates custom-manifest refresh across servers.
 A post-install patch can be skipped by interruption or by an alternate
 upgrade path, freezing old images and security settings. During a rolling
 upgrade, servers may regenerate different versions; K3s does not synchronize

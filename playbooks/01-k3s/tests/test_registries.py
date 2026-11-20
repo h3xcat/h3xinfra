@@ -355,8 +355,56 @@ class RestartTests(RegistriesPlaybook):
         self.assertEqual(delegate.render(inventory_hostname="s2", groups=GROUPS), "s2")
 
     def test_standup_applies_registries_before_the_install(self):
-        imports = [p.get("import_playbook") or p.get("ansible.builtin.import_playbook") for p in load(LAYER / "standup.yml")]
-        self.assertLess(imports.index("registries.yml"), imports.index("k3s.orchestration.site"))
+        standup = load(LAYER / "standup.yml")
+        imports = [p.get("import_playbook") or p.get("ansible.builtin.import_playbook") for p in standup]
+        install = next(i for i, p in enumerate(standup) if p.get("name") == "Cluster prep")
+        self.assertLess(imports.index("registries.yml"), install)
+
+
+class StandupInstallTests(unittest.TestCase):
+    """standup.yml runs the k3s.orchestration site.yml roles, one server and one agent at a time."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.plays = load(LAYER / "standup.yml")
+        cls.server = next(p for p in cls.plays if p.get("name") == "Setup K3S server")
+        cls.agent = next(p for p in cls.plays if p.get("name") == "Setup K3S agent")
+
+    def test_site_roles_in_site_order(self):
+        roles = [(p["hosts"], r["role"]) for p in self.plays for r in p.get("roles", [])]
+        self.assertEqual(roles, [("k3s_cluster", "k3s.orchestration." + r) for r in ("prereq", "airgap", "raspberrypi")]
+                         + [("server", "k3s.orchestration.k3s_server"), ("agent", "k3s.orchestration.k3s_agent")])
+        self.assertNotIn("k3s.orchestration.site", [p.get("import_playbook") for p in self.plays])
+
+    def test_one_node_at_a_time_and_the_first_failure_stops_the_run(self):
+        serial = environment().from_string(self.server["serial"])
+        self.assertEqual(serial.render(), 1)
+        self.assertEqual(serial.render(k3s_server_serial=0), 0)
+        self.assertEqual(self.agent["serial"], 1)
+        for play in (self.server, self.agent):
+            with self.subTest(play=play["name"]):
+                self.assertEqual(play["max_fail_percentage"], 0)
+                self.assertIs(play["become"], True)
+                self.assertIs(play["gather_facts"], False)
+
+    def test_peer_readyz_before_a_running_server_and_local_readyz_after(self):
+        restart = load(LAYER / "tasks" / "restart-k3s.yml")
+        name = "Check that the API server on every other server is ready"
+        upstream, check = next(t for t in restart if t["name"] == name), self.server["pre_tasks"][0]
+        self.assertEqual(check["name"], name)
+        for key in ("ansible.builtin.command", "delegate_to", "loop", "changed_when", "check_mode"):
+            self.assertEqual(check[key], upstream[key])
+        result = check["register"]
+        self.assertTrue(evaluate(check["failed_when"], **{result: {"rc": 0, "stdout": "[-]etcd failed"}}))
+        self.assertFalse(evaluate(check["failed_when"], **{result: {"rc": 0, "stdout": "ok"}}))
+        for services, runs in (({"k3s.service": {"state": "running"}}, True),
+                               ({"k3s.service": {"state": "stopped"}}, False),
+                               ({}, False)):
+            with self.subTest(services=services):
+                self.assertIs(when_true(check, {"ansible_facts": {"services": services}}), runs)
+        wait = self.server["post_tasks"][0]
+        self.assertEqual(wait["ansible.builtin.command"], "k3s kubectl get --raw=/readyz")
+        self.assertEqual((wait["retries"], wait["delay"]), (40, 5))
 
 
 if __name__ == "__main__":
