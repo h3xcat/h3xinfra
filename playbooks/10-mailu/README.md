@@ -20,6 +20,34 @@ If the two Services do not share one address, the play stops with an error.
 To let a network connect to the client ports, add its CIDR to
 `mailu.network_policy.allowed_ipv6_networks` in the inventory.
 
+## Network Policies
+
+With `mailu.network_policy.enabled`, the pre-chart adds two Cilium policies:
+
+- `<fullname>-same-namespace` selects every pod in the namespace. Only pods
+  in the same namespace can connect. Postfix relays without authentication
+  for the pod CIDR, so other pods must not reach it, or front port 25.
+- `<fullname>-email-access-policy` adds the entry points of the front pod:
+  25 and 465 from all external sources, 993, 995 and 4190 from the client
+  source ranges, 465 from the cluster (authenticated submission, for example
+  Keycloak realm mail), and the Envoy Gateway proxies to the web port of the
+  HTTPRoute.
+
+The Mailu chart's own `networkPolicy` stays disabled: its front rule opens
+all mail ports to every source. The chart's Redis NetworkPolicy stays on.
+`standup.yml` sets `allowExternal: false` and admits the Mailu namespace,
+because Mailu does not support Redis authentication.
+
+## Sieve Extensions
+
+Dovecot 2.3 is affected by CVE-2026-42007, a use-after-free in the Sieve
+`editheader` extension that a mailbox user can trigger with a personal
+script. The Dovecot override in `standup.yml` removes `editheader` from the
+personal scripts (ManageSieve and the Roundcube filters). It stays available
+to global scripts, because Mailu's `sieve_before` script uses it to rewrite
+`Delivered-To`. A ConfigMap change does not restart Dovecot; restart it after
+you change the override.
+
 ## Resource Budgets
 
 The main Helm task declares the measured CPU and memory budgets for the nine

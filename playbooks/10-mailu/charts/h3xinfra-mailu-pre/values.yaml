@@ -74,7 +74,10 @@ gatewayRoute:
 
 # Network Policy configuration
 networkPolicy:
-  # Enable Cilium Network Policy to restrict email service access
+  # Enable the Cilium Network Policies: a namespace baseline (ingress only
+  # from pods in the release namespace) and the front policy (world 25/465,
+  # client CIDRs 993/995/4190, cluster 465, and the Envoy Gateway proxies to
+  # gatewayRoute.frontService.port when gatewayRoute.enabled)
   enabled: true
   
   # Additional IPv6 networks to allow access to restricted ports (IMAPS, POP3S, Sieve)

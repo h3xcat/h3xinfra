@@ -1,5 +1,27 @@
 {{- if .Values.networkPolicy.enabled }}
 ---
+# Namespace baseline: every pod in the namespace accepts ingress only from
+# pods in the same namespace. Policies are additive, so the front policy below
+# adds the mail and web entry points. Without it, every pod in the cluster
+# reaches Postfix (which relays for the pod CIDR), Rspamd, ClamAV, Tika, LMTP
+# and the admin API. The Mailu chart's Redis policy is a separate
+# NetworkPolicy; standup.yml limits it to this namespace. With the current
+# Cilium settings (allow-localhost default, no host firewall), Cilium allows
+# traffic from the local node, so kubelet probes continue to work.
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "h3xinfra-mailu-pre.fullname" . }}-same-namespace
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-mailu-pre.labels" . | nindent 4 }}
+spec:
+  endpointSelector: {}
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        k8s:io.kubernetes.pod.namespace: {{ .Release.Namespace }}
+---
 apiVersion: "cilium.io/v2"
 kind: CiliumNetworkPolicy
 metadata:
@@ -36,10 +58,29 @@ spec:
       - port: "4190"
         protocol: TCP
 
-  # Allow cluster-internal traffic (for health checks, etc.)
+  # In-cluster senders (Keycloak realm mail) submit with authentication on
+  # 465. Port 25 stays closed to the cluster: front proxies it to Postfix,
+  # which relays for the pod CIDR without authentication.
   - fromEntities:
     - "cluster"
-    - "kube-apiserver"
+    toPorts:
+    - ports:
+      - port: "465"
+        protocol: TCP
+  {{- if .Values.gatewayRoute.enabled }}
+
+  # The Envoy Gateway proxies reach the web UI port of the HTTPRoute. The
+  # Mailu front Service maps this port to the same container port.
+  - fromEndpoints:
+    - matchLabels:
+        k8s:io.kubernetes.pod.namespace: {{ required "networkPolicy requires gatewayRoute.gateway.namespace" .Values.gatewayRoute.gateway.namespace | quote }}
+        gateway.envoyproxy.io/owning-gateway-name: {{ required "networkPolicy requires gatewayRoute.gateway.name" .Values.gatewayRoute.gateway.name | quote }}
+        gateway.envoyproxy.io/owning-gateway-namespace: {{ .Values.gatewayRoute.gateway.namespace | quote }}
+    toPorts:
+    - ports:
+      - port: {{ .Values.gatewayRoute.frontService.port | quote }}
+        protocol: TCP
+  {{- end }}
 
   # Allow traffic from the same namespace
   - fromEndpoints:
