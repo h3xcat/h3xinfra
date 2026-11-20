@@ -58,8 +58,8 @@ image_versions:
   # Chart 2.8.0 defaults to 2024.06.58. Mailu ships 2024.06 security fixes as
   # image releases without a new chart, so pin the tag here (mailuVersion).
   # renovate: datasource=docker depName=ghcr.io/mailu/admin
-  mailu: "2024.06.69"
+  mailu: "2024.06.71"
   # ClamAV for Mailu, pinned by digest. Mailu's 2024.06 compose file uses the
   # current stable line (1.5); chart 2.8.0 still pins 1.4.
   # renovate: datasource=docker depName=docker.io/clamav/clamav-debian
-  mailu_clamav: "1.5.4@sha256:6982509b9e1415bf23cb49d0c55872fdd57fd2b92be33fa26d487da42d322076"
+  mailu_clamav: "1.5.5@sha256:cb2b6fa0bf480a3c243117204b751f062c5350569d088dc269ebeef6b4331823"
