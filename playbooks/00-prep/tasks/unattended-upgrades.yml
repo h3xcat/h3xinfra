@@ -34,3 +34,93 @@
   loop:
     - apt-daily.timer
     - apt-daily-upgrade.timer
+
+# With Livepatch enabled (the x86 nodes), Ubuntu's kernel hooks do not create
+# /run/reboot-required for a kernel install, so Kured boots a new kernel only
+# when another package later asks for a reboot. This hook asks for it on every
+# kernel install. The kernel postinst runs these hooks with run-parts
+# --exit-on-error, so the hook must never fail, and run-parts skips names
+# that contain a dot.
+- name: Request a reboot after kernel installs (x86)
+  ansible.builtin.copy:
+    dest: /etc/kernel/postinst.d/zz-h3xinfra-reboot-required
+    owner: root
+    group: root
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      # Managed by h3xinfra 00-prep. Kured reboots the node into the new kernel.
+      touch /run/reboot-required || true
+      exit 0
+  when: ansible_architecture == "x86_64"
+
+# Patch state for the node-exporter textfile collector, so a node whose
+# unattended upgrades stop is visible. 01-k3s also creates the collector
+# directory, but on a new node this play runs first.
+- name: Create the node-exporter textfile directory
+  ansible.builtin.file:
+    path: /var/lib/node_exporter/textfile_collector
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the patch state script
+  ansible.builtin.copy:
+    src: h3xinfra-patching-metrics.sh
+    dest: /usr/local/sbin/h3xinfra-patching-metrics
+    owner: root
+    group: root
+    mode: "0755"
+
+# dpkg --audit needs root to read the dpkg lock file.
+- name: Install the patch state service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/h3xinfra-patching-metrics.service
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Write the unattended-upgrades and dpkg state for node-exporter
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/h3xinfra-patching-metrics
+      TimeoutStartSec=60s
+      Nice=10
+      NoNewPrivileges=true
+      ProtectSystem=strict
+      ProtectHome=true
+      PrivateTmp=true
+      ReadWritePaths=/var/lib/node_exporter/textfile_collector
+  register: patching_metrics_service
+
+# Every 15 minutes: a sample taken while an upgrade is unpacking packages
+# counts them in dpkg --audit, and a short interval replaces that value soon.
+# If the timer starts more than OnBootSec after boot, it runs at once.
+- name: Install the patch state timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/h3xinfra-patching-metrics.timer
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Write the patch state for node-exporter every 15 minutes
+
+      [Timer]
+      OnBootSec=2min
+      OnUnitActiveSec=15min
+      Unit=h3xinfra-patching-metrics.service
+
+      [Install]
+      WantedBy=timers.target
+  register: patching_metrics_timer
+
+- name: Enable the patch state timer
+  ansible.builtin.systemd_service:
+    name: h3xinfra-patching-metrics.timer
+    enabled: true
+    state: started
+    daemon_reload: "{{ patching_metrics_service.changed or patching_metrics_timer.changed }}"

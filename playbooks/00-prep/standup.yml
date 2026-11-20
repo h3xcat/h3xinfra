@@ -44,6 +44,50 @@
         state: stopped
         enabled: false
 
+    # Key-only SSH. sshd keeps the first value it reads for a keyword, and
+    # sshd_config includes sshd_config.d/*.conf in name order before its own
+    # settings, so this file wins over an installer's 50-cloud-init.conf
+    # with "PasswordAuthentication yes". Check that key login works for every
+    # account you use before you run this; keep console access as fallback.
+    # 'sshd -t -f %s' would test the drop-in as the whole configuration. The
+    # validate command tests what sshd will load: this file, then sshd_config.
+    - name: Allow only key-based SSH logins
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/10-h3xinfra.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          # Managed by h3xinfra 00-prep. Key-based login only.
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+        validate: >-
+          /bin/sh -c 'printf "Include %%s\nInclude /etc/ssh/sshd_config\n" "$1" | /usr/sbin/sshd -t -f /dev/stdin' sh %s
+      register: sshd_dropin
+
+    # A reload keeps open sessions, including this Ansible connection. Like
+    # the other restarts in this play, it uses register and when, not a
+    # handler, so it happens right after the change.
+    - name: Reload sshd if its configuration changed
+      ansible.builtin.service:
+        name: ssh
+        state: reloaded
+      when: sshd_dropin.changed  # noqa: no-handler
+
+    # The NFS client mounts (Longhorn RWX volumes) use NFSv4.1, which does not
+    # need the portmapper, so rpcbind is only an unauthenticated listener on
+    # port 111. Stop the socket first: it would start the service again. The
+    # package stays because nfs-common depends on it, and rpc-statd still
+    # starts the socket if an NFSv3 mount ever needs it.
+    - name: Disable rpcbind
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - rpcbind.socket
+        - rpcbind.service
+
     - name: Enable AppArmor
       service:
         name: apparmor
@@ -55,6 +99,23 @@
         name: rasdaemon
         state: started
         enabled: true
+
+    # systemd-pstore moves the kernel panic records that the firmware kept
+    # into /var/lib/systemd/pstore at boot. The vendor tmpfiles rule deletes
+    # them after 14 days, often before anyone has read them. A file with the
+    # same name in /etc/tmpfiles.d masks the vendor file, whose only rule is
+    # this directory line. The next daily tmpfiles clean uses it; nothing to
+    # restart.
+    - name: Keep archived kernel panic records
+      ansible.builtin.copy:
+        dest: /etc/tmpfiles.d/systemd-pstore.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          # Managed by h3xinfra 00-prep. Masks /usr/lib/tmpfiles.d/systemd-pstore.conf
+          # so archived panic records are never aged out.
+          d /var/lib/systemd/pstore 0755 root root -
 
     - name: Disable swap immediately
       command: swapoff -a
@@ -281,6 +342,32 @@
         name: systemd-resolved
         state: restarted
       when: resolved_conf_changed.changed
+
+    # Keep the static addresses and routes of eth0 while its link is down.
+    # Without this, systemd-networkd removes them on carrier loss, and during
+    # a switch reboot the K3s servers crash-loop on "cannot assign requested
+    # address" until the link returns. etcd quorum is still lost while the
+    # switch is down; this only removes the restart loop. The drop-in extends
+    # the unit that netplan generates for eth0, so it is only written where
+    # that unit exists. ini_file creates the drop-in directory. The play does
+    # not reload networkd: the drop-in takes effect the next time networkd
+    # loads its configuration, at the latest at the next reboot.
+    - name: Check for the netplan eth0 network unit
+      ansible.builtin.stat:
+        path: /run/systemd/network/10-netplan-eth0.network
+      register: netplan_eth0_unit
+
+    - name: Keep eth0 addresses through carrier loss
+      community.general.ini_file:
+        path: /etc/systemd/network/10-netplan-eth0.network.d/ignore-carrier-loss.conf
+        section: Network
+        option: IgnoreCarrierLoss
+        value: "yes"
+        no_extra_spaces: true
+        owner: root
+        group: root
+        mode: '0644'
+      when: netplan_eth0_unit.stat.exists
 
     # Wire systemd to the hardware watchdog loaded above. If PID 1 stops
     # pinging /dev/watchdog0 for RuntimeWatchdogSec, the watchdog resets the
