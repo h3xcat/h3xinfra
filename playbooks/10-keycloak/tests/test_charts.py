@@ -46,6 +46,28 @@ class KeycloakChartsTests(unittest.TestCase):
                     "topologyKey": "kubernetes.io/hostname",
                 })
 
+    def test_keycloak_replicas_require_distinct_nodes(self):
+        result = render("main", VALUES["main"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        docs = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
+        keycloak = next(doc for doc in docs if doc["kind"] == "Keycloak")
+        pdb = next(doc for doc in docs if doc["kind"] == "PodDisruptionBudget")
+        affinity = keycloak["spec"]["scheduling"]["affinity"]
+        # The labels the operator puts on the server pods (the PDB set plus
+        # the component label of the operator's own spread constraints).
+        labels = dict(pdb["spec"]["selector"]["matchLabels"],
+                      **{"app.kubernetes.io/component": "server"})
+        self.assertEqual(labels["app.kubernetes.io/instance"], keycloak["metadata"]["name"])
+        self.assertEqual(affinity["podAntiAffinity"], {
+            "requiredDuringSchedulingIgnoredDuringExecution": [{
+                "topologyKey": "kubernetes.io/hostname",
+                "labelSelector": {"matchLabels": labels},
+            }],
+        })
+        # arm64 nodes stay eligible: only a preference for amd64.
+        self.assertEqual(list(affinity["nodeAffinity"]),
+                         ["preferredDuringSchedulingIgnoredDuringExecution"])
+
     def test_image_tags_must_be_supplied(self):
         for chart, prefix, kind, field in [
             ("pre", "postgres.", "Cluster", "imageName"),

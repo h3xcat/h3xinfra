@@ -41,5 +41,9 @@ ingress:
     name: ""
     namespace: ""
   serviceName: "keycloak"
-  # Empty denies access to the admin rule; public realm paths stay reachable.
+  # Sources allowed on the admin rule (/admin/, /metrics, /health and the
+  # master realm /realms/master/). The host that runs the playbook and
+  # Terraform must be in this list: Terraform gets its token from the master
+  # realm. Empty denies access to the admin rule; the other realm paths stay
+  # reachable.
   trustedSetupIPs: []

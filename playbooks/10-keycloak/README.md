@@ -57,21 +57,35 @@ After that prerequisite, the standup playbook does these steps:
      shared Envoy Gateway HTTPS listener. These are the rules:
      - **Public**: `/realms/`, `/resources/`, `/js/`, `/robots.txt` — downstream
        services and end users can reach these paths.
-     - **Admin**: `/admin/`, `/metrics`, `/health` — a
+     - **Admin**: `/admin/`, `/metrics`, `/health`, `/realms/master/` — a
        `SecurityPolicy` (`authorization.principal.clientCIDRs`) restricts these paths.
        The values of the policy come from `keycloak.ingress.trusted_setup_ips`. The policy targets only the
        `admin` rule using Envoy Gateway's rule-level policy attachment.
        An empty allowlist denies admin access.
+       The master realm holds the Keycloak admin account, so its login, token
+       and account endpoints are in this rule. The longest matching prefix
+       wins: `/realms/master/` uses the admin rule, and every other realm
+       uses the public rule. With its default path settings, Envoy Gateway
+       normalizes the path (percent-encoded letters, repeated slashes) before
+       it selects the rule.
+       The host that runs this playbook must be in the allowlist: the
+       readiness checks read `/realms/master/`, and Terraform gets its token
+       from the master realm before it calls `/admin/`.
 3. **Main chart** (`h3xinfra-keycloak-main`) renders a `Keycloak` CR
    (`k8s.keycloak.org/v2alpha1`). The Operator reconciles the CR into these items:
    a StatefulSet, a Service, soft topology spread constraints across nodes
    and zones (`ScheduleAnyway`), JGroups KUBE_PING discovery for the
    Infinispan distributed cache, and rolling upgrades. The spread constraints
-   allow multiple Keycloak pods on one node. When `instances > 1`, the chart
-   renders a `PodDisruptionBudget` with `minAvailable: 1`; the Operator does
-   not render one.
+   allow multiple Keycloak pods on one node, so the CR also sets a required
+   pod anti-affinity on `kubernetes.io/hostname`: each replica runs on its
+   own node, and `keycloak.replicas` needs that many schedulable nodes. A
+   replica that has no free node stays `Pending`; the other replicas keep
+   serving. The CR prefers `amd64` nodes but allows `arm64` nodes. When
+   `instances > 1`, the chart renders a `PodDisruptionBudget` with
+   `minAvailable: 1`; the Operator does not render one.
 4. **Readiness probe**: The probe sends requests to `/realms/master/.well-known/openid-configuration`.
-   It tries again until it gets `200`.
+   It tries again until it gets `200`. The request comes from the host that
+   runs the playbook, so that host must be in `keycloak.ingress.trusted_setup_ips`.
 5. **Terraform apply**: The playbook renders `terraform.tfvars.json` from the inventory. It runs
    `terraform init` + `apply` against the new instance. This creates the
    configured realm, the OIDC clients and the groups.
@@ -356,6 +370,21 @@ provider: `groups.tftest.hcl` covers groups and memberships, and
 `oidc_clients.tftest.hcl` covers client authentication and claims. It copies only
 the required module definitions into a temporary directory; no deployment state,
 backend or generated tfvars are loaded.
+
+### Master realm
+
+Terraform manages only the MFA browser flow of the built-in `master` realm
+(`mfa.tf`). It does not manage the other realm settings, so it does not turn
+on brute-force detection there. Turn it on once in the admin console:
+*master* realm → *Realm settings* → *Security defenses* → *Brute force
+detection*. Do not import the realm into Terraform: Terraform would then
+manage every master realm setting.
+
+A lockout of the admin user also stops the Terraform login (password grant
+on `admin-cli`). The admin route rule keeps the master realm behind
+`keycloak.ingress.trusted_setup_ips`, so only allowed sources can cause a
+lockout. The password grant cannot send a second factor, so do not require
+OTP for the admin user that Terraform uses.
 
 ### Proxy headers
 

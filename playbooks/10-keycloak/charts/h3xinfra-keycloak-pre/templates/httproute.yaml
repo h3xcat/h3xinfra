@@ -21,7 +21,8 @@ spec:
   hostnames:
     - {{ .Values.ingress.host | quote }}
   rules:
-    # Public realm/resource paths -- open to the internet.
+    # Public realm/resource paths -- open to the internet, except the master
+    # realm (see the admin rule).
     - name: public
       matches:
         - path:
@@ -39,7 +40,11 @@ spec:
       backendRefs:
         - name: {{ .Values.ingress.serviceName }}
           port: 8080
-    # Admin / metrics / health -- IP-restricted via SecurityPolicy
+    # Admin / metrics / health and the master realm -- IP-restricted via
+    # SecurityPolicy. The master realm holds the Keycloak admin account; its
+    # login, token and account endpoints are the way to guess that password.
+    # The longest matching path prefix wins, so /realms/master/ uses this rule
+    # and the other realms keep the public /realms/ rule.
     - name: admin
       matches:
         - path:
@@ -51,6 +56,9 @@ spec:
         - path:
             type: PathPrefix
             value: /health
+        - path:
+            type: PathPrefix
+            value: /realms/master/
       backendRefs:
         - name: {{ .Values.ingress.serviceName }}
           port: 8080

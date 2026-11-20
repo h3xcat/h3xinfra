@@ -7,8 +7,10 @@
 #
 # The operator owns the StatefulSet, Service, soft topology spread constraints
 # and JGroups KUBE_PING discovery for multi-instance Infinispan cache. The main
-# chart owns the PDB. Postgres is a CloudNativePG `Cluster` with required pod
-# anti-affinity to keep the primary and standby on different nodes.
+# chart owns the PDB and sets a required pod anti-affinity, so the Keycloak
+# replicas run on different nodes. Postgres is a CloudNativePG `Cluster` with
+# required pod anti-affinity to keep the primary and standby on different
+# nodes.
 # -----------------------------------------------------------------------------
 - name: Deploy Keycloak (Operator + CNPG)
   hosts: k8s

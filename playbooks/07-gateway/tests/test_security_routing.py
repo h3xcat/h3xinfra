@@ -102,6 +102,12 @@ class CoreSecurityRouting(unittest.TestCase):
         self.assertEqual([r["backendRefs"][0]["port"] for r in route["spec"]["rules"]], [8080, 8080])
         public = next(r for r in route["spec"]["rules"] if r["name"] == "public")
         self.assertIn("/realms/", {m["path"]["value"] for m in public["matches"]})
+        # The master realm (admin login and Terraform's token endpoint) is
+        # gated: its longer prefix wins over the public /realms/ prefix.
+        admin = next(r for r in route["spec"]["rules"] if r["name"] == "admin")
+        self.assertIn({"path": {"type": "PathPrefix", "value": "/realms/master/"}},
+                      admin["matches"])
+        self.assertNotIn("/realms/master/", {m["path"]["value"] for m in public["matches"]})
         self.assertEqual(policy["spec"]["targetRefs"], [{
             "group": "gateway.networking.k8s.io", "kind": "HTTPRoute",
             "name": route["metadata"]["name"], "sectionName": "admin"}])
