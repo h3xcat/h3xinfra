@@ -46,6 +46,16 @@ their recurring-job group labels.
 Install this chart revision before removing a legacy `recurring_jobs.enabled`
 value from an inventory: older revisions require that flag to retain the jobs.
 
+## UI Access
+
+The post chart publishes the UI through the shared Gateway, and its
+SecurityPolicy (OIDC and/or source CIDRs) gates only that route. The UI's
+nginx proxies the Longhorn API without authentication, so post chart 0.4.0
+adds the NetworkPolicy `<release>-ui-gateway`: the `app=longhorn-ui` pods
+accept TCP 8000 only from the Envoy proxy pods of `longhornIngress.gateway`.
+Other pods, including those in the Longhorn namespace, cannot reach Service
+`longhorn-frontend`. Without a gateway name the UI admits no pod.
+
 ## Attended Failure Recovery
 
 `nodeDownPodDeletionPolicy: do-nothing` disables the automatic force deletion of
@@ -231,7 +241,7 @@ checks, CSI settings, and authentication guards remain in
 
 From the core repository, run
 `python -m unittest discover -s playbooks/09-longhorn/tests -v` for the storage,
-rollout, authentication and V2 safety checks. The shared
+rollout, authentication, UI ingress and V2 safety checks. The shared
 `h3xinfra-private/tests/helm` suite renders the inventory-pinned Longhorn chart
 and checks manager/container budgets and native CSI, CPU and V2 settings.
 

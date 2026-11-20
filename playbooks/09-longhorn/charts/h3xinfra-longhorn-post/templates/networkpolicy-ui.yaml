@@ -1,0 +1,41 @@
+{{- $gateway := .Values.longhornIngress.gateway }}
+---
+# Admit only the shared Gateway's Envoy proxies to the Longhorn UI.
+# The UI's nginx proxies /v1 to longhorn-backend without authentication, and
+# the upstream `longhorn-manager` NetworkPolicy admits app=longhorn-ui, so any
+# pod that reaches Service longhorn-frontend could drive the whole Longhorn
+# API. Gateway OIDC protects only the external route. No other policy selects
+# the UI pods, so this is their whole ingress allowlist; with no gateway name
+# the UI admits no pod at all. The UI has no kubelet probes.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "h3xinfra-longhorn-post.fullname" . }}-ui-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-longhorn-post.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: longhorn-ui
+  policyTypes:
+    - Ingress
+  {{- if $gateway.name }}
+  {{- /* Envoy Gateway runs the proxy pods in the controller namespace; the
+         07-gateway play installs the controller and the Gateway together in
+         that namespace. */}}
+  {{- $gatewayNamespace := required "longhornIngress.gateway.namespace is required with gateway.name" $gateway.namespace }}
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $gatewayNamespace | quote }}
+          podSelector:
+            matchLabels:
+              gateway.envoyproxy.io/owning-gateway-name: {{ $gateway.name | quote }}
+              gateway.envoyproxy.io/owning-gateway-namespace: {{ $gatewayNamespace | quote }}
+      ports:
+        # longhorn-ui container port `http`; Service longhorn-frontend maps 80 to it.
+        - protocol: TCP
+          port: 8000
+  {{- end }}
