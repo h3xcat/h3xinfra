@@ -27,7 +27,9 @@ To configure the layer, do these steps:
 1. Copy `inventory/production/host_vars/k8s/argocd.yml` into the inventory of your environment.
 2. Set the hostname, the HTTPS Gateway listener, the issuer, and the client ID.
 3. Set the group-to-role policy.
-4. Append this entry to your existing `keycloak.clients` list. Keep the other clients.
+4. Optional: list the client networks that may reach Argo CD in `argocd.server_allowed_cidrs`.
+   Refer to [Networking and storage](#networking-and-storage).
+5. Append this entry to your existing `keycloak.clients` list. Keep the other clients.
 
 ```yaml
 - name: argocd
@@ -82,7 +84,7 @@ from the private parent repo, use `h3xinfra/playbooks/...`.
 ```bash
 ansible-playbook -i /path/to/inventory playbooks/10-keycloak/standup.yml
 ansible-playbook -i /path/to/inventory playbooks/10-argocd/standup.yml
-kubectl -n argocd get pods,httproutes,networkpolicies
+kubectl -n argocd get pods,httproutes,networkpolicies,securitypolicies
 argocd login argocd.app.example.com --sso --grpc-web --skip-test-tls
 ```
 
@@ -98,6 +100,8 @@ Do these checks:
 3. Make sure that SSO works.
 4. Make sure that administrators can manage applications.
 5. Make sure that unmapped users cannot access applications.
+6. If you set `argocd.server_allowed_cidrs`, make sure that the SecurityPolicy reports `Accepted`.
+   A client in the list must get the UI. A client outside the list must get HTTP 403.
 
 Use `--grpc-web` for the CLI over the same HTTPRoute. There is no separate gRPC endpoint. The initial
 TLS-detection probe of the CLI uses native gRPC, also when you use `--grpc-web`. Thus, the probe can time out
@@ -113,6 +117,15 @@ does the HTTP redirects and the TLS. The backend uses HTTP on port 8080. A Netwo
 allows access to the backend only from Envoy pods in the configured Gateway namespace. The server
 Service is ClusterIP. Native Argo CD authentication applies to UI and API calls.
 There is no Gateway OIDC policy. The HTTPRoute does not expose metrics.
+
+`argocd.server_allowed_cidrs` is an optional source gate. If the list is not empty,
+the playbook applies a SecurityPolicy to the HTTPRoute. Envoy then answers HTTP 403
+to every client outside the list, before the request gets to Argo CD. This also
+applies to the CLI. If the list is empty (the default), the playbook deletes the
+policy, and Argo CD login is the only gate. Argo CD polls Git, so the Internet does not
+need the route. If you add Git webhooks, the webhook sender must be in the list.
+The gate uses the client address that Envoy receives. Thus, make sure that the
+router does not change the source address of clients.
 
 The chart has an allow-all NetworkPolicy for the server. This policy is disabled. The release supplies
 a replacement policy that allows only the Gateway. Other components use upstream ingress
@@ -132,7 +145,8 @@ Keep the desired application definitions in Git. Provision repository credential
 ## Removal and recovery
 
 `teardown.yml` uninstalls the Helm release, including its Argo CD Secret and
-HTTPRoute. It keeps the namespace, CRDs and GitOps custom resources.
+HTTPRoute. It keeps the namespace, CRDs and GitOps custom resources. It also keeps
+the optional server SecurityPolicy, so a later standup does not start without the gate.
 Existing managed workloads continue to run without reconciliation. The automatic stack teardown
 does not include this layer. This is intentional.
 
@@ -158,7 +172,7 @@ python3 -m unittest discover -s playbooks/10-argocd/tests -v
 The tests download the pinned upstream chart into a temporary directory. They render
 the actual playbook values with example hosts and a public client. For offline runs, set `ARGOCD_CHART_DIR` to a
 chart that you downloaded before. Render checks cover HTTPS routing,
-PKCE configuration, RBAC, ingress isolation, resources and CRD retention.
+PKCE configuration, RBAC, ingress isolation, the optional source gate, resources and CRD retention.
 
 More tests check the friendly Ansible validation failures. These tests require
 Helm and Ansible. Mocked Terraform client and group contracts run together under
