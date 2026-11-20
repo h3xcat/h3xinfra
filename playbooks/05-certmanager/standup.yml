@@ -92,6 +92,15 @@
                 cpu: 500m
                 memory: 256Mi
                 ephemeral-storage: 256Mi
+          # Expose certmanager_certificate_* (expiry, ready status) to
+          # kube-prometheus-stack via the chart's ServiceMonitor so a failed
+          # renewal can alert. It replaces the chart's prometheus.io/* pod
+          # annotations, so turning it on rolls the three Deployments once.
+          # Bootstrap note: the ServiceMonitor CRD comes from the 22-monitoring
+          # layer, which must exist before this layer on a from-scratch standup.
+          prometheus:
+            servicemonitor:
+              enabled: true
         state: present
         wait: true
         timeout: "120s"
