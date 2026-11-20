@@ -24,8 +24,8 @@ def render(values, namespace="mailu"):
     return [doc for doc in yaml.safe_load_all(result.stdout) if doc]
 
 
-def services(extra_networks, policy_enabled=True, namespace="mailu"):
-    docs = render({
+def services(extra_networks, policy_enabled=True, namespace="mailu", gateway_route=False):
+    values = {
         "fullnameOverride": "mailu-pre",
         "mailuInstanceName": "mailu-main",
         "hostname": "mail.example.test",
@@ -34,8 +34,17 @@ def services(extra_networks, policy_enabled=True, namespace="mailu"):
             "ipv4": "192.0.2.10/32", "ipv6": "2001:db8::10/128"}}},
         "networkPolicy": {"enabled": policy_enabled,
                           "allowedIPv6Networks": extra_networks},
-    }, namespace)
+    }
+    if gateway_route:
+        values["gatewayRoute"] = {"enabled": True,
+                                  "gateway": {"name": "shared", "namespace": "gateway"},
+                                  "frontService": {"name": "mailu-main-front"}}
+    docs = render(values, namespace)
     return {d["metadata"]["name"]: d for d in docs if d["kind"] == "Service"}, docs
+
+
+def policies(docs):
+    return {d["metadata"]["name"]: d["spec"] for d in docs if d["kind"] == "CiliumNetworkPolicy"}
 
 
 @unittest.skipUnless(shutil.which("helm"), "helm is not installed")
@@ -55,32 +64,64 @@ class MailuExternalService(unittest.TestCase):
             for extra_networks in ([], ["2001:db8:1::/64", "2001:db8:2::/64"]):
                 with self.subTest(namespace=namespace, extra_networks=extra_networks):
                     svcs, docs = services(extra_networks, namespace=namespace)
-                    policy, = [d for d in docs if d["kind"] == "CiliumNetworkPolicy"]
-                    self.assertEqual(policy["metadata"]["namespace"], namespace)
+                    for doc in docs:
+                        if doc["kind"] == "CiliumNetworkPolicy":
+                            self.assertEqual(doc["metadata"]["namespace"], namespace)
                     client_cidrs = svcs["mailu-pre-external-clients"]["spec"]["loadBalancerSourceRanges"]
                     self.assertEqual(client_cidrs, PRIVATE + extra_networks)
-                    self.assertEqual(policy["spec"], {
-                        "endpointSelector": {"matchLabels": {
-                            "app.kubernetes.io/component": "front",
-                            "app.kubernetes.io/instance": "mailu-main",
-                            "app.kubernetes.io/name": "mailu",
-                        }},
-                        "ingress": [
-                            {"fromEntities": ["world"], "toPorts": [{"ports": [
-                                {"port": str(port), "protocol": "TCP"}
-                                for port in sorted(WORLD_PORTS)
-                            ]}]},
-                            {"fromCIDRSet": [{"cidr": cidr} for cidr in client_cidrs],
-                             "toPorts": [{"ports": [
-                                 {"port": str(port), "protocol": "TCP"}
-                                 for port in sorted(CLIENT_PORTS)
-                             ]}]},
-                            {"fromEntities": ["cluster", "kube-apiserver"]},
-                            {"fromEndpoints": [{"matchLabels": {
-                                "k8s:io.kubernetes.pod.namespace": namespace,
-                            }}]},
-                        ],
+                    same_namespace = {"fromEndpoints": [{"matchLabels": {
+                        "k8s:io.kubernetes.pod.namespace": namespace,
+                    }}]}
+                    self.assertEqual(policies(docs), {
+                        # Every Mailu pod: ingress from the release namespace only.
+                        "mailu-pre-same-namespace": {
+                            "endpointSelector": {},
+                            "ingress": [same_namespace],
+                        },
+                        "mailu-pre-email-access-policy": {
+                            "endpointSelector": {"matchLabels": {
+                                "app.kubernetes.io/component": "front",
+                                "app.kubernetes.io/instance": "mailu-main",
+                                "app.kubernetes.io/name": "mailu",
+                            }},
+                            "ingress": [
+                                {"fromEntities": ["world"], "toPorts": [{"ports": [
+                                    {"port": str(port), "protocol": "TCP"}
+                                    for port in sorted(WORLD_PORTS)
+                                ]}]},
+                                {"fromCIDRSet": [{"cidr": cidr} for cidr in client_cidrs],
+                                 "toPorts": [{"ports": [
+                                     {"port": str(port), "protocol": "TCP"}
+                                     for port in sorted(CLIENT_PORTS)
+                                 ]}]},
+                                # Postfix relays for the pod CIDR, so the
+                                # cluster gets authenticated submission only.
+                                {"fromEntities": ["cluster"], "toPorts": [{"ports": [
+                                    {"port": "465", "protocol": "TCP"}]}]},
+                                same_namespace,
+                            ],
+                        },
                     })
+
+    def test_gateway_proxies_reach_only_the_web_port(self):
+        _, docs = services([], gateway_route=True)
+        rules = policies(docs)["mailu-pre-email-access-policy"]["ingress"]
+        envoy = [rule for rule in rules
+                 if "gateway.envoyproxy.io/owning-gateway-name"
+                 in (rule.get("fromEndpoints") or [{}])[0].get("matchLabels", {})]
+        self.assertEqual(envoy, [{
+            "fromEndpoints": [{"matchLabels": {
+                "k8s:io.kubernetes.pod.namespace": "gateway",
+                "gateway.envoyproxy.io/owning-gateway-name": "shared",
+                "gateway.envoyproxy.io/owning-gateway-namespace": "gateway",
+            }}],
+            "toPorts": [{"ports": [{"port": "443", "protocol": "TCP"}]}],
+        }])
+        # No rule admits the whole cluster or the kube-apiserver on all ports.
+        for rule in rules:
+            if rule.get("fromEntities"):
+                self.assertTrue(rule.get("toPorts"), rule)
+                self.assertNotIn("kube-apiserver", rule["fromEntities"])
 
     def test_mail_transfer_ports_stay_open_to_all_sources(self):
         svcs, _ = services([])

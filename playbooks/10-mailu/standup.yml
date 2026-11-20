@@ -220,6 +220,14 @@
             enabled: false
 
         redis:
+          # Mailu does not support Redis authentication, and the chart default
+          # (allowExternal) admits every pod in the cluster. allowExternal false
+          # alone admits only pods with the <release>-redis-client label, which
+          # the Mailu pods do not have, so the namespace selector admits them.
+          networkPolicy:
+            allowExternal: false
+            ingressNSMatchLabels:
+              kubernetes.io/metadata.name: "{{ mailu.namespace }}"
           master:
             terminationGracePeriodSeconds: 120
             persistence:
@@ -280,6 +288,18 @@
             storageClass: "longhorn"
           updateStrategy:
             type: "Recreate"
+          # Personal Sieve scripts (ManageSieve and the Roundcube filters) must
+          # not use editheader: CVE-2026-42007, a use-after-free in Dovecot
+          # before 2.4.5. The global sieve_before script of Mailu rewrites
+          # Delivered-To with editheader, so the extension stays enabled for
+          # global scripts only. Mailu includes /overrides/dovecot.conf after
+          # its own plugin block; keep its other extensions in both lines.
+          overrides:
+            dovecot.conf: |
+              plugin {
+                sieve_extensions = +spamtest +spamtestplus
+                sieve_global_extensions = +vnd.dovecot.execute +editheader
+              }
 
         rspamd:
           terminationGracePeriodSeconds: 120
