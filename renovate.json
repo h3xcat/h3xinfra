@@ -83,6 +83,13 @@
       "allowedVersions": "<2.22.0"
     },
     {
+      "description": "CloudNativePG PostgreSQL (Keycloak and Open WebUI databases) is pinned as <minor>-standard-trixie@sha256:<index digest>. Docker versioning treats the text after the first hyphen as a compatibility suffix and needs the same precision, so only standard-trixie minors are proposed, never another flavour or OS, the bare 18.x tags or the timestamped builds. A new major makes CNPG run pg_upgrade on the live databases, so docker:enableMajor must not propose it: plan a major upgrade by hand",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/cloudnative-pg/postgresql"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
       "description": "Group Cilium updates into one Monday-morning PR: a CNI bump disrupts every node and is applied in the same window as k3s. Regex form for parity with the Kubernetes rule",
       "groupName": "Cilium",
       "schedule": ["* 0-9 * * 1"],
