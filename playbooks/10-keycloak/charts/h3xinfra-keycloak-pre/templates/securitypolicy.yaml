@@ -1,6 +1,7 @@
 {{- /* Use Envoy Gateway's rule-level SecurityPolicy attachment.
-Restrict only the admin rule; public realm/discovery routes stay reachable.
-An empty allowlist keeps admin access denied. */ -}}
+Restrict only the admin rule (which includes the master realm); the other
+realm/discovery routes stay reachable. An empty allowlist keeps admin access
+denied. */ -}}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: SecurityPolicy

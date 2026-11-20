@@ -11,8 +11,9 @@ have a maximum of 63 characters, and the name a maximum of 253.
 # Keycloak instance managed by the Keycloak Operator
 # (k8s.keycloak.org/v2alpha1). The operator owns the StatefulSet, the
 # Service, soft topology spread constraints, JGroups KUBE_PING discovery
-# for multi-replica Infinispan cache, and rolling upgrades. This chart owns
-# the PDB in templates/pdb.yaml.
+# for multi-replica Infinispan cache, and rolling upgrades. This chart sets
+# the required pod anti-affinity below and owns the PDB in
+# templates/pdb.yaml.
 apiVersion: k8s.keycloak.org/v2alpha1
 kind: Keycloak
 metadata:
@@ -65,6 +66,31 @@ spec:
   resources:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+  scheduling:
+    # The operator copies this affinity into the StatefulSet and keeps its
+    # own soft spread constraints.
+    affinity:
+      # The operator spread is ScheduleAnyway, so it allows every replica on
+      # one node, and one node failure then stops all logins. Require one
+      # replica per node. Each instance needs its own schedulable node.
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                {{- include "h3xinfra-keycloak-main.podSelectorLabels" . | nindent 16 }}
+                app.kubernetes.io/component: server
+      # Prefer the faster amd64 nodes (the MS-01s) but stay schedulable on
+      # the arm64 Pis (the image is multi-arch) when amd64 nodes are drained
+      # or down.
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+                - key: kubernetes.io/arch
+                  operator: In
+                  values: ["amd64"]
   {{- with .Values.proxyTrustedAddresses }}
   additionalOptions:
     - name: proxy-trusted-addresses

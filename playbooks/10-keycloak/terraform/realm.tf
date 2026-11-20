@@ -28,7 +28,8 @@ resource "keycloak_realm" "main" {
   # block was added.
   #
   # This block applies only to this realm. The master realm is not managed by
-  # this Terraform and does not get brute-force detection from it.
+  # this Terraform and does not get brute-force detection from it (see
+  # README.md, "Master realm").
   security_defenses {
     brute_force_detection {
       permanent_lockout                = false
