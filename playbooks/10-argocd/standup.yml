@@ -18,7 +18,9 @@
           - argocd.gateway.name | default('') | length > 0
           - argocd.gateway.namespace | default('') | length > 0
           - argocd.gateway.section_name | default('') in ['https', 'https-app', 'https-apex']
-        fail_msg: Configure the Argo CD hostname, HTTPS Gateway listener, Keycloak client and RBAC policy first.
+          # A list of CIDRs; a plain string fails here because its characters do not match.
+          - argocd.server_allowed_cidrs | default([], true) | reject('match', '^[0-9A-Fa-f.:]+/[0-9]{1,3}$') | list | length == 0
+        fail_msg: Configure the Argo CD hostname, HTTPS Gateway listener, Keycloak client, RBAC policy and allowed client CIDR list first.
         quiet: true
 
     - name: Add Argo Helm repository
@@ -43,6 +45,32 @@
               pod-security.kubernetes.io/enforce: "{{ argocd.pod_security_enforce | default('restricted') }}"
               pod-security.kubernetes.io/audit: restricted
               pod-security.kubernetes.io/warn: restricted
+
+    # Optional source gate on the server HTTPRoute: Envoy answers 403 to every
+    # client outside argocd.server_allowed_cidrs. An empty list deletes the
+    # policy; Argo CD login is then the only gate. A separate task keeps the
+    # Helm values plain YAML for the render tests. It runs before Helm, so a
+    # new route never starts ungated, and teardown keeps it.
+    - name: Restrict the Argo CD server route to the allowed client CIDRs
+      kubernetes.core.k8s:
+        state: "{{ 'present' if argocd.server_allowed_cidrs | default([], true) | length > 0 else 'absent' }}"
+        definition:
+          apiVersion: gateway.envoyproxy.io/v1alpha1
+          kind: SecurityPolicy
+          metadata:
+            name: "{{ argocd.release_name_prefix }}-main-server"
+            namespace: "{{ argocd.namespace }}"
+          spec:
+            targetRefs:
+              - group: gateway.networking.k8s.io
+                kind: HTTPRoute
+                name: "{{ argocd.release_name_prefix }}-main-server"
+            authorization:
+              defaultAction: Deny
+              rules:
+                - action: Allow
+                  principal:
+                    clientCIDRs: "{{ argocd.server_allowed_cidrs | default([], true) }}"
 
     - name: Deploy Argo CD via Helm
       kubernetes.core.helm:

@@ -7,6 +7,10 @@ argocd:
     name: h3xinfra-gateway-pre-shared
     namespace: envoy-gateway-system
     section_name: https-app
+  # Client networks that may reach the route, for example
+  # ["192.0.2.0/24", "2001:db8::/64"]. Envoy answers 403 to other sources.
+  # Empty: no Gateway policy; Argo CD login is the only gate.
+  server_allowed_cidrs: []
   oidc:
     issuer: "https://keycloak.app.{{ domain_name }}/realms/h3xinfra"
     client_id: argocd

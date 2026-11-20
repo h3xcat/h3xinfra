@@ -8,11 +8,32 @@ import tempfile
 import unittest
 
 import jinja2
+import jinja2.nativetypes
 import yaml
 
 
 LAYER = Path(__file__).resolve().parents[1]
 ROOT = LAYER.parents[1]
+GATE_TASK = "Restrict the Argo CD server route to the allowed client CIDRs"
+
+# Native types, as Ansible renders them: "{{ list }}" stays a list.
+JINJA = jinja2.nativetypes.NativeEnvironment(undefined=jinja2.StrictUndefined)
+JINJA.filters["to_json"] = json.dumps
+
+
+def resolve(value, argocd):
+    if isinstance(value, dict):
+        return {key: resolve(item, argocd) for key, item in value.items()}
+    if isinstance(value, list):
+        return [resolve(item, argocd) for item in value]
+    if isinstance(value, str):
+        return JINJA.from_string(value).render(argocd=argocd)
+    return value
+
+
+def playbook_task(name):
+    plays = yaml.safe_load((LAYER / "standup.yml").read_text())
+    return next(task for play in plays for task in play.get("tasks", []) if task["name"] == name)
 
 
 class ArgoCDTests(unittest.TestCase):
@@ -34,26 +55,12 @@ class ArgoCDTests(unittest.TestCase):
         config = yaml.safe_load((ROOT / "inventory/production/host_vars/k8s/argocd.yml").read_text())["argocd"]
         config["hostname"] = "argocd.app.example.com"
         config["oidc"]["issuer"] = "https://keycloak.app.example.com/realms/h3xinfra"
-        env = jinja2.Environment(undefined=jinja2.StrictUndefined)
-        env.filters["to_json"] = json.dumps
-
-        def resolve(value):
-            if isinstance(value, dict):
-                return {key: resolve(item) for key, item in value.items()}
-            if isinstance(value, list):
-                return [resolve(item) for item in value]
-            if isinstance(value, str):
-                return env.from_string(value).render(argocd=config)
-            return value
-
-        plays = yaml.safe_load((LAYER / "standup.yml").read_text())
-        task = next(task for play in plays for task in play.get("tasks", [])
-                    if task["name"] == "Deploy Argo CD via Helm")
-        cls.helm_task = task
+        cls.config = config
+        cls.helm_task = playbook_task("Deploy Argo CD via Helm")
         result = subprocess.run([
             "helm", "template", "h3xinfra-argocd-main", chart, "--namespace", "argocd",
             "-f", str(LAYER / "argocd-values.yaml"), "-f", "-",
-        ], input=yaml.safe_dump(resolve(task["kubernetes.core.helm"]["values"])),
+        ], input=yaml.safe_dump(resolve(cls.helm_task["kubernetes.core.helm"]["values"], config)),
             check=True, capture_output=True, text=True, timeout=120)
         cls.docs = [doc for doc in yaml.safe_load_all(result.stdout) if isinstance(doc, dict)]
 
@@ -70,7 +77,31 @@ class ArgoCDTests(unittest.TestCase):
         service = self.resource("Service", backend["name"])
         self.assertEqual(service["spec"]["type"], "ClusterIP")
         self.assertEqual(backend["port"], 80)
+        # The optional SecurityPolicy is its own task, never part of the release.
         self.assertFalse(any(doc["kind"] in {"Ingress", "Certificate", "SecurityPolicy", "GRPCRoute"} for doc in self.docs))
+
+    def test_client_gate_is_absent_by_default(self):
+        self.assertEqual(self.config["server_allowed_cidrs"], [])
+        for cidrs in ([], None):
+            with self.subTest(cidrs=cidrs):
+                gate = resolve(playbook_task(GATE_TASK)["kubernetes.core.k8s"], dict(self.config, server_allowed_cidrs=cidrs))
+                self.assertEqual(gate["state"], "absent")
+
+    def test_client_gate_allows_only_listed_cidrs_on_the_route(self):
+        cidrs = ["192.0.2.0/24", "2001:db8::/64"]
+        gate = resolve(playbook_task(GATE_TASK)["kubernetes.core.k8s"], dict(self.config, server_allowed_cidrs=cidrs))
+        self.assertEqual(gate["state"], "present")
+        policy = gate["definition"]
+        self.assertEqual((policy["apiVersion"], policy["kind"]), ("gateway.envoyproxy.io/v1alpha1", "SecurityPolicy"))
+        route = self.resource("HTTPRoute", "h3xinfra-argocd-main-server")
+        self.assertEqual(policy["metadata"], {"name": route["metadata"]["name"], "namespace": "argocd"})
+        self.assertEqual(policy["spec"], {
+            "targetRefs": [{"group": "gateway.networking.k8s.io", "kind": "HTTPRoute", "name": route["metadata"]["name"]}],
+            "authorization": {
+                "defaultAction": "Deny",
+                "rules": [{"action": "Allow", "principal": {"clientCIDRs": cidrs}}],
+            },
+        })
 
     def test_native_pkce_sso_and_rbac(self):
         cm = self.resource("ConfigMap", "argocd-cm")["data"]
@@ -128,11 +159,15 @@ class ConfigurationTests(unittest.TestCase):
         plays = yaml.safe_load((LAYER / "standup.yml").read_text())
         task = plays[1]["tasks"][0]
         valid = yaml.safe_load((ROOT / "inventory/production/host_vars/k8s/argocd.yml").read_text())
+        gated = {"argocd": dict(valid["argocd"], server_allowed_cidrs=["192.0.2.0/24", "2001:db8::/64"])}
+        # A bare string instead of a list, and an address without a prefix length.
+        string = {"argocd": dict(valid["argocd"], server_allowed_cidrs="192.0.2.0/24")}
+        address = {"argocd": dict(valid["argocd"], server_allowed_cidrs=["192.0.2.1"])}
         with tempfile.TemporaryDirectory(prefix="h3x-argocd-validation-") as directory:
             config = Path(directory) / "ansible.cfg"
             config.write_text("[defaults]\n")
             env = dict(os.environ, ANSIBLE_CONFIG=str(config), ANSIBLE_NOCOLOR="1")
-            cases = [{}, {"argocd": {}}, {"argocd": {"namespace": "argocd"}}, valid]
+            cases = [{}, {"argocd": {}}, {"argocd": {"namespace": "argocd"}}, string, address, valid, gated]
             for variables in cases:
                 with self.subTest(variables=variables):
                     playbook = Path(directory) / "validation.yml"
@@ -144,7 +179,7 @@ class ConfigurationTests(unittest.TestCase):
                         "ansible-playbook", "-i", "localhost,", "-c", "local", str(playbook),
                     ], env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
                     output = result.stdout + result.stderr
-                    if variables is valid:
+                    if variables is valid or variables is gated:
                         self.assertEqual(result.returncode, 0, output)
                     else:
                         self.assertNotEqual(result.returncode, 0)
