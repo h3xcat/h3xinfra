@@ -7,6 +7,89 @@ an attended storage/control-plane change. Complete the
 before deploying `01-k3s`. The `04-health` chart, PSA labels and explicit
 `GET /livez` grant/check remain in place.
 
+# K3s Install
+
+`standup.yml` runs the roles of the pinned `k3s.orchestration` collection in
+the order of the collection's `playbooks/site.yml`: `prereq`, `airgap` and
+`raspberrypi` on every node, then `k3s_server` on the servers, then
+`k3s_agent` on the agents. These roles restart K3s on every node on every
+run.
+
+- The servers restart one at a time. Before the role runs on a server whose
+  K3s runs, the API server on every other server must answer `/readyz` (the
+  peer check of `tasks/restart-k3s.yml`). After the role, the play waits for
+  the local `/readyz`.
+- The agents restart one at a time.
+- The first failure stops the run before the next node.
+- Keep `--forks 1` (`ansible.cfg`) as a second guard.
+
+The role's join check waits on each joining server until every server in
+the inventory has joined. A one-at-a-time run therefore cannot set up a new
+HA cluster: it stops at the second server. For the first run of a new
+cluster, pass `-e k3s_server_serial=0`, which puts all servers in one batch
+as `site.yml` does. To add a server to a running cluster, limit the run to
+the new server (`--limit <server>`).
+
+The plays copy `site.yml` of collection 1.2.2. When the collection version
+changes, compare them with the new `site.yml` (roles, order, `become`,
+`gather_facts`).
+
+The server role writes `/etc/rancher/k3s/config.yaml` with mode 0644, and
+the file holds the join tokens. `apiserver-config.yml`, which runs after the
+install, sets it to 0600 without a restart. To apply only that, run
+`apiserver-config.yml` (see
+[Apiserver configuration and staged rollout](#apiserver-configuration-and-staged-rollout)).
+
+# Recovery: cred/passwd newer than datastore
+
+A server's K3s stops at every start with:
+
+```text
+level=fatal msg="/var/lib/rancher/k3s/server/cred/passwd newer than datastore and could cause a cluster outage. Remove the file(s) from disk and restart to be recreated from datastore."
+```
+
+K3s keeps a copy of the server bootstrap files (the cluster CAs,
+`cred/passwd` and others) in the datastore. At start, a server compares its
+own files with that copy and stops when one of its files is newer and
+different. `cred/passwd` holds the server and agent credentials. After a
+change of `token` or `agent-token`, each server writes the new credential to
+its own `cred/passwd` when it starts, but the datastore copy keeps the old
+one. The start after that fails.
+
+Do not only remove `cred/passwd` and restart, as the message says. K3s then
+restores the old copy from the datastore, writes the new credential again,
+and the next restart fails again.
+
+This fix worked once (K3s v1.37.2):
+
+1. Choose one server whose K3s runs and that started after the token change.
+   Do all steps on that server as root.
+2. Take an etcd snapshot:
+   `k3s etcd-snapshot save --name pre-bootstrap-refresh-$(date -u +%Y%m%dT%H%M%SZ)`.
+3. Send the K3s token rotation request once, with the current server
+   password as the new token. The token does not change, and K3s saves its
+   bootstrap files to the datastore again:
+   - `PUT https://127.0.0.1:6443/v1-k3s/token`, verified against
+     `/var/lib/rancher/k3s/server/tls/server-ca.crt`.
+   - HTTP basic authentication: user `server`, password the first field of
+     the `server` line in `/var/lib/rancher/k3s/server/cred/passwd`.
+   - JSON body `{"newToken": "<the same password>"}`.
+   - Expect HTTP 200. Do not repeat the request after an error or a timeout;
+     check the result instead. Keep the password out of the shell history
+     and out of command-line arguments.
+
+   The CLI form, `k3s token rotate` with the current token as both the old
+   and the new token, sends the same request and is probably equivalent. It
+   was not tested here.
+4. Start K3s on the failed server.
+5. Do the check below.
+
+Check after every change of `token` or `agent-token`, and after this fix:
+restart one server twice and look for `newer than datastore` in its K3s
+journal after each start (`journalctl -u k3s --since <time of the restart>`).
+The first restart writes `cred/passwd`. The second restart is the one that
+fails. Only then restart or reboot the other servers.
+
 # Local Kubelet Watchdog
 
 `kubelet-watchdog.yml` installs a 30-second systemd timer on cluster nodes. The
@@ -124,8 +207,9 @@ The existing disable behavior is preserved:
 - Audit disabled removes only its drop-in; the audit policy and logs remain.
 
 File contents, paths, root ownership, `0600` file modes, `0700` directories and
-audit rotation settings are unchanged. Directory-only corrections do not
-restart K3s. The audit-policy source is intentionally retained byte-for-byte.
+audit rotation settings are unchanged. Directory-only corrections and the
+0600 mode of `config.yaml` (written 0644 by the collection) do not restart
+K3s. The audit-policy source is intentionally retained byte-for-byte.
 A supplied viewer token still runs the `get pods` allowed / `create pods`
 denied OIDC smoke test after readiness on each server whose OIDC files changed;
 its command and results remain hidden with `no_log`.

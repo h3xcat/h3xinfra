@@ -300,7 +300,8 @@ class StandupTests(unittest.TestCase):
         # then. Importing kubelet-sysctls.yml as well would restart twice.
         imports = [p.get("import_playbook") or p.get("ansible.builtin.import_playbook") for p in self.standup]
         self.assertNotIn("kubelet-sysctls.yml", imports)
-        self.assertLess(self.standup.index(self.kubelet_play), imports.index("k3s.orchestration.site"))
+        install = next(i for i, p in enumerate(self.standup) if p.get("name") == "Cluster prep")
+        self.assertLess(self.standup.index(self.kubelet_play), install)
         imported = [t.get(IMPORT) for t in self.kubelet_play["tasks"]]
         self.assertNotIn("tasks/restart-k3s.yml", imported)
 

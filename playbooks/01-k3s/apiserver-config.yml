@@ -42,6 +42,17 @@
         pod_security_levels: [privileged, baseline, restricted]
       when: pod_security_enabled | bool
 
+    # The k3s.orchestration server role writes config.yaml with mode 0644 on
+    # every run, and the file holds the server and agent join tokens. K3s
+    # reads it as root. Not part of apiserver_config_changed: no restart.
+    - name: Restrict the k3s config.yaml to root
+      ansible.builtin.file:
+        path: /etc/rancher/k3s/config.yaml
+        state: file
+        owner: root
+        group: root
+        mode: "0600"
+
     - name: Ensure k3s config.yaml.d drop-in directory exists
       ansible.builtin.file:
         path: /etc/rancher/k3s/config.yaml.d

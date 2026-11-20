@@ -71,4 +71,9 @@ kured:
   # LonghornMetricsAbsent fires 15 min later and blocks every reboot.
   # Empty prometheus_url disables the check.
   prometheus_url: "http://h3xinfra-monitoring-main-prometheus.monitoring.svc.cluster.local:9090"
-  alert_filter_regexp: "^(LonghornRebuildInProgress|LonghornVolumeFaulted|LonghornMetricsAbsent)$"
+  # The node alerts stop the next reboot while a node is down, for example a
+  # server whose K3s did not come back after its reboot: the lock expires
+  # after lock_ttl, but the alert keeps firing. They fire only after their
+  # `for:` time, so a normal reboot does not block itself. A node kept down
+  # on purpose blocks every reboot until it is back.
+  alert_filter_regexp: "^(LonghornRebuildInProgress|LonghornVolumeFaulted|LonghornMetricsAbsent|KubeNodeNotReady|KubeNodeNotReadyCordoned|KubeNodeUnreachable)$"

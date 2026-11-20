@@ -147,6 +147,19 @@ class ApiserverConfigurationTests(unittest.TestCase):
                 self.assertNotIn("/etc/rancher/k3s/audit-policy.yaml", removed)
                 self.assertNotIn("/var/lib/rancher/k3s/server/logs", removed)
 
+    def test_config_yaml_with_the_join_tokens_is_root_only_without_a_restart(self):
+        path = "/etc/rancher/k3s/config.yaml"
+        task = next(t for t in TASKS if t.get("ansible.builtin.file", {}).get("path") == path)
+        self.assertEqual(task["ansible.builtin.file"],
+                         {"path": path, "state": "file", "owner": "root", "group": "root", "mode": "0600"})
+        self.assertEqual(task["when"], [])
+        self.assertNotIn("register", task)
+        for enabled in itertools.product((False, True), repeat=3):
+            with self.subTest(enabled=enabled):
+                events = simulate(enabled=enabled)
+                self.assertIn(("file", path), events)
+                self.assertNotIn("restart", events)
+
     def test_invalid_psa_levels_fail_before_any_file_operation(self):
         for key in ("enforce", "audit", "warn"):
             with self.subTest(level=key), self.assertRaises(FailedStep) as caught:

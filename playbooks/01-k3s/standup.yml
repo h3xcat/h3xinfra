@@ -278,8 +278,68 @@
 - name: Configure the containerd registries
   import_playbook: registries.yml
 
-# Import the main k3s orchestration playbook
-- import_playbook: k3s.orchestration.site
+# K3s install. The next three plays copy the plays of playbooks/site.yml in
+# the k3s.orchestration collection (1.2.2): the same roles in the same order,
+# with the same become and gather_facts. Compare them with site.yml again
+# whenever the collection version changes. The server and agent plays use the
+# facts and service facts that the prereq role gathers in the first play.
+- name: Cluster prep
+  hosts: k3s_cluster
+  gather_facts: true
+  become: true
+  roles:
+    - role: k3s.orchestration.prereq
+    - role: k3s.orchestration.airgap
+    - role: k3s.orchestration.raspberrypi
+
+# The k3s_server role restarts every server on every run. One server at a
+# time, and the first failure stops the run, so a bad configuration or K3s
+# release stops at one etcd member. Keep forks=1 (ansible.cfg) as a second
+# guard. The role's join check waits on each joining server until every
+# server has joined, so the first run of a new HA cluster needs
+# -e k3s_server_serial=0 (all servers in one batch, as in site.yml). To add a
+# server to a running cluster, limit the run to that server.
+- name: Setup K3S server
+  hosts: server
+  gather_facts: false
+  become: true
+  serial: "{{ k3s_server_serial | default(1) }}"
+  max_fail_percentage: 0
+  pre_tasks:
+    # The peer check of tasks/restart-k3s.yml. It is skipped where the role
+    # cannot cost etcd a member: K3s does not run on this server (a new
+    # cluster or a stopped server), the same condition the role restarts on.
+    - name: Check that the API server on every other server is ready
+      ansible.builtin.command: k3s kubectl get --raw=/readyz
+      delegate_to: "{{ item }}"
+      loop: "{{ groups.get('server', []) | reject('equalto', inventory_hostname) | list }}"
+      register: k3s_standup_peer_readyz
+      changed_when: false
+      check_mode: false
+      failed_when: k3s_standup_peer_readyz.rc != 0 or (k3s_standup_peer_readyz.stdout | trim) != 'ok'
+      when:
+        - ansible_facts.services['k3s.service'] is defined
+        - ansible_facts.services['k3s.service'].state == 'running'
+  roles:
+    - role: k3s.orchestration.k3s_server
+  post_tasks:
+    - name: Wait for the local kube-apiserver to report ready
+      ansible.builtin.command: k3s kubectl get --raw=/readyz
+      register: k3s_standup_readyz
+      changed_when: false
+      retries: 40
+      delay: 5
+      until: k3s_standup_readyz.rc == 0 and 'ok' in k3s_standup_readyz.stdout
+      when: not ansible_check_mode
+
+- name: Setup K3S agent
+  hosts: agent
+  gather_facts: false
+  become: true
+  serial: 1
+  max_fail_percentage: 0
+  roles:
+    - role: k3s.orchestration.k3s_agent
 
 - import_playbook: kubelet-watchdog.yml
 
