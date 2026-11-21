@@ -34,13 +34,16 @@ def services(extra_networks, policy_enabled=True, namespace="mailu", gateway_rou
             "ipv4": "192.0.2.10/32", "ipv6": "2001:db8::10/128"}}},
         "networkPolicy": {"enabled": policy_enabled,
                           "allowedIPv6Networks": extra_networks},
+        "redis": {"image": {"tag": "8.2.11"}},
     }
     if gateway_route:
         values["gatewayRoute"] = {"enabled": True,
                                   "gateway": {"name": "shared", "namespace": "gateway"},
                                   "frontService": {"name": "mailu-main-front"}}
     docs = render(values, namespace)
-    return {d["metadata"]["name"]: d for d in docs if d["kind"] == "Service"}, docs
+    # The ClusterIP Service of Redis is checked in test_redis.py.
+    return {d["metadata"]["name"]: d for d in docs
+            if d["kind"] == "Service" and d["spec"]["type"] == "LoadBalancer"}, docs
 
 
 def policies(docs):

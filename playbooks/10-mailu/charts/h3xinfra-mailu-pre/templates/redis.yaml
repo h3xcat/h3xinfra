@@ -1,0 +1,155 @@
+{{- /*
+Redis for Mailu: Rspamd statistics (db 0), admin rate limits (db 2) and web
+sessions (db 3). The Bitnami Redis of the Mailu chart is frozen at 8.2.1, so
+standup.yml turns it off and points Mailu at this Service with externalRedis.
+Mailu does not support Redis authentication. The NetworkPolicy is the only
+access control, so it is rendered also when networkPolicy.enabled is false.
+*/}}
+{{- $fullname := include "h3xinfra-mailu-pre.fullname" . }}
+{{- $config := .Files.Get "files/redis.conf" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-redis
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-mailu-pre.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+data:
+  redis.conf: |
+    {{- $config | trimSuffix "\n" | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-redis
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-mailu-pre.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  ipFamilyPolicy: PreferDualStack
+  selector:
+    {{- include "h3xinfra-mailu-pre.redisSelectorLabels" . | nindent 4 }}
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: redis
+    protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullname }}-redis
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-mailu-pre.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  serviceName: {{ $fullname }}-redis
+  replicas: 1
+  # The data PVC stays when the StatefulSet is deleted (for example by a
+  # rollback of the pre-chart). Delete it by hand when it is not needed.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      {{- include "h3xinfra-mailu-pre.redisSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "h3xinfra-mailu-pre.redisSelectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ $config | sha256sum }}
+    spec:
+      # Redis never talks to the Kubernetes API.
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 120
+      # The redis user of the image (uid and gid 999).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: redis
+        image: {{ printf "%s:%s" .Values.redis.image.repository (required "redis.image.tag is required" .Values.redis.image.tag | toString) | quote }}
+        imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+        # Start redis-server directly. The image entrypoint also loads the
+        # bundled search, JSON, time series and probabilistic modules, which
+        # Mailu does not use.
+        command: ["redis-server", "/etc/redis/redis.conf"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        ports:
+        - name: redis
+          containerPort: 6379
+          protocol: TCP
+        # -e: an error reply such as LOADING fails the readiness check.
+        readinessProbe:
+          exec:
+            command: ["redis-cli", "-e", "ping"]
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        # Without -e, a LOADING reply passes, so a long load is not killed.
+        livenessProbe:
+          exec:
+            command: ["redis-cli", "ping"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        resources:
+          {{- toYaml .Values.redis.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: config
+          mountPath: /etc/redis
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: {{ $fullname }}-redis
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: {{ .Values.redis.persistence.storageClass | quote }}
+      resources:
+        requests:
+          storage: {{ .Values.redis.persistence.size | quote }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-redis
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "h3xinfra-mailu-pre.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "h3xinfra-mailu-pre.redisSelectorLabels" . | nindent 6 }}
+  policyTypes:
+  - Ingress
+  ingress:
+  # An empty podSelector without namespaceSelector: every pod in the release
+  # namespace, and no pod in another namespace.
+  - from:
+    - podSelector: {}
+    ports:
+    - port: 6379
+      protocol: TCP

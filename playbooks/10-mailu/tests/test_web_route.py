@@ -25,6 +25,7 @@ def render(**route):
             "publicPaths": ["/.well-known/", "/autoconfig"],
             **route,
         },
+        "redis": {"image": {"tag": "8.2.11"}},
     }
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "values.json"

@@ -90,6 +90,12 @@
       "enabled": false
     },
     {
+      "description": "Redis for Mailu (image_versions.mailu_redis) stays on 8.2, an extended release with security fixes until 2030-09-01; the later minors (8.4 to 8.10) are standard releases with shorter support. Move to a newer line by hand",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["docker.io/library/redis"],
+      "allowedVersions": "/^8\\.2\\./"
+    },
+    {
       "description": "Group Cilium updates into one Monday-morning PR: a CNI bump disrupts every node and is applied in the same window as k3s. Regex form for parity with the Kubernetes rule",
       "groupName": "Cilium",
       "schedule": ["* 0-9 * * 1"],
