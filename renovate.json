@@ -103,13 +103,6 @@
       "allowedVersions": "/^8\\.2\\./"
     },
     {
-      "description": "Apache Tika for Mailu (image_versions.mailu_tika) stays on Tika 3, the major line of the Mailu chart default. docker:enableMajor would otherwise propose Tika 4: move to a new major by hand",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["docker.io/apache/tika"],
-      "matchUpdateTypes": ["major"],
-      "enabled": false
-    },
-    {
       "description": "Redis for Argo CD (image_versions.argocd_redis) stays on 8.6, the Redis line of the argo-cd chart default; 8.8 and 8.10 exist and would otherwise be proposed. Move to a newer line when the chart does. The name is the chart's repository, the ECR Public mirror of the official image, so the Mailu rule above does not apply to it",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["ecr-public.aws.com/docker/library/redis"],

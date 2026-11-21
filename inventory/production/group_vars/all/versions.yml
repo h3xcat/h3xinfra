@@ -72,8 +72,9 @@ image_versions:
   # renovate: datasource=docker depName=docker.io/library/redis
   mailu_redis: "8.2.11@sha256:b0b01167ff47bc3868e56a967895a26be4230891a1f42a78ab61cdd227accc8d"
   # Apache Tika for Mailu (attachment text for the full-text search), pinned
-  # by index digest. Chart 2.8.0 pins a 3.2.3.0-full build from 2025-09; a
-  # renovate.json rule keeps the updates on Tika 3.
+  # by index digest. Chart 2.8.0 pins a 3.2.3.0-full build from 2025-09. Tika 4
+  # tags have three parts (4.2.0-full), so Renovate proposes only 3.x tags:
+  # move to Tika 4 by hand.
   # renovate: datasource=docker depName=docker.io/apache/tika
   mailu_tika: "3.3.3.0-full@sha256:6ef30abd65df4b6c478907904099d0245bdb0e0686f94fb9bc7493558442bb74"
   # Redis for Argo CD (a cache, no volume). The argo-cd chart's default tag
@@ -81,4 +82,4 @@ image_versions:
   # the chart's repository, the ECR Public mirror of the official image. A
   # renovate.json rule keeps the updates on 8.6, the chart's Redis line.
   # renovate: datasource=docker depName=ecr-public.aws.com/docker/library/redis
-  argocd_redis: "8.6.8-alpine"
+  argocd_redis: "8.6.8-alpine@sha256:91c71f9ea78fa3fe268ff832a985c48e592244f707993773f8b3e1b244ac1137"
