@@ -108,6 +108,12 @@
                 - name: "{{ argocd.gateway.name }}"
                   namespace: "{{ argocd.gateway.namespace }}"
                   sectionName: "{{ argocd.gateway.section_name }}"
+          # The chart's default Redis tag trails the Redis patch releases.
+          # The repository stays the chart's. The tag is set here because
+          # argocd-values.yaml cannot read a variable.
+          redis:
+            image:
+              tag: "{{ image_versions.argocd_redis }}"
           # The upstream server policy allows every source. Replace it with
           # this policy; policies are additive, so that policy MUST stay off.
           extraObjects:

@@ -178,7 +178,7 @@
     # reaches the new pods.
     - name: Wait for Keycloak instance to reach Ready condition
       kubernetes.core.k8s_info:
-        api_version: k8s.keycloak.org/v2alpha1
+        api_version: k8s.keycloak.org/v2beta1
         kind: Keycloak
         namespace: "{{ keycloak.namespace }}"
         name: "{{ keycloak.release_name_prefix }}-main"

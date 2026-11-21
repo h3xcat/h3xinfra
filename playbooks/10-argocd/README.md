@@ -3,6 +3,9 @@
 Ansible owns the `h3xinfra-argocd-main` release of the upstream
 [`argo-cd` chart](https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd).
 The chart version is in `chart_versions.argocd`, and Renovate tracks it.
+The Redis tag is in `image_versions.argocd_redis`, because the chart's default
+tag trails the Redis patch releases. A `renovate.json` rule keeps that tag on
+the chart's Redis line.
 At the start, Argo CD manages no applications. Existing Ansible and Terraform
 resources keep their current owners. Before you add one of these resources to an
 Argo CD Application, explicitly move its ownership to Argo CD.

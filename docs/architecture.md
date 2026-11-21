@@ -97,7 +97,7 @@ These are repository inputs, not evidence of the versions running in a cluster.
   - External SMTP relay through smtp2go.com
 - **Keycloak**: Identity and access management
   - Hostname: identity.app.example.com
-  - Deployed with the Keycloak Operator (`k8s.keycloak.org/v2alpha1` CR)
+  - Deployed with the Keycloak Operator (`k8s.keycloak.org/v2beta1` CR)
   - PostgreSQL backend that CloudNativePG manages (`postgresql.cnpg.io/v1` Cluster)
 
 ### DNS Management

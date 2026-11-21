@@ -14,6 +14,7 @@ import yaml
 
 LAYER = Path(__file__).resolve().parents[1]
 ROOT = LAYER.parents[1]
+VERSIONS = yaml.safe_load((ROOT / "inventory/production/group_vars/all/versions.yml").read_text())
 GATE_TASK = "Restrict the Argo CD server route to the allowed client CIDRs"
 
 # Native types, as Ansible renders them: "{{ list }}" stays a list.
@@ -27,7 +28,7 @@ def resolve(value, argocd):
     if isinstance(value, list):
         return [resolve(item, argocd) for item in value]
     if isinstance(value, str):
-        return JINJA.from_string(value).render(argocd=argocd)
+        return JINJA.from_string(value).render(argocd=argocd, image_versions=VERSIONS["image_versions"])
     return value
 
 
@@ -43,7 +44,7 @@ class ArgoCDTests(unittest.TestCase):
         cls.addClassCleanup(cls.work.cleanup)
         chart = os.environ.get("ARGOCD_CHART_DIR")
         if not chart:
-            version = yaml.safe_load((ROOT / "inventory/production/group_vars/all/versions.yml").read_text())["chart_versions"]["argocd"]
+            version = VERSIONS["chart_versions"]["argocd"]
             env = dict(os.environ, HELM_REPOSITORY_CONFIG=f"{cls.work.name}/repositories.yaml",
                        HELM_REPOSITORY_CACHE=f"{cls.work.name}/cache")
             subprocess.run([
@@ -132,6 +133,12 @@ class ArgoCDTests(unittest.TestCase):
         peer = rules[0]["from"][0]
         self.assertEqual(peer["namespaceSelector"]["matchLabels"], {"kubernetes.io/metadata.name": "envoy-gateway-system"})
         self.assertEqual(peer["podSelector"]["matchLabels"]["gateway.envoyproxy.io/owning-gateway-name"], "h3xinfra-gateway-pre-shared")
+
+    def test_redis_runs_the_pinned_tag_from_the_chart_repository(self):
+        redis = self.resource("Deployment", "h3xinfra-argocd-main-redis")
+        # The Renovate marker of image_versions.argocd_redis names this repository.
+        self.assertEqual(redis["spec"]["template"]["spec"]["containers"][0]["image"],
+                         "ecr-public.aws.com/docker/library/redis:" + VERSIONS["image_versions"]["argocd_redis"])
 
     def test_workloads_and_init_containers_have_budgets(self):
         workloads = [doc for doc in self.docs if doc["kind"] in {"Deployment", "StatefulSet", "Job"}]

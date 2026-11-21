@@ -78,9 +78,9 @@
       "matchPackageNames": ["/^kubernetes/", "/(^|/)kubectl$/", "/^k3s/"]
     },
     {
-      "description": "kubectl must stay within +/-1 minor of the k3s cluster (k3s_version 1.37.x in inventory/production/group_vars/k3s_cluster/main.yml). Raise the ceiling when k3s moves to a new minor; tests/renovate/test_config.py asserts it equals <1.<k3s_minor+2>.0",
-      "matchDatasources": ["github-releases"],
-      "matchPackageNames": ["kubernetes/kubernetes"],
+      "description": "kubectl must stay within +/-1 minor of the k3s cluster (k3s_version 1.37.x in inventory/production/group_vars/k3s_cluster/main.yml). Raise the ceiling when k3s moves to a new minor; tests/renovate/test_config.py asserts it equals <1.<k3s_minor+2>.0. Covers the kubectl binary (kubernetes/kubernetes releases) and the registry.k8s.io/kubectl image",
+      "matchDatasources": ["github-releases", "docker"],
+      "matchPackageNames": ["kubernetes/kubernetes", "registry.k8s.io/kubectl"],
       "allowedVersions": "<1.39.0"
     },
     {
@@ -103,15 +103,21 @@
       "allowedVersions": "/^8\\.2\\./"
     },
     {
+      "description": "Redis for Argo CD (image_versions.argocd_redis) stays on 8.6, the Redis line of the argo-cd chart default; 8.8 and 8.10 exist and would otherwise be proposed. Move to a newer line when the chart does. The name is the chart's repository, the ECR Public mirror of the official image, so the Mailu rule above does not apply to it",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ecr-public.aws.com/docker/library/redis"],
+      "allowedVersions": "/^8\\.6\\./"
+    },
+    {
       "description": "Group Cilium updates into one Monday-morning PR: a CNI bump disrupts every node and is applied in the same window as k3s. Regex form for parity with the Kubernetes rule",
       "groupName": "Cilium",
       "schedule": ["* 0-9 * * 1"],
       "matchPackageNames": ["/^cilium/"]
     },
     {
-      "description": "ghcr.io, quay.io and mcr.microsoft.com return no release timestamps (only Docker Hub does), so under the global minimumReleaseAge + timestamp-required their updates were parked in 'Pending Status Checks' until someone ticked the dashboard checkbox. Disable the age check for them so they get PRs like everything else",
+      "description": "ghcr.io, quay.io, mcr.microsoft.com, ecr-public.aws.com and registry.k8s.io return no release timestamps (only Docker Hub does), so under the global minimumReleaseAge + timestamp-required their updates were parked in 'Pending Status Checks' until someone ticked the dashboard checkbox. Disable the age check for them so they get PRs like everything else",
       "matchDatasources": ["docker"],
-      "matchPackageNames": ["ghcr.io/**", "quay.io/**", "mcr.microsoft.com/**"],
+      "matchPackageNames": ["ghcr.io/**", "quay.io/**", "mcr.microsoft.com/**", "ecr-public.aws.com/**", "registry.k8s.io/**"],
       "minimumReleaseAge": null
     },
     {

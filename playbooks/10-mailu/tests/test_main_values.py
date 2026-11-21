@@ -1,4 +1,4 @@
-"""Check the Mailu chart values in standup.yml for Redis and Sieve."""
+"""Check the Mailu chart values in standup.yml for Redis, Tika and Sieve."""
 from pathlib import Path
 import re
 import unittest
@@ -43,6 +43,11 @@ class MailuMainValues(unittest.TestCase):
             "adminRateLimitDbId": 2,
         })
         self.assertEqual(pre["redis"], {"image": {"tag": "{{ image_versions.mailu_redis }}"}})
+
+    def test_tika_image_comes_from_the_inventory_pin(self):
+        # Without the tag the chart default returns, which Renovate cannot see.
+        self.assertEqual(main_values()["tika"]["image"],
+                         {"tag": "{{ image_versions.mailu_tika }}"})
 
     def test_personal_sieve_scripts_cannot_use_editheader(self):
         conf = main_values()["dovecot"]["overrides"]["dovecot.conf"]
