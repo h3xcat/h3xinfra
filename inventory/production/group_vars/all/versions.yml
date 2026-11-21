@@ -76,3 +76,9 @@ image_versions:
   # renovate.json rule keeps the updates on Tika 3.
   # renovate: datasource=docker depName=docker.io/apache/tika
   mailu_tika: "3.3.3.0-full@sha256:6ef30abd65df4b6c478907904099d0245bdb0e0686f94fb9bc7493558442bb74"
+  # Redis for Argo CD (a cache, no volume). The argo-cd chart's default tag
+  # trails the Redis patch releases, so the tag is pinned here. The name is
+  # the chart's repository, the ECR Public mirror of the official image. A
+  # renovate.json rule keeps the updates on 8.6, the chart's Redis line.
+  # renovate: datasource=docker depName=ecr-public.aws.com/docker/library/redis
+  argocd_redis: "8.6.8-alpine"

@@ -110,15 +110,21 @@
       "enabled": false
     },
     {
+      "description": "Redis for Argo CD (image_versions.argocd_redis) stays on 8.6, the Redis line of the argo-cd chart default; 8.8 and 8.10 exist and would otherwise be proposed. Move to a newer line when the chart does. The name is the chart's repository, the ECR Public mirror of the official image, so the Mailu rule above does not apply to it",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ecr-public.aws.com/docker/library/redis"],
+      "allowedVersions": "/^8\\.6\\./"
+    },
+    {
       "description": "Group Cilium updates into one Monday-morning PR: a CNI bump disrupts every node and is applied in the same window as k3s. Regex form for parity with the Kubernetes rule",
       "groupName": "Cilium",
       "schedule": ["* 0-9 * * 1"],
       "matchPackageNames": ["/^cilium/"]
     },
     {
-      "description": "ghcr.io, quay.io and mcr.microsoft.com return no release timestamps (only Docker Hub does), so under the global minimumReleaseAge + timestamp-required their updates were parked in 'Pending Status Checks' until someone ticked the dashboard checkbox. Disable the age check for them so they get PRs like everything else",
+      "description": "ghcr.io, quay.io, mcr.microsoft.com and ecr-public.aws.com return no release timestamps (only Docker Hub does), so under the global minimumReleaseAge + timestamp-required their updates were parked in 'Pending Status Checks' until someone ticked the dashboard checkbox. Disable the age check for them so they get PRs like everything else",
       "matchDatasources": ["docker"],
-      "matchPackageNames": ["ghcr.io/**", "quay.io/**", "mcr.microsoft.com/**"],
+      "matchPackageNames": ["ghcr.io/**", "quay.io/**", "mcr.microsoft.com/**", "ecr-public.aws.com/**"],
       "minimumReleaseAge": null
     },
     {
