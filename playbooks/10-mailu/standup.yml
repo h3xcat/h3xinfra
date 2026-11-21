@@ -351,6 +351,8 @@
               memory: "256Mi"
 
         tika:
+          image:
+            tag: "{{ image_versions.mailu_tika }}"
           terminationGracePeriodSeconds: 120
           resources:
             requests:

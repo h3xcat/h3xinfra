@@ -71,3 +71,8 @@ image_versions:
   # rule keeps the updates on 8.2.
   # renovate: datasource=docker depName=docker.io/library/redis
   mailu_redis: "8.2.11@sha256:b0b01167ff47bc3868e56a967895a26be4230891a1f42a78ab61cdd227accc8d"
+  # Apache Tika for Mailu (attachment text for the full-text search), pinned
+  # by index digest. Chart 2.8.0 pins a 3.2.3.0-full build from 2025-09; a
+  # renovate.json rule keeps the updates on Tika 3.
+  # renovate: datasource=docker depName=docker.io/apache/tika
+  mailu_tika: "3.3.3.0-full@sha256:6ef30abd65df4b6c478907904099d0245bdb0e0686f94fb9bc7493558442bb74"
