@@ -78,12 +78,18 @@
               name: "{{ mailu.release_name_prefix }}-pre-oidc"
           oidcHostname: "{{ mailu.oauth2.hostname | default('') }}"
           publicPaths: "{{ mailu.oauth2.public_paths | default([]) }}"
+
+        redis:
+          image:
+            tag: "{{ image_versions.mailu_redis }}"
       set_values:
       - value: "certificate.dnsNames={{ mailu.dns_names | to_json }}"
         value_type: json
       state: present
       wait: true
-      timeout: "120s"
+      # The wait includes the Redis StatefulSet: an image pull and a Longhorn
+      # attach on the first start.
+      timeout: "300s"
     no_log: true
 
   # Helm 4 --wait uses kstatus. kstatus marks a LoadBalancer Service as ready
@@ -219,19 +225,19 @@
           hostPort:
             enabled: false
 
+        # The Bitnami Redis subchart is frozen at 8.2.1 (bitnamilegacy). Redis
+        # runs in the pre-chart (redis.yaml) from the official image instead.
+        # REDIS_ADDRESS has no port, so Rspamd and the admin sessions use
+        # 6379. The database ids are those of the bundled Redis: quota 1, rate
+        # limits 2; Rspamd uses 0 and the sessions 3.
         redis:
-          # Mailu does not support Redis authentication, and the chart default
-          # (allowExternal) admits every pod in the cluster. allowExternal false
-          # alone admits only pods with the <release>-redis-client label, which
-          # the Mailu pods do not have, so the namespace selector admits them.
-          networkPolicy:
-            allowExternal: false
-            ingressNSMatchLabels:
-              kubernetes.io/metadata.name: "{{ mailu.namespace }}"
-          master:
-            terminationGracePeriodSeconds: 120
-            persistence:
-              storageClass: "longhorn"
+          enabled: false
+        externalRedis:
+          enabled: true
+          host: "{{ mailu.release_name_prefix }}-pre-redis.{{ mailu.namespace }}.svc.cluster.local"
+          port: 6379
+          adminQuotaDbId: 1
+          adminRateLimitDbId: 2
 
         admin:
           terminationGracePeriodSeconds: 120

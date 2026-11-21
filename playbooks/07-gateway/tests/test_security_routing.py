@@ -156,6 +156,7 @@ class CoreSecurityRouting(unittest.TestCase):
             "gatewayRoute": {"enabled": True, "gateway": {"name": "shared", "namespace": "gateway"},
                              "oidc": {"enabled": True, "clientSecret": "synthetic", "secretRef": {"name": "oidc"}},
                              "publicPaths": ["/.well-known/", "/autoconfig"]},
+            "redis": {"image": {"tag": "0.0.0"}},
         })
         routes = [d for d in docs if d["kind"] == "HTTPRoute"]
         self.assertEqual(len(routes), 2)

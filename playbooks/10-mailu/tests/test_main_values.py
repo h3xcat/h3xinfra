@@ -1,4 +1,4 @@
-"""Check the Mailu chart values in standup.yml that limit Redis and Sieve."""
+"""Check the Mailu chart values in standup.yml for Redis and Sieve."""
 from pathlib import Path
 import re
 import unittest
@@ -8,12 +8,16 @@ import yaml
 LAYER = Path(__file__).resolve().parents[1]
 
 
-def main_values():
+def helm_task(name):
     for play in yaml.safe_load((LAYER / "standup.yml").read_text()):
         for task in play.get("tasks", []):
-            if task.get("name") == "Deploy Mailu via Helm":
-                return task["kubernetes.core.helm"]["values"]
-    raise AssertionError("Mailu Helm task not found")
+            if task.get("name") == name:
+                return task["kubernetes.core.helm"]
+    raise AssertionError(f"{name} task not found")
+
+
+def main_values():
+    return helm_task("Deploy Mailu via Helm")["values"]
 
 
 def setting(conf, name):
@@ -22,13 +26,23 @@ def setting(conf, name):
 
 
 class MailuMainValues(unittest.TestCase):
-    def test_redis_admits_only_the_mailu_namespace(self):
-        # allowExternal false alone admits only pods with the Redis client
-        # label; the Mailu pods do not have it.
-        policy = main_values()["redis"]["networkPolicy"]
-        self.assertIs(policy["allowExternal"], False)
-        self.assertEqual(policy["ingressNSMatchLabels"],
-                         {"kubernetes.io/metadata.name": "{{ mailu.namespace }}"})
+    def test_mailu_uses_the_pre_chart_redis(self):
+        # The bundled Bitnami Redis (bitnamilegacy, frozen at 8.2.1) is off.
+        values = main_values()
+        self.assertEqual(values["redis"], {"enabled": False})
+        pre = helm_task("Deploy Mailu configuration via Helm")["values"]
+        # The Service of templates/redis.yaml is <pre-chart fullname>-redis.
+        self.assertEqual(values["externalRedis"], {
+            "enabled": True,
+            "host": pre["fullnameOverride"] + "-redis.{{ mailu.namespace }}.svc.cluster.local",
+            # REDIS_ADDRESS carries no port: Rspamd and the admin sessions
+            # always use 6379.
+            "port": 6379,
+            # The database ids of the bundled Redis, so the data keeps its place.
+            "adminQuotaDbId": 1,
+            "adminRateLimitDbId": 2,
+        })
+        self.assertEqual(pre["redis"], {"image": {"tag": "{{ image_versions.mailu_redis }}"}})
 
     def test_personal_sieve_scripts_cannot_use_editheader(self):
         conf = main_values()["dovecot"]["overrides"]["dovecot.conf"]

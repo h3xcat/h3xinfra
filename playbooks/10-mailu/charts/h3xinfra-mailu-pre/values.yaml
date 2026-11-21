@@ -72,6 +72,27 @@ gatewayRoute:
   # whose more-specific path matches win over the catch-all web route.
   publicPaths: []
 
+# Redis for Mailu (templates/redis.yaml). standup.yml points the Mailu chart
+# at it with externalRedis.
+redis:
+  # Required tag comes from image_versions.mailu_redis in the inventory.
+  image:
+    repository: "docker.io/library/redis"
+    tag: ""
+    pullPolicy: IfNotPresent
+  persistence:
+    storageClass: "longhorn"
+    size: "1Gi"
+  # Measured on the Bitnami Redis (2026-11-20): at most 17Mi working set
+  # and 41m CPU in 30 days, with a 2Mi dataset.
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+
 # Network Policy configuration
 networkPolicy:
   # Enable the Cilium Network Policies: a namespace baseline (ingress only

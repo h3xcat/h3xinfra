@@ -68,6 +68,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Selector labels of the Redis StatefulSet (redis.yaml).
+*/}}
+{{- define "h3xinfra-mailu-pre.redisSelectorLabels" -}}
+{{ include "h3xinfra-mailu-pre.selectorLabels" . }}
+app.kubernetes.io/component: redis
+{{- end }}
+
+{{/*
 Pod selector of the Mailu front Deployment (upstream chart labels).
 */}}
 {{- define "h3xinfra-mailu-pre.frontSelector" -}}

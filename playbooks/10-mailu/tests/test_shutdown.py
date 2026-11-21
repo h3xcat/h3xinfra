@@ -42,7 +42,9 @@ class ShutdownTests(unittest.TestCase):
         values = helm_values()
         for name in ('admin', 'clamav', 'dovecot', 'front', 'oletools', 'postfix', 'rspamd', 'tika', 'webmail'):
             self.assertEqual(values[name]['terminationGracePeriodSeconds'], 120)
-        self.assertEqual(values['redis']['master']['terminationGracePeriodSeconds'], 120)
+        # Redis runs in the pre-chart.
+        redis = (ROOT / 'charts/h3xinfra-mailu-pre/templates/redis.yaml').read_text()
+        self.assertRegex(redis, r'\n      terminationGracePeriodSeconds: 120\n')
 
     def test_renderer_only_adds_six_prestop_hooks(self):
         before = fixtures() + [{'kind': 'Secret', 'data': {'test': 'fixture'}}, {'kind': 'Service', 'spec': {'type': 'ClusterIP'}}]

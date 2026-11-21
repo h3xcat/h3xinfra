@@ -34,9 +34,62 @@ With `mailu.network_policy.enabled`, the pre-chart adds two Cilium policies:
   HTTPRoute.
 
 The Mailu chart's own `networkPolicy` stays disabled: its front rule opens
-all mail ports to every source. The chart's Redis NetworkPolicy stays on.
-`standup.yml` sets `allowExternal: false` and admits the Mailu namespace,
-because Mailu does not support Redis authentication.
+all mail ports to every source. The Redis of the pre-chart has its own
+Kubernetes NetworkPolicy (see [Redis](#redis)). It is rendered also when
+`mailu.network_policy.enabled` is false.
+
+## Redis
+
+The Bitnami Redis subchart of the Mailu chart uses the frozen
+`bitnamilegacy/redis` image (8.2.1), so `standup.yml` turns it off
+(`redis.enabled: false`). The pre-chart runs Redis instead
+(`templates/redis.yaml`), and `externalRedis` points Mailu at the Service
+`<fullname>-redis` on port 6379. Rspamd and the admin sessions read the host
+from `REDIS_ADDRESS`, which has no port, so the port must stay 6379.
+
+- Data: Rspamd statistics and history (db 0), admin rate limits (db 2) and
+  admin web sessions (db 3). The quota db (1) is empty.
+- Image: the official `docker.io/library/redis` image at
+  `image_versions.mailu_redis`, pinned by digest. 8.2 is an extended release.
+  A `renovate.json` rule keeps the updates on 8.2. The container starts
+  `redis-server` directly, so the modules that the image entrypoint loads
+  stay off.
+- Security: no password, because Mailu does not support Redis
+  authentication. The NetworkPolicy admits only pods in the release namespace
+  on 6379. The pod runs as the image's `redis` user (999) with a read-only
+  root file system, no capabilities and no ServiceAccount token.
+- Persistence: append-only file with fsync every second, no RDB snapshots
+  (`files/redis.conf`, the same as the Bitnami Redis), on a 1Gi Longhorn
+  volume `data-<fullname>-redis-0`. The StatefulSet keeps the volume when it
+  is deleted. A namespace teardown deletes it.
+
+### Restore or move Redis data
+
+Redis loads the append-only file directory at start and ignores a
+`dump.rdb` next to it. To load an RDB file (a backup, or a copy of another
+Redis made with `redis-cli --rdb <file>`) into an empty volume before Redis
+starts, write it as the base file of a new append-only directory (move an
+existing `appendonlydir` away first). Give `--rdb` a file name: with `-`
+(standard output) the file keeps a 40-byte end marker, and
+`redis-check-aof` rejects it.
+
+1. Scale the StatefulSet to 0, or create the claim
+   `data-<fullname>-redis-0` before the first deployment.
+2. Start a pod with the same image, user 999 and `fsGroup` 999 that mounts
+   the claim at `/data`.
+3. In that pod, create `/data/appendonlydir`, copy the RDB file to
+   `/data/appendonlydir/appendonly.aof.1.base.rdb`, and write
+   `/data/appendonlydir/appendonly.aof.manifest` with the one line
+   `file appendonly.aof.1.base.rdb seq 1 type b`.
+4. Check the directory with
+   `redis-check-aof /data/appendonlydir/appendonly.aof.manifest`.
+5. Delete the pod, then start Redis (scale to 1 or run the playbook).
+   Compare `redis-cli INFO keyspace` with the source.
+
+Rspamd reads `REDIS_ADDRESS` only at start. When the Redis host changes, for
+example on the move from the Bitnami Redis, restart the Rspamd Deployment
+after the main chart deploy. The admin Deployment restarts by itself because
+its pod template changes.
 
 ## Sieve Extensions
 
@@ -52,8 +105,9 @@ you change the override.
 
 The main Helm task declares the measured CPU and memory budgets for the nine
 Mailu application components, with headroom for scanning and ClamAV signature
-reloads. Edit those literals when the measured requirements change. Redis
-keeps its upstream resource preset. MariaDB and PostgreSQL remain disabled.
+reloads. Edit those literals when the measured requirements change. The
+Redis budget is `redis.resources` in the pre-chart values. MariaDB and
+PostgreSQL remain disabled.
 
 The shared Helm suite renders the upstream chart at `chart_versions.mailu`
 and checks requests and limits on every enabled regular and init container.

@@ -66,3 +66,8 @@ image_versions:
   # current stable line (1.5); chart 2.8.0 still pins 1.4.
   # renovate: datasource=docker depName=docker.io/clamav/clamav-debian
   mailu_clamav: "1.5.5@sha256:cb2b6fa0bf480a3c243117204b751f062c5350569d088dc269ebeef6b4331823"
+  # Redis for Mailu (h3xinfra-mailu-pre), pinned by index digest. 8.2 is an
+  # extended release with security fixes until 2030-09-01; a renovate.json
+  # rule keeps the updates on 8.2.
+  # renovate: datasource=docker depName=docker.io/library/redis
+  mailu_redis: "8.2.11@sha256:b0b01167ff47bc3868e56a967895a26be4230891a1f42a78ab61cdd227accc8d"
