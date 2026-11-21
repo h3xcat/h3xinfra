@@ -68,6 +68,19 @@ class KeycloakChartsTests(unittest.TestCase):
         self.assertEqual(list(affinity["nodeAffinity"]),
                          ["preferredDuringSchedulingIgnoredDuringExecution"])
 
+    def test_playbook_waits_on_the_api_version_of_the_keycloak_cr(self):
+        result = render("main", VALUES["main"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        keycloak = next(doc for doc in yaml.safe_load_all(result.stdout)
+                        if doc and doc.get("kind") == "Keycloak")
+        # The storage version of the operator's CRD; v2alpha1 is deprecated.
+        self.assertEqual(keycloak["apiVersion"], "k8s.keycloak.org/v2beta1")
+        plays = yaml.safe_load((CHARTS.parent / "standup.yml").read_text())
+        waits = [task["kubernetes.core.k8s_info"]["api_version"]
+                 for play in plays for task in play.get("tasks", [])
+                 if task.get("kubernetes.core.k8s_info", {}).get("kind") == "Keycloak"]
+        self.assertEqual(waits, [keycloak["apiVersion"]])
+
     def test_image_tags_must_be_supplied(self):
         for chart, prefix, kind, field in [
             ("pre", "postgres.", "Cluster", "imageName"),

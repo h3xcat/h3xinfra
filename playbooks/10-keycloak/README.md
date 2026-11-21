@@ -1,7 +1,7 @@
 # 10-keycloak
 
 This layer is the Keycloak identity provider for H3X Infra. The upstream
-**Keycloak Operator** (`k8s.keycloak.org/v2alpha1`) deploys Keycloak. A
+**Keycloak Operator** (`k8s.keycloak.org/v2beta1`) deploys Keycloak. A
 **CloudNativePG** Postgres `Cluster` is the backend. Terraform manages the realm and client configuration
 declaratively. Thus, the OIDC clients and the realm groups stay in sync
 with the inventory.
@@ -72,7 +72,7 @@ After that prerequisite, the standup playbook does these steps:
        readiness checks read `/realms/master/`, and Terraform gets its token
        from the master realm before it calls `/admin/`.
 3. **Main chart** (`h3xinfra-keycloak-main`) renders a `Keycloak` CR
-   (`k8s.keycloak.org/v2alpha1`). The Operator reconciles the CR into these items:
+   (`k8s.keycloak.org/v2beta1`). The Operator reconciles the CR into these items:
    a StatefulSet, a Service, soft topology spread constraints across nodes
    and zones (`ScheduleAnyway`), JGroups KUBE_PING discovery for the
    Infinispan distributed cache, and rolling upgrades. The spread constraints
@@ -83,6 +83,11 @@ After that prerequisite, the standup playbook does these steps:
    serving. The CR prefers `amd64` nodes but allows `arm64` nodes. When
    `instances > 1`, the chart renders a `PodDisruptionBudget` with
    `minAvailable: 1`; the Operator does not render one.
+   Releases from before chart 0.4.1 wrote the CR as `v2alpha1`. Upgrade them
+   with Helm 4.1.1 or later. Helm 4.0 and 4.1.0 also compare the API version
+   when they remove the objects of the previous release, so they delete the
+   `Keycloak` object right after they update it
+   ([helm/helm#31768](https://github.com/helm/helm/issues/31768)).
 4. **Readiness probe**: The probe sends requests to `/realms/master/.well-known/openid-configuration`.
    It tries again until it gets `200`. The request comes from the host that
    runs the playbook, so that host must be in `keycloak.ingress.trusted_setup_ips`.

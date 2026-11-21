@@ -9,12 +9,12 @@ have a maximum of 63 characters, and the name a maximum of 253.
 {{- fail (printf "hostname %q must be a bare lowercase DNS name without scheme, port, path or wildcard, with a maximum of 63 characters for each label and 253 in total" $hostname) }}
 {{- end }}
 # Keycloak instance managed by the Keycloak Operator
-# (k8s.keycloak.org/v2alpha1). The operator owns the StatefulSet, the
+# (k8s.keycloak.org/v2beta1). The operator owns the StatefulSet, the
 # Service, soft topology spread constraints, JGroups KUBE_PING discovery
 # for multi-replica Infinispan cache, and rolling upgrades. This chart sets
 # the required pod anti-affinity below and owns the PDB in
 # templates/pdb.yaml.
-apiVersion: k8s.keycloak.org/v2alpha1
+apiVersion: k8s.keycloak.org/v2beta1
 kind: Keycloak
 metadata:
   name: {{ include "h3xinfra-keycloak-main.fullname" . }}
