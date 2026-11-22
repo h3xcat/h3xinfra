@@ -76,7 +76,7 @@ image_versions:
   # tags have three parts (4.2.0-full), so Renovate proposes only 3.x tags:
   # move to Tika 4 by hand.
   # renovate: datasource=docker depName=docker.io/apache/tika
-  mailu_tika: "3.3.3.0-full@sha256:6ef30abd65df4b6c478907904099d0245bdb0e0686f94fb9bc7493558442bb74"
+  mailu_tika: "3.3.3.1-full@sha256:36f6f322d5ecf2d0ac12fbdda0fe904625aff73b3363328b35d21bdf9b4c650c"
   # Redis for Argo CD (a cache, no volume). The argo-cd chart's default tag
   # trails the Redis patch releases, so the tag is pinned here. The name is
   # the chart's repository, the ECR Public mirror of the official image. A
