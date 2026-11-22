@@ -29,7 +29,7 @@ concurrency:
 
 env:
   # renovate: datasource=github-releases depName=renovatebot/renovate
-  RENOVATE_VERSION: 44.252.6
+  RENOVATE_VERSION: 44.252.7
   # renovate 44.x needs node ^24.11
   # renovate: datasource=node-version depName=node
   NODE_VERSION: 26.13.1
