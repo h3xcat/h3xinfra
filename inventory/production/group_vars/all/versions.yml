@@ -34,7 +34,7 @@ chart_versions:
 
   # Infrastructure - Lifecycle
   # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-  argocd: "10.18.2"
+  argocd: "10.19.1"
   # Kubernetes Reboot Daemon — orchestrates rolling node reboots when
   # /var/run/reboot-required is set (e.g. after kernel updates).
   # renovate: datasource=helm depName=kured registryUrl=https://kubereboot.github.io/charts
@@ -65,18 +65,18 @@ image_versions:
   # ClamAV for Mailu, pinned by digest. Mailu's 2024.06 compose file uses the
   # current stable line (1.5); chart 2.8.0 still pins 1.4.
   # renovate: datasource=docker depName=docker.io/clamav/clamav-debian
-  mailu_clamav: "1.5.5@sha256:cb2b6fa0bf480a3c243117204b751f062c5350569d088dc269ebeef6b4331823"
+  mailu_clamav: "1.5.5@sha256:85f35b3eee903dbd96c5ca250c5aa13d230d97987c0f876f7d46f001f9414239"
   # Redis for Mailu (h3xinfra-mailu-pre), pinned by index digest. 8.2 is an
   # extended release with security fixes until 2030-09-01; a renovate.json
   # rule keeps the updates on 8.2.
   # renovate: datasource=docker depName=docker.io/library/redis
-  mailu_redis: "8.2.11@sha256:b0b01167ff47bc3868e56a967895a26be4230891a1f42a78ab61cdd227accc8d"
+  mailu_redis: "8.2.11@sha256:bb302517211721bf85ae3152b663c848a7cb36e79b02d69239ce20b5ddce95be"
   # Apache Tika for Mailu (attachment text for the full-text search), pinned
   # by index digest. Chart 2.8.0 pins a 3.2.3.0-full build from 2025-09. Tika 4
   # tags have three parts (4.2.0-full), so Renovate proposes only 3.x tags:
   # move to Tika 4 by hand.
   # renovate: datasource=docker depName=docker.io/apache/tika
-  mailu_tika: "3.3.3.1-full@sha256:36f6f322d5ecf2d0ac12fbdda0fe904625aff73b3363328b35d21bdf9b4c650c"
+  mailu_tika: "3.4.0.0-full@sha256:33d96e4c936b4bc716e9ca310a2e8d93f609be55571e9f777ae247e85462306f"
   # Redis for Argo CD (a cache, no volume). The argo-cd chart's default tag
   # trails the Redis patch releases, so the tag is pinned here. The name is
   # the chart's repository, the ECR Public mirror of the official image. A
