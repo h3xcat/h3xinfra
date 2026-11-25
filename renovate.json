@@ -121,6 +121,11 @@
       "minimumReleaseAge": null
     },
     {
+      "description": "Docker Hub serves tag timestamps to anonymous clients only for the first 1000 tags. library/redis (1200+) is bigger, so Renovate falls back to the registry tag list, which has no timestamps, and under the default timestamp-required its digest updates (rebuilds of the same tag) waited forever. Apply the 3-day age only when a timestamp exists (renovatebot/renovate#46925)",
+      "matchDatasources": ["docker"],
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
+    },
+    {
       "description": "k3s.orchestration is pinned to a git tag of k3s-io/k3s-ansible (requirements.yml, git-tags datasource): git ls-remote returns no timestamps, so under the global minimumReleaseAge (timestamp-required) every new k3s-ansible tag would sit in 'Pending Status Checks' forever. Public-only rule: the private repo has no git-tags dependency",
       "matchDatasources": ["git-tags"],
       "minimumReleaseAge": null
