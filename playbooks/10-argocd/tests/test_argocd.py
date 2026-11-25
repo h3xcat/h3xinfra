@@ -113,6 +113,10 @@ class ArgoCDTests(unittest.TestCase):
         self.assertNotIn("clientSecret", oidc)
         self.assertEqual(cm["admin.enabled"], "false")
         self.assertEqual(cm["users.anonymous.enabled"], "false")
+        # Plain YAML and kustomize only: Git must not run Helm or Jsonnet.
+        self.assertEqual(cm["helm.enable"], "false")
+        self.assertEqual(cm["jsonnet.enable"], "false")
+        self.assertFalse([k for k in cm if k.startswith(("kustomize.buildOptions", "kustomize.path.", "kustomize.version."))])
         secret = self.resource("Secret", "argocd-secret")
         self.assertNotIn("oidc.keycloak.clientSecret", secret.get("data") or {})
         rbac = self.resource("ConfigMap", "argocd-rbac-cm")["data"]
