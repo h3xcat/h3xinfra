@@ -16,10 +16,11 @@ configs:
     admin.enabled: false
     users.anonymous.enabled: false
     exec.enabled: false
-    # Render only plain YAML and kustomize. Unset, each source type defaults
-    # to "true" (argo-cd v3.6 argocd-cm.yaml), and a Git repository could then
-    # make the repo-server run Helm or Jsonnet. Render charts before commit.
-    helm.enable: "false"
+    # Render plain YAML, kustomize and local Helm charts from Git. The
+    # h3xinfra-apps umbrella charts use file:// dependencies only, and its CI
+    # rejects remote chart dependencies. Jsonnet stays off; unset, both source
+    # types default to "true" (argo-cd v3.6 argocd-cm.yaml).
+    helm.enable: "true"
     jsonnet.enable: "false"
   params:
     # Envoy terminates TLS; the server is ClusterIP-only and ingress is
