@@ -10,6 +10,11 @@ At the start, Argo CD manages no applications. Existing Ansible and Terraform
 resources keep their current owners. Before you add one of these resources to an
 Argo CD Application, explicitly move its ownership to Argo CD.
 
+Argo CD renders only plain YAML and kustomize. `argocd-cm` turns off the Helm
+and Jsonnet source types, which are on by default, so a Git repository cannot
+make the repo-server run Helm or Jsonnet. Render a Helm chart before you commit
+its output.
+
 ## Prerequisites and configuration
 
 This layer requires these items:
