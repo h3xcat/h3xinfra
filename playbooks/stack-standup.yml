@@ -36,7 +36,11 @@
 # time when set. Depends on Longhorn's nodeDrainPolicy from 09-longhorn.
 - import_playbook: 10-kured/standup.yml
 
+# With mailu.external_workloads, another tool creates the Mailu namespace
+# after this stack. Run 10-mailu/standup.yml after that tool. The `when` also
+# applies to the kube-connect play on localhost, where `mailu` is not defined.
 - import_playbook: 10-mailu/standup.yml
+  when: not (mailu.external_workloads | default(false) | bool)
 
 # Display cluster status
 - import_playbook: 99-utils/cluster-status.yml

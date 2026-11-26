@@ -188,3 +188,56 @@ Signal semantics: [Gunicorn](https://gunicorn.org/signals/),
 [Dovecot](https://doc.dovecot.org/main/core/admin/running.html),
 [Nginx](https://nginx.org/en/docs/control.html), and
 [ClamAV](https://docs.clamav.net/manual/Usage/Scanning.html).
+
+## External Workloads
+
+`mailu.external_workloads` is an optional inventory flag. The default is
+`false`. Set it to `true` when another tool owns the Mailu workloads. For
+example, Argo CD can deploy them from a Git repository.
+
+With the flag, `standup.yml` skips these two tasks:
+
+- `Create Mailu namespace`. The other tool must create the namespace and its
+  Pod Security labels before you run the playbook.
+- `Deploy Mailu via Helm`. The playbook does not deploy the main release
+  `<prefix>-main`.
+
+The playbook still deploys the pre-chart release `<prefix>-pre`. This release
+contains these objects:
+
+- The MetalLB address pool and its L2Advertisement.
+- The two LoadBalancer Services and the external-dns record.
+- The Certificate.
+- The HTTPRoutes, the BackendTLSPolicy, and the OIDC SecurityPolicy with its
+  Secret.
+- Redis.
+- The Cilium network policies.
+
+The playbook also installs the Helm 4 shutdown plugin on the Ansible
+controller. This plugin does not change the cluster. To keep the graceful
+shutdown, the other tool must add the `preStop` hooks itself. See
+[Graceful Shutdown](#graceful-shutdown).
+
+The pre-chart release expects these items from the other tool:
+
+- The front pod has the labels `app.kubernetes.io/name: mailu`,
+  `app.kubernetes.io/component: front` and
+  `app.kubernetes.io/instance: <prefix>-main`. The LoadBalancer Services and
+  the Cilium policy select the front pod with these labels.
+- The front Service is `<prefix>-main-front` with port 443. The HTTPRoutes
+  send the browser traffic to this Service.
+- The front pod mounts the TLS Secret `<prefix>-pre-certificate`.
+- Mailu uses the pre-chart Redis. See [Redis](#redis).
+
+`stack-standup.yml` skips this layer when the flag is `true`. At that point,
+the namespace does not exist on a new cluster. Run `standup.yml` after the
+other tool creates the namespace. Until then, the Mailu pods do not become
+ready, because Redis and the TLS Secret do not exist.
+
+`teardown.yml` removes only the pre-chart release. It does not remove the
+main release or the namespace. Remove them with the other tool.
+
+WARNING: Do not run `standup.yml` without the flag after the other tool
+takes over the workloads. Helm then deploys the main release again over the
+objects of the other tool. Helm adopts an object that still has the
+`meta.helm.sh/*` annotations of that release. It does not stop with an error.

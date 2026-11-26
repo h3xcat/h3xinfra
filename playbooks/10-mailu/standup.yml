@@ -16,7 +16,11 @@
   # Pod Security: every Mailu pod passes baseline. The Mailu containers do not
   # set the restricted securityContext fields (runAsNonRoot, seccompProfile,
   # capabilities.drop), so restricted needs chart changes first.
+  # mailu.external_workloads: another tool (for example Argo CD) owns the
+  # namespace and the main release workloads. This play then skips only this
+  # task and "Deploy Mailu via Helm". The pre release stays here.
   - name: Create Mailu namespace
+    when: not (mailu.external_workloads | default(false) | bool)
     kubernetes.core.k8s:
       state: present
       wait: true
@@ -160,6 +164,7 @@
     - graceful-stop-clamav.sh
 
   - name: Deploy Mailu via Helm
+    when: not (mailu.external_workloads | default(false) | bool)
     kubernetes.core.helm:
       name: "{{ mailu.release_name_prefix }}-main"
       chart_ref: "mailu/mailu"

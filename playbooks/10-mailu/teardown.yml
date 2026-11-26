@@ -9,8 +9,12 @@
   hosts: k8s
   gather_facts: false
 
+  # mailu.external_workloads: another tool owns the namespace and the main
+  # release workloads with their volumes. This play then removes only the pre
+  # release.
   tasks:
   - name: Uninstall Mailu via Helm
+    when: not (mailu.external_workloads | default(false) | bool)
     kubernetes.core.helm:
       name: "{{ mailu.release_name_prefix }}-main"
       namespace: "{{ mailu.namespace }}"
@@ -27,6 +31,7 @@
       timeout: "300s"
 
   - name: Remove Mailu namespace
+    when: not (mailu.external_workloads | default(false) | bool)
     kubernetes.core.k8s:
       api_version: v1
       kind: Namespace
