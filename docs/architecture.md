@@ -6,54 +6,55 @@ This document describes the architecture of the H3x Kubernetes cluster infrastru
 
 The cluster has a layered deployment. These are the layers:
 
-1. **Base Infrastructure** - Physical/virtual servers with network setup
+1. **Base Infrastructure** - Physical/virtual computers with network configuration
 2. **Kubernetes Layer** - K3s deployment with the correct configuration
 3. **Network Layer** - Cilium CNI with dual-stack support
 4. **Service Layer** - MetalLB for load balancing
 5. **Security Layer** - Health endpoints, Certificate Manager, External DNS
-6. **Ingress Layer** - Envoy Gateway (Gateway API) for HTTP routing, TLS termination, OIDC, and IP allowlisting
+6. **Ingress Layer** - Envoy Gateway (Gateway API) for HTTP routing, TLS termination, OIDC, and IP allowlists
 7. **Storage Layer** - SMB/CIFS CSI driver and Longhorn for persistent storage
 8. **Application Layer** - Mailu email server and Keycloak identity management
 
 ## Deployment Flow
 
-The imports in [stack-standup.yml](../playbooks/stack-standup.yml) are the
-authoritative order, including PriorityClasses, CoreDNS scaling after Cilium,
-and kured after Longhorn. Keycloak has its own deployment entry point;
-provision its realm, clients and groups before services that use them, as
-described in the [Keycloak guide](../playbooks/10-keycloak/README.md).
-[Argo CD](../playbooks/10-argocd/README.md) also has a separate deployment entry
-point and runs after its Keycloak client is configured.
+The imports in [stack-standup.yml](../playbooks/stack-standup.yml) give the
+authoritative order. This order includes PriorityClasses, the CoreDNS replica
+count after Cilium, and kured after Longhorn. Keycloak has its own deployment
+entry point. Provision its realm, clients and groups before the applications
+that use them. The [Keycloak guide](../playbooks/10-keycloak/README.md)
+describes this. [Argo CD](../playbooks/10-argocd/README.md) also has a separate
+deployment entry point. It runs after the Keycloak Terraform layer configures
+its Keycloak client.
 
 ## Node Topology
 
 The cluster uses a **dedicated control-plane** model. There are two node roles:
 
-| Role | Nodes (example) | Schedulable for | Identifying taint |
+| Role | Nodes (example) | Schedulable for | Taint |
 |---|---|---|---|
-| **Server** (control-plane + etcd) | 3 nodes (quorum) | k8s control-plane components, Cilium, kured, other system DaemonSets that explicitly tolerate the taint | `CriticalAddonsOnly=true:NoSchedule` |
-| **Agent** (workload) | 5+ nodes | All workloads — Longhorn storage, platform services (Mailu, Keycloak), apps (Plex, *arr stack, etc.) | none |
+| **Server** (control-plane + etcd) | 3 nodes (quorum) | Kubernetes control-plane components, Cilium, kured, and other system DaemonSets that explicitly tolerate the taint | `CriticalAddonsOnly=true:NoSchedule` |
+| **Agent** (workload) | 5+ nodes | All workloads: Longhorn storage, platform applications (Mailu, Keycloak) and other applications (for example Plex and the *arr stack) | none |
 
 ### Why dedicated control-plane
 
-Stateful workloads stay off the server nodes. These workloads include Longhorn replicas, Postgres data, *arr SQLite DBs, and the Plex library. This gives these results:
+Stateful workloads stay off the control-plane nodes. These workloads include Longhorn replicas, PostgreSQL data, *arr SQLite databases, and the Plex library. This gives these results:
 
-- An app with a fault cannot cause an OOM kill of kube-apiserver / etcd / kubelet on a node that is part of the quorum.
-- A server-node reboot has an effect only on control-plane availability. It has no effect on storage availability.
+- An application with a fault cannot cause an OOM kill of kube-apiserver / etcd / kubelet on a node of the quorum.
+- A reboot of a control-plane node has an effect only on control-plane availability. It has no effect on storage availability.
 - The 3-node etcd quorum stays small and predictable. A larger quorum increases the write latency.
 
 ### How the taint is honored
 
-Server nodes have the `CriticalAddonsOnly=true:NoSchedule` taint. Thus, **only pods that explicitly tolerate the taint can go on these nodes**. There are two results:
+Control-plane nodes have the `CriticalAddonsOnly=true:NoSchedule` taint. Thus, **only pods that explicitly tolerate the taint can go on these nodes**. There are two results:
 
-- **System DaemonSets that must run on every node** tolerate **all** taints with `tolerations: [{operator: Exists}]`. Examples are the Cilium CNI agent, the kured reboot daemon, the csi-driver-smb node plugin, and longhorn-manager. These DaemonSets run on the full 8-node fleet, so the functionality is the same on all nodes.
-- **Workloads** have no special tolerations. Examples are Longhorn replicas, CNPG postgres, Keycloak, *arr apps, Plex, and qbittorrent. These workloads go only on the 5 agent nodes. Longhorn shows 5 storage providers, not 8. This is the intended design.
+- **System DaemonSets that must run on every node** tolerate **all** taints with `tolerations: [{operator: Exists}]`. Examples are the Cilium CNI agent, the kured reboot daemon, the csi-driver-smb node plugin, and longhorn-manager. These DaemonSets run on the full 8-node fleet. Thus, the functionality is the same on all nodes.
+- **Workloads** have no special tolerations. Examples are Longhorn replicas, CloudNativePG (CNPG) PostgreSQL, Keycloak, the *arr applications, Plex, and qbittorrent. These workloads go only on the 5 agent nodes. Longhorn shows 5 storage providers, not 8. This is the intended design.
 
 ### Implications
 
-- **Longhorn replica count vs node count**: There are 5 agent nodes that can hold storage, and `defaultReplicaCount: 3`. Thus, 2 agents can fail at the same time without data loss.
+- **Longhorn replica count vs node count**: 5 agent nodes can hold storage, and the replica count is `defaultReplicaCount: 3`. Thus, 2 agent nodes can fail at the same time without data loss.
 - **Workload HA spread**: Anti-affinity policies operate in the 5-agent pool.
-- **Server-node reboots**: A reboot has an effect only on the control-plane. The 3-node etcd quorum tolerates 1 node that is down.
+- **Control-plane node reboots**: A reboot has an effect only on the control-plane. The 3-node etcd quorum tolerates 1 node that is down.
 
 ## Network Architecture
 
@@ -67,8 +68,8 @@ Server nodes have the `CriticalAddonsOnly=true:NoSchedule` taint. Thus, **only p
 
 ### Load Balancer Pools
 
-MetalLB announces dedicated per-service pools through L2 ARP/NDP. Each pool
-disables automatic assignment, and each LoadBalancer Service names its pool.
+MetalLB announces dedicated pools for each Service through L2 ARP/NDP. Each
+pool disables automatic assignment. Each LoadBalancer Service names its pool.
 The core layer creates no general-purpose pool.
 
 ### Manual Service IP Allocations
@@ -86,9 +87,10 @@ The core layer creates no general-purpose pool.
 ### Core Platform Services
 
 The [overview](../README.md#overview) lists the platform components. Their
-chart and image pins live in
+chart and image pins are in
 [`inventory/production/group_vars/all/versions.yml`](../inventory/production/group_vars/all/versions.yml).
-These are repository inputs, not evidence of the versions running in a cluster.
+These pins are repository inputs. They are not evidence of the versions that
+run in a cluster.
 
 ### Application Services
 - **Mailu**: Self-hosted email server with web interface
@@ -98,7 +100,7 @@ These are repository inputs, not evidence of the versions running in a cluster.
 - **Keycloak**: Identity and access management
   - Hostname: identity.app.example.com
   - Deployed with the Keycloak Operator (`k8s.keycloak.org/v2beta1` CR)
-  - PostgreSQL backend that CloudNativePG manages (`postgresql.cnpg.io/v1` Cluster)
+  - PostgreSQL backend that CNPG manages (`postgresql.cnpg.io/v1` Cluster)
 
 ### DNS Management
 - **Managed Domains**: example.com, *.example.com, example.org, *.example.org, example.net
@@ -108,14 +110,14 @@ These are repository inputs, not evidence of the versions running in a cluster.
 ## Deployment Patterns
 
 ### Custom Helm Charts
-The project uses custom Helm charts to manage configuration. There are three types of chart:
+The project uses bespoke charts to manage configuration. There are three types of chart:
 
-- **Pre-deployment charts**: Create secrets, ConfigMaps, and prerequisites.
-- **Main deployment charts**: Deploy the primary applications with upstream Helm charts.
+- **Pre-deployment charts**: Create Secrets, ConfigMaps, and prerequisites.
+- **Main deployment charts**: Deploy the primary applications with upstream charts.
 - **Post-deployment charts**: Configure ClusterIssuers, more resources, and integrations.
 
 ### Component Naming Convention
-All releases use this naming pattern: `h3xinfra-{component}-{phase}`
+All releases use this name pattern: `h3xinfra-{component}-{phase}`
 - Example: `h3xinfra-metallb-main`, `h3xinfra-certmanager-post`
 
 ### Network Interface Configuration
@@ -126,8 +128,8 @@ This setting is important for the Cilium IPv6 multicast device configuration.
 
 - Cilium implements the network policies.
 - A dedicated configuration controls anonymous access to health endpoints.
-- Cert-Manager automatically manages the TLS certificates with Let's Encrypt.
-- External-DNS automatically manages the DNS records with Cloudflare.
+- cert-manager automatically manages the TLS certificates with Let's Encrypt.
+- ExternalDNS automatically manages the DNS records with Cloudflare.
 - Ansible Vault encrypts all secrets.
 - The Mailu email server includes an SMTP relay configuration for external delivery.
 - Keycloak gives centralized identity and access management.

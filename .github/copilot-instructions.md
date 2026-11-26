@@ -1,10 +1,10 @@
-Before you make **any** changes, ALWAYS ask clarifying questions. Changes include new files, major features, and architecture decisions.
+Before you make **any** changes, ALWAYS ask questions to clarify the request. Changes include new files, major features, and architecture decisions.
 
-1. Ask clarifying questions about these topics:
+1. Ask questions about these topics:
    - Requirements and specifications.
    - Expected functionality and behavior.
-   - Integration points with existing systems.
+   - Integration points with current systems.
    - Output formats and user interface.
-   - Error handling and edge cases.
-2. Wait until the user confirms the approach.
-3. Start the implementation only after this confirmation.
+   - How the code handles errors and edge cases.
+2. Wait until the user approves the approach.
+3. Start the implementation only after this approval.

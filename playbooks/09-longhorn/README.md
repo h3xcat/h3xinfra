@@ -5,9 +5,9 @@ generated objects:
 
 - The CSI Deployments/DaemonSet
 - The instance-manager Pods
-- The recurring CronJobs
+- The CronJobs of the recurring jobs
 - The engine-image DaemonSets
-- The share-manager Pods.
+- The share-manager Pods
 
 Do not patch these generated objects in place of a durable, supported setting.
 
@@ -23,44 +23,52 @@ Do not patch these generated objects in place of a durable, supported setting.
 | CSI plugin | 100m CPU / 128Mi memory | 1 CPU / 512Mi memory |
 | Node registrar and liveness probe | 25m CPU / 32Mi memory | 250m CPU / 128Mi memory |
 
-The manager budget retains headroom over the recorded seven-day measurements
-(2.1Gi p95 / 3.8Gi peak), and its rollout allows only one unavailable manager.
+The manager budget keeps headroom over the recorded seven-day measurements
+(2.1Gi p95 / 3.8Gi peak). Its rollout allows only one unavailable manager.
 `defaultSettings.systemManagedCSIComponentsResourceLimits` serializes the CSI
-budgets as JSON ResourceRequirements, including 32Mi / 256Mi ephemeral-storage
-requests/limits for each CSI component. It does not limit manager disk use.
+budgets as JSON ResourceRequirements. These also have 32Mi / 256Mi
+ephemeral-storage requests/limits for each CSI component. The setting does not
+limit manager disk use.
 
-`guaranteedInstanceManagerCPU` reserves V1 12% and V2 31% CPU; these are not CPU
-limits, and no instance-manager memory limit is set. Drain, orphan-data
-retention, replica counts, disk free-space policies and engine versions remain
-separate settings.
+`guaranteedInstanceManagerCPU` reserves 12% CPU for V1 and 31% CPU for V2.
+These values are not CPU limits. The configuration sets no instance-manager
+memory limit. These items stay separate settings:
+
+- Drain
+- Orphan-data retention
+- Replica counts
+- Disk free-space policies
+- Engine versions
 
 ## Scheduled Jobs
 
-Each `longhorn.recurring_jobs.jobs` entry renders a RecurringJob. The job list
-continues through `set_values` as JSON; there is no separate enable switch.
-Legacy `enabled` values, including `false`, are ignored when the list is nonempty.
-An empty list creates no scheduled jobs, and removing an existing entry removes
-that RecurringJob on the next Helm reconciliation. Volumes join jobs through
-their recurring-job group labels.
+Each `longhorn.recurring_jobs.jobs` entry renders a RecurringJob. The playbook
+gives the job list to Helm through `set_values` as JSON. There is no separate
+enable switch. If the list is not empty, the post chart ignores retired
+`enabled` values. This also applies to `false`. An empty list creates no
+scheduled jobs. If you remove an entry, the next Helm reconciliation removes
+that RecurringJob. Volumes join jobs through their recurring-job group labels.
 
-Install this chart revision before removing a legacy `recurring_jobs.enabled`
-value from an inventory: older revisions require that flag to retain the jobs.
+Deploy this chart revision before you remove a retired
+`recurring_jobs.enabled` value from an inventory. Older revisions require that
+flag to keep the jobs.
 
 ## UI Access
 
-The post chart publishes the UI through the shared Gateway, and its
-SecurityPolicy (OIDC and/or source CIDRs) gates only that route. The UI's
-nginx proxies the Longhorn API without authentication, so post chart 0.4.0
-adds the NetworkPolicy `<release>-ui-gateway`: the `app=longhorn-ui` pods
-accept TCP 8000 only from the Envoy proxy pods of `longhornIngress.gateway`.
-Other pods, including those in the Longhorn namespace, cannot reach Service
-`longhorn-frontend`. Without a gateway name the UI admits no pod.
+The post chart publishes the UI through the shared Gateway. Its SecurityPolicy
+(OIDC and/or source CIDRs) gates only that route. The nginx of the UI proxies
+the Longhorn API without authentication. Thus, post chart 0.4.0 adds the
+NetworkPolicy `<release>-ui-gateway`. With this policy, the `app=longhorn-ui`
+pods accept TCP 8000 only from the Envoy proxy pods of
+`longhornIngress.gateway`. Other pods cannot reach Service `longhorn-frontend`.
+This also applies to pods in the Longhorn namespace. Without a gateway name, the
+UI admits no pod.
 
 ## Attended Failure Recovery
 
 `nodeDownPodDeletionPolicy: do-nothing` disables the automatic force deletion of
 Pods by Longhorn after a node failure. Affected workloads can stay unavailable
-until an operator takes action.
+until the owner takes action.
 
 This policy is not fencing. These events do not prove that an old writer
 stopped:
@@ -78,53 +86,73 @@ This policy does not change the RWX share-manager fast failover. That failover
 has separate failure semantics. This policy does not remove every possible
 dual-writer path. The drain policy and orphan-data preservation also stay the
 same. Automatic engine-upgrade concurrency is explicitly zero. Engine upgrades
-are attended, backed up, and serial.
+are serial. The owner attends each engine upgrade and makes a backup before it.
 
 For a setting-only rollout, do these steps:
 
 1. Verify the exact current native settings.
 2. Prepare to reconcile only the approved saved Helm values at the unchanged
    chart version.
-3. Before you apply, make sure that the rendered change is ConfigMap-only.
-4. Before you apply, examine the unrelated native defaults for drift.
-5. Apply the reconciliation.
+3. Before you run the reconciliation, make sure that the rendered change is
+   ConfigMap-only.
+4. Before you run the reconciliation, check the unrelated native defaults for
+   drift.
+5. Run the reconciliation.
 6. Verify the live setting, the controller readiness, and the volume health.
 
-Do not run the full standup playbook as a shortcut. A rollback changes the
-failure handling again. A rollback requires an explicit operational decision.
+Do not run the full standup playbook as a shortcut. A rollback changes how
+Longhorn handles a node failure again. A rollback requires an explicit
+operational decision.
 
 ## Attended Teardown
 
-Teardown is destructive: the Longhorn 1.13.0 Helm pre-delete Job invokes
-`longhorn-manager uninstall --force`, which can remove volumes still in use.
-The deletion flag permits that Job; it does not protect live data. Before an
-owner runs teardown, retire or migrate every Longhorn workload, review PV/PVC
-retention, and establish the required backups and tested recovery path. Keep
-this work separate from ordinary setting updates or failure recovery.
+Teardown is destructive. The Longhorn 1.13.0 Helm pre-delete Job runs
+`longhorn-manager uninstall --force`. This command can delete volumes that are
+still in use. The deletion flag allows that Job. It does not protect live data.
+
+Before the owner runs teardown, do these steps:
+
+1. Retire or migrate every Longhorn workload.
+2. Review the PV/PVC retention.
+3. Make sure that the necessary backups and a tested recovery path exist.
+
+Keep this work separate from normal setting updates and from failure recovery.
 
 `teardown.yml` still requires `-e confirm_destroy=yes-destroy-data` before any
-connection or mutation. It rejects pending/incomplete releases and orphaned
-Longhorn CRDs, then patches only an existing `deleting-confirmation-flag`
-Setting. The flag is never enabled by standup. Helm removes post, main, then
-pre; the main release retains its supported uninstall hook and has a
-20-minute timeout for the chart's 15-minute Job deadline. Any failure stops
-later plays. Remaining Longhorn CRDs stop pre-release and namespace removal.
-An already absent installation needs no Setting creation or finalizer bypass.
+connection or mutation. It rejects incomplete releases, releases with an open
+Helm operation, and orphaned Longhorn CRDs. Then it patches the
+`deleting-confirmation-flag` Setting, but only if this Setting exists. The
+standup playbook never enables the flag.
 
-Review the current release state and matching chart version before an attended
-run. A confirmed `--check` can preview tasks but cannot prove the uninstall
-Job, volume retirement, or recovery; its post-uninstall CRD check is skipped
-because no deletion has happened. After a real run, verify release/CRD and
-namespace removal and the planned data-retention outcome.
+Helm removes the releases in this order: post, main, pre. The main release
+keeps its supported uninstall hook. It has a 20-minute timeout for the 15-minute
+Job deadline of the chart. Any failure stops later plays. If Longhorn CRDs
+remain, the playbook does not remove the pre-release and the namespace. An
+installation that is already absent needs no Setting creation and no finalizer
+bypass.
 
-If the main uninstall fails, preserve the pre-release and namespace and inspect
-the Job and release before retrying. A successful flag patch followed by failure can
-leave the flag true. Inspect active uninstall work before deciding whether to
-cancel or reset it. For an incomplete installation, use the version-matched
-Longhorn recovery procedure, which can require restoring its release before
-uninstalling. Do not strip finalizers, delete webhooks, or remove replica data
-to force completion. Reverting this source change cannot restore deleted data
-or reset the live flag.
+Before an attended run, review the current release state and the chart version
+of the release. A confirmed `--check` run can preview tasks. But it cannot
+prove the uninstall Job, the volume retirement or the recovery. It skips its
+post-uninstall CRD check, because no deletion occurred. After a real run,
+verify the removal of the release, the CRDs and the namespace. Also verify the
+planned data-retention result.
+
+If the main uninstall fails, keep the pre-release and the namespace. Then check
+the Job and the release before you try again. If the flag patch succeeds and a
+later step fails, the flag can stay true. Check the active uninstall work
+before you decide to cancel or reset it. For an incomplete installation, use
+the Longhorn recovery procedure for the same version. This procedure can
+require that you restore its release before the uninstall.
+
+To force completion, do not do these actions:
+
+- Remove finalizers.
+- Delete webhooks.
+- Delete replica data.
+
+A revert of this source change cannot restore deleted data or reset the live
+flag.
 
 References: [Longhorn 1.13.0 uninstall procedure](https://longhorn.io/docs/1.13.0/deploy/uninstall/),
 [the pinned Helm uninstall Job](https://github.com/longhorn/charts/blob/longhorn-1.13.0/charts/longhorn/templates/uninstall-job.yaml),
@@ -132,82 +160,112 @@ and [the pinned uninstall controller](https://github.com/longhorn/longhorn-manag
 
 ## Parked V2 Engine
 
-V2 and dedicated block disks are parked. `standup.yml` sets the literal
-`v2DataEngine: false`; the former inventory opt-in no longer enables V2.
-The V1/V2 instance-manager CPU reservations remain 12%/31%.
+V2 and dedicated block disks stay parked. `standup.yml` sets the literal
+`v2DataEngine: false`. The retired inventory opt-in no longer enables V2.
+The V1/V2 instance-manager CPU reservations stay at 12%/31%.
 
-Before changing the setting, the play requires either a clean first install
-(both Volume and InstanceManager CRDs absent) or both APIs available. It stops
-if any V2 volume or V2 engine, frontend, replica, shard or shard-group process
-exists. A real run waits for the native setting to be false and V2 instance
-managers to disappear. Check mode retains preflight but skips those waits;
-it cannot prove the setting changed or processes stopped. Do not bypass these
-checks or force-delete managers to finish a rollout.
+Before the play changes the setting, it requires one of these states:
+
+- A clean first install. Both the Volume CRD and the InstanceManager CRD are
+  absent.
+- Both APIs are available.
+
+The play stops if a V2 volume exists. It also stops if a V2 engine, frontend,
+replica, shard or shard-group process exists. A real run waits until the native
+setting is false and the V2 instance managers are gone. Check mode keeps the
+preflight but skips those waits. Thus, it cannot prove that the setting changed
+or that the processes stopped. To finish a rollout, do not bypass these checks.
+Do not force-delete managers.
 
 Post chart 0.3.0 removes its V2 StorageClass, normally `longhorn-v2`. Before
-reconciling that chart, inspect saved release values for a customized class
-name, and verify that no PVC (including Pending claims), PV or workload
-configuration references it. Inspect V2 volumes, block disks and backing-image
-data separately; an empty process map does not prove stored data is disposable.
-Pause provisioning writers during this review and reconciliation. Stop if a
-consumer or V2 data exists and plan its migration with the owner. Deleting the
-class does not migrate volumes or provide data recovery.
+you reconcile that chart, check the saved release values for a customized class
+name. Then verify that no PVC, PV or workload configuration references the
+class. This also applies to Pending claims. Check V2 volumes, block disks and
+backing-image data separately. An empty process map does not prove that the
+stored data is disposable. Pause provisioning writers during this review and
+reconciliation. If a consumer or V2 data exists, stop. Then plan its migration
+with the owner. A deletion of the class does not migrate volumes or restore
+data.
 
-Prepare a narrow post-chart reconciliation at the unchanged upstream version;
-review the rendered deletion and the harmless chart-version label changes.
-Verify storage health and backups before the attended change, then confirm the
-class is absent, V1 volumes remain healthy, and scheduled jobs are unchanged.
-Do not run the full standup or prep playbook as a host-cleanup shortcut.
+Prepare a narrow post-chart reconciliation at the unchanged upstream version.
+Review the rendered deletion and the harmless chart-version label changes.
+Before the attended change, verify the storage health and the backups. After
+the change, verify these results:
 
-Removing preparation from source does not delete installed files, unload
-modules, release reserved memory, or remove existing arm64 disable labels.
-Keep those labels until a separately reviewed future V2 design. Host cleanup
-is a separate attended operation after the source change:
+- The class is absent.
+- V1 volumes stay healthy.
+- The scheduled jobs did not change.
 
-1. Confirm V2 is disabled and has no volumes, instance managers or their Pods;
-   inventory other hugepage and kernel-module consumers. Empty process maps
-   alone do not prove an idle or unreachable manager has released its hugepages.
-   Record each node's current sysctl, boot configuration and module files for
-   recovery.
-2. On the former amd64 V2 nodes, remove only the reviewed legacy
-   `/etc/sysctl.d/99-longhorn-v2.conf` and
-   `/etc/modules-load.d/longhorn-v2.conf`. Release runtime hugepages only after
-   confirming there are no consumers and no other reservation sources.
-3. On affected nodes, remove the obsolete `vfio_pci.conf`,
-   `uio_pci_generic.conf` and `nvme-tcp.conf` module-load files only after checking
-   their consumers. Do not automatically unload active modules.
-4. Verify the resulting reservation and available memory per node. The former
-   source reserved 1,024 two-MiB pages (2 GiB); installed values can differ, so
-   do not assume a fixed amount of memory was freed. Let kubelet capacity refresh
-   with the next planned reboot; do not restart k3s-agent to force a refresh.
+Do not run the full standup or prep playbook as a shortcut for the node
+cleanup.
 
-Keep Pi kernel-command-line migration and crash-capture hugepage overrides:
-legacy files can remain until cleanup, and other hugepage settings can still
-reach the capture kernel. If a consumer or degraded volume appears, stop and
-preserve data. Restore reviewed host files/settings only through an attended
-recovery plan. Reverting source or recreating the StorageClass does not restore
-data or safely re-enable V2; future V2 use needs a new design and prerequisites.
+The removal of the preparation from the source does not do these actions:
+
+- Delete installed files.
+- Unload modules.
+- Release reserved memory.
+- Remove the arm64 disable labels that exist.
+
+Keep those labels until a separately reviewed future V2 design. Node cleanup is
+a separate attended operation after the source change:
+
+1. Verify that V2 is disabled and that it has no volumes, instance managers or
+   instance-manager Pods.
+2. Make a list of the other hugepage and kernel-module consumers. Empty process
+   maps alone do not prove that an idle or unreachable manager released its
+   hugepages.
+3. For recovery, record the current sysctl, boot configuration and module files
+   of each node.
+4. On the amd64 nodes that used V2 before, remove only the reviewed retired
+   files `/etc/sysctl.d/99-longhorn-v2.conf` and
+   `/etc/modules-load.d/longhorn-v2.conf`.
+5. Release runtime hugepages only after you verify that there are no consumers
+   and no other reservation sources.
+6. On the affected nodes, check the consumers of the retired `vfio_pci.conf`,
+   `uio_pci_generic.conf` and `nvme-tcp.conf` module-load files.
+7. After this check, remove these files. Do not automatically unload active
+   modules.
+8. Verify the reservation and the available memory on each node after the
+   change. The earlier source reserved 1,024 two-MiB pages (2 GiB). Installed
+   values can differ. Thus, do not assume that the change freed a fixed amount
+   of memory.
+9. Wait for the kubelet capacity to refresh at the next planned reboot. Do not
+   restart k3s-agent to force a refresh.
+
+Keep the Pi kernel-command-line migration and the crash-capture hugepage
+overrides. There are two reasons. Retired files can remain until the cleanup.
+Other hugepage settings can still reach the capture kernel. If a consumer or a
+degraded volume appears, stop. Then preserve the data. Restore reviewed node files and settings
+only through an attended recovery plan. If you revert the source or create the
+StorageClass again, this does not restore data. It also does not safely enable
+V2 again. Future V2 use needs a new design and new prerequisites.
 
 The guards follow the [pinned V2 setting validation](https://github.com/longhorn/longhorn-manager/blob/v1.13.0/datastore/longhorn.go)
 and [instance-manager status fields](https://github.com/longhorn/longhorn-manager/blob/v1.13.0/k8s/pkg/apis/longhorn/v1beta2/instancemanager.go).
-They are not a lock against concurrent changes; healthy API access and an
-attended inventory remain prerequisites.
+They are not a lock against concurrent changes. Healthy API access and an
+attended inventory stay prerequisites.
 
 ## Resource Maintenance
 
-The [earlier staged rollout sequence](https://github.com/h3xcat/h3xinfra/blob/e2d8d615fa67f1449bee398308311ad6788ec050/playbooks/09-longhorn/README.md#staged-online-rollout)
-is archived in Git history. Plan future
-changes against the current settings, saved release values and volume health;
-keep the chart version fixed for resource-only maintenance and do not run the
-whole standup as a shortcut. Preserve detached recovery volumes and previous
-values for a narrow rollback, and do not print credentials.
+Git history keeps the
+[earlier staged rollout sequence](https://github.com/coderpunch/h3xinfra/blob/e2d8d615fa67f1449bee398308311ad6788ec050/playbooks/09-longhorn/README.md#staged-online-rollout).
+Plan future changes against the current settings, the saved release values and
+the volume health. For resource-only maintenance, keep the chart version fixed.
+Do not run the whole standup as a shortcut. For a narrow rollback, preserve the
+detached recovery volumes and the previous values. Do not print credentials.
 
-Stop on a degraded volume, failed rollout, unexpected manager removal or
-resource OOM. Do not change failure timeouts, force-detach volumes, delete
-replica data, upgrade engines or clean up referenced engine images to make a
-rollout finish. Keep workload relocations and node maintenance separate from
-CSI restarts, and verify readiness, replica health and application I/O before
-continuing.
+Stop on a degraded volume, a failed rollout, an unexpected manager removal or a
+resource OOM. To make a rollout finish, do not do these actions:
+
+- Change failure timeouts.
+- Force-detach volumes.
+- Delete replica data.
+- Upgrade engines.
+- Clean up referenced engine images.
+
+Keep workload relocations and node maintenance separate from CSI restarts.
+Before you continue, verify the readiness, the replica health and the
+application I/O.
 
 ## Explicit Gaps
 
@@ -217,7 +275,7 @@ Longhorn 1.13.0 gives no resource values for these items:
 - The UI
 - The driver deployer/init container
 - The generated engine-image/share-manager Pods
-- The recurring-job containers.
+- The containers of the recurring jobs
 
 The RecurringJob and InstanceManager CRDs give no generic resource requirements.
 Engine and replica processes share their instance-manager container. Blanket
@@ -230,12 +288,12 @@ Do not delete them only because the manager/chart version is newer.
 
 ## Longhorn CLI cleanup
 
-The playbooks no longer install or remove `longhornctl`; their only invocation
-was its version check. Existing nodes keep the binary until the owner removes
-`/usr/local/bin/longhornctl` after checking for local maintenance-script users.
-Do that separately from a storage rollout. The volume and instance-manager
-checks, CSI settings, and authentication guards remain in
-`standup.yml`.
+The playbooks no longer install or remove `longhornctl`. Before, they ran it
+only for its version check. Current nodes keep the binary until the owner
+removes `/usr/local/bin/longhornctl`. Before this removal, the owner checks for
+local maintenance scripts that use the binary. Do this removal separately from
+a storage rollout. The volume and instance-manager checks, the CSI settings,
+and the authentication guards stay in `standup.yml`.
 
 ## Verification
 
