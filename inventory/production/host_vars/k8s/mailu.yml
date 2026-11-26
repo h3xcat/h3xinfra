@@ -2,6 +2,10 @@
 mailu:
   namespace: "mailu"
   release_name_prefix: "h3xinfra-mailu"
+  # Optional. Default: false. Set it to true when another tool (for example
+  # Argo CD) owns the namespace and the main release workloads. Then
+  # 10-mailu deploys only the pre release. See playbooks/10-mailu/README.md.
+  # external_workloads: false
   # Replace with your actual domain
   domain: "example.com"
   
