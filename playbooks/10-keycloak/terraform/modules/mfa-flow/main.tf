@@ -18,6 +18,12 @@ variable "flow_alias" {
   default     = "browser-mfa"
 }
 
+variable "reset_credentials_flow" {
+  description = "Alias of the reset-credentials flow to bind to the realm. null keeps the current binding."
+  type        = string
+  default     = null
+}
+
 # -----------------------------------------------------------------------------
 # Custom browser authentication flow with a second factor. At sign-in, the
 # user can select WebAuthn (security key or passkey) or TOTP.
@@ -130,9 +136,15 @@ resource "keycloak_authentication_execution" "otp" {
   depends_on = [keycloak_authentication_execution.webauthn]
 }
 
+# The bindings resource sets all flow bindings of the realm. Keep one per
+# realm. When the provider creates a bindings resource, it sets each binding
+# that the resource does not give to the built-in flow. A second resource for
+# this realm thus puts the browser flow back to "browser" (no MFA).
+# A null reset_credentials_flow keeps the current binding.
 resource "keycloak_authentication_bindings" "browser_mfa" {
-  realm_id     = var.realm_id
-  browser_flow = keycloak_authentication_flow.browser_mfa.alias
+  realm_id               = var.realm_id
+  browser_flow           = keycloak_authentication_flow.browser_mfa.alias
+  reset_credentials_flow = var.reset_credentials_flow
 }
 
 # Required actions ------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Test mocked Keycloak client/group plans and the groups tfvars pass-through."""
+"""Test mocked Keycloak client/group/reset-flow plans and the groups tfvars pass-through."""
 
 import json
 import os
@@ -14,10 +14,10 @@ import yaml
 
 LAYER = Path(__file__).resolve().parents[1]
 TERRAFORM = os.environ.get("TERRAFORM") or shutil.which("terraform") or "terraform"
-# Only the client/group/scope module files. No backend, state, tfvars or real
-# provider calls can enter this test.
+# Only the realm, client, group, scope and authentication flow files. No
+# backend, state, tfvars or real provider calls can enter this test.
 MODULE_FILES = ("providers.tf", "variables.tf", "realm.tf", "clients.tf", "groups.tf",
-                "kubernetes_oidc.tf", ".terraform.lock.hcl")
+                "kubernetes_oidc.tf", "mfa.tf", "reset_credentials.tf", ".terraform.lock.hcl")
 
 
 class KeycloakGroupsTests(unittest.TestCase):
@@ -27,6 +27,8 @@ class KeycloakGroupsTests(unittest.TestCase):
             target = Path(directory)
             for name in MODULE_FILES:
                 shutil.copyfile(source / name, target / name)
+            (target / "modules" / "mfa-flow").mkdir(parents=True)
+            shutil.copyfile(source / "modules" / "mfa-flow" / "main.tf", target / "modules" / "mfa-flow" / "main.tf")
             (target / "tests").mkdir()
             for test in sorted((LAYER / "tests").glob("*.tftest.hcl")):
                 shutil.copyfile(test, target / "tests" / test.name)
