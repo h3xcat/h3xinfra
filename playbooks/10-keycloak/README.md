@@ -424,9 +424,33 @@ The flow never removes or replaces an OTP credential. Failed OTP codes count
 for the brute-force detection of the realm.
 
 A person who controls the mail path can ask for many reset links and try OTP
-codes. The brute-force detection (5 failures, then a wait of up to 15
-minutes) limits this to approximately 480 tries each day for each user. No
-alert shows these failures.
+codes. From the fifth failure, the brute-force detection locks the user after
+each failure. The lock increases by 1 minute each 5 failures, to a maximum of
+15 minutes. This limits a person to approximately 140 tries on the first day
+and 96 tries on each day after that, for each user.
+
+The realm sends its events to the `jboss-logging` listener
+(`terraform/events.tf`). Keycloak adds this listener to each new realm.
+Terraform keeps it in the configuration. Keycloak writes each error event to
+the pod log at `WARN`. Alloy sends the pod logs to Loki. Loki alert rules in
+the private repository read these lines:
+
+- `RESET_PASSWORD_ERROR` with `error="invalid_user_credentials"`: a wrong OTP
+  code in the reset flow.
+- `error="user_temporarily_disabled"`: a sign-in or reset attempt on a user
+  that the brute-force detection locked.
+
+Keycloak gives all events to the listener also when the database stores no
+events. Thus, `events_enabled` is `false`. Keycloak logs success events at
+`DEBUG`. Thus, the log does not show the lockout event
+(`USER_DISABLED_BY_TEMPORARY_LOCKOUT`). Only the next attempt on the locked
+user shows the lockout.
+
+CAUTION: Keep `jboss-logging` in `events_listeners`. Without it, the Loki
+alerts get no lines. Do not set `spi-events-listener--jboss-logging--*`,
+`log`, `log-level` or `log-console-*` on the Keycloak CR. These options can remove
+the lines or change their format. `test_realm_events.py` checks the CR
+template.
 
 A user without an OTP credential cannot reset the password with this flow.
 This also applies to a user with only a WebAuthn credential. After the reset
@@ -470,6 +494,8 @@ change the reset flow of the master realm.
 
 `reset_credentials.tftest.hcl` checks the steps of the flow with a mocked
 provider. `test_reset_credentials.py` checks the binding in `mfa.tf`.
+`realm_events.tftest.hcl` checks the events configuration with a mocked
+provider.
 
 ### Master realm
 
