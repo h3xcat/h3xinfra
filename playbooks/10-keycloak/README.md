@@ -403,6 +403,74 @@ mocked provider. `groups.tftest.hcl` covers groups and memberships.
 copies only the necessary module definitions into a temporary directory. It
 does not load deployment state, a backend or generated tfvars.
 
+### Password reset
+
+Keycloak sends the reset link of the *Forgot password* page through the realm
+SMTP server (`keycloak.realm.smtp`). The built-in `reset credentials` flow
+trusts that e-mail alone. Its *Reset OTP* step also makes the user enroll a
+new OTP device. Thus, a person who can read or redirect the realm e-mail can
+take an account.
+
+For the application realm, Terraform binds the flow `reset-credentials-otp`
+(`terraform/reset_credentials.tf`). The flow has these steps:
+
+1. The user gives the username or the e-mail address.
+2. Keycloak sends the reset link to the e-mail address of the user.
+3. The user opens the link.
+4. If the user has an OTP credential, the user must give a valid OTP code.
+5. The user sets a new password.
+
+The flow never removes or replaces an OTP credential. Failed OTP codes count
+for the brute-force detection of the realm.
+
+A person who controls the mail path can ask for many reset links and try OTP
+codes. The brute-force detection (5 failures, then a wait of up to 15
+minutes) limits this to approximately 480 tries each day for each user. No
+alert shows these failures.
+
+A user without an OTP credential cannot reset the password with this flow.
+This also applies to a user with only a WebAuthn credential. After the reset
+link, Keycloak shows "Your account has no OTP device. Ask an administrator to reset your password."
+The account does not change.
+
+Before you deploy this flow, find the users without an OTP credential. In the
+admin console, open *Users* → the user → *Credentials*. A user with OTP has an
+`otp` credential. Ask each user without OTP to add an authenticator
+application in the account console.
+
+WARNING: Do not send a reset e-mail to a user without OTP. Do not send an
+actions e-mail with *Update Password*, *Configure OTP* or *WebAuthn Register*
+to a user. These e-mails go through the same mail path. An actions e-mail
+does not use the reset flow. A person who controls the mail path can then set
+the password and enroll an OTP device, also for a user with OTP.
+
+To reset the password of a user without OTP, do these steps in the admin
+console:
+
+1. Verify the identity of the user through a channel other than e-mail, for
+   example by phone.
+2. Open *Users* → the user → *Credentials*.
+3. Click *Reset password*.
+4. Set a temporary password. Keep *Temporary* on.
+5. Give the temporary password to the user through a channel other than
+   e-mail.
+6. Open *Details*. Add *Configure OTP* to *Required user actions*.
+7. Click *Save*.
+
+At the next sign-in, Keycloak asks the user for a new password and an OTP
+device. Use these steps also to give a new user access.
+
+The MFA module (`terraform/modules/mfa-flow`) binds the flow. Its bindings
+resource sets all flow bindings of the realm. When the provider creates a
+second bindings resource for a realm, it sets the browser flow back to
+`browser`. Thus, keep one `keycloak_authentication_bindings` resource for each
+realm. The module binds the reset flow only after all steps of the flow exist.
+A partial flow can reset a password without the OTP check. Terraform does not
+change the reset flow of the master realm.
+
+`reset_credentials.tftest.hcl` checks the steps of the flow with a mocked
+provider. `test_reset_credentials.py` checks the binding in `mfa.tf`.
+
 ### Master realm
 
 Terraform manages only the MFA browser flow of the built-in `master` realm

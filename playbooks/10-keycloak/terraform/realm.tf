@@ -6,7 +6,7 @@ resource "keycloak_realm" "main" {
   # Sensible defaults for a small self-hosted deployment.
   login_with_email_allowed = true
   registration_allowed     = false
-  reset_password_allowed   = true
+  reset_password_allowed   = true # reset needs the e-mail link and OTP (reset_credentials.tf)
   remember_me              = true
   verify_email             = true
   duplicate_emails_allowed = false
