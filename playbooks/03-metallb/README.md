@@ -2,75 +2,94 @@
 
 This layer deploys the pinned MetalLB controller and L2 speaker. Both FRR
 backends are disabled. Gateway, Mailu and Plex own their dedicated address
-pools and advertisements; each pool disables automatic assignment and each
-LoadBalancer Service names its pool. Removing the old `-post` chart from source
-**does not uninstall its existing release or remove its default pool**.
+pools and advertisements. Each pool disables automatic assignment. Each
+LoadBalancer Service names its pool. If you remove the old `-post` chart from
+the source, **this does not uninstall its current release or remove its default
+pool**.
 
-The shared private Helm suite checks controller and speaker resource budgets.
-The privileged namespace is still necessary for the speaker's host networking
-and `NET_RAW`; disabling FRR does not make this a restricted-PSA workload.
+The shared private Helm suite checks the resource budgets of the controller
+and the speaker. The speaker still needs the privileged namespace for its host
+networking and `NET_RAW`. FRR is disabled, but this does not make the speaker a
+restricted-PSA workload.
 
 ## Migrate an existing FRR-K8s installation
 
-This is an attended network change. Source/render tests cannot establish that
-live BGP configuration is unused or that VIP failover works. Do not deploy this
-change as part of a full-stack run before completing these checks.
+This is an attended network change. Source/render tests cannot prove that the
+live BGP configuration is unused. They also cannot prove that VIP failover
+works. Do not deploy this change as part of a full-stack run before you
+complete these checks.
 
-1. Schedule a quiet window with out-of-band access and a previous working
-   checkout. Confirm the deployed MetalLB version matches the reviewed pin and
-   record the main release's current successful Helm revision. Preserve the
-   current main/post values and relevant custom resources in a protected local
-   recovery directory; do not publish their contents.
-2. Inspect the current `BGPPeer`, `BGPAdvertisement`, `BFDProfile` and FRR-K8s
-   custom resources and identify their owners. Proceed only when no BGP or
-   custom FRR configuration depends on this installation. Repository absence
-   is insufficient evidence. Preserve any configuration before deleting its
-   CRD; a Helm rollback does not recover deleted custom-resource contents.
-3. Check every LoadBalancer Service's allocation and pool annotation, including
-   both address families. Confirm the old default pool has no assignments and
-   no Service requests it. Record the dedicated Gateway, Mailu and Plex pool
-   addresses and current reachability from the networks that use them.
+1. Schedule a quiet window. Have out-of-band access and a previous checkout
+   that works. Verify that the deployed MetalLB version matches the reviewed
+   pin. Record the current successful Helm revision of the main release. Keep a
+   copy of the current main/post values and the relevant custom resources in a
+   protected local recovery directory. Do not publish their contents.
+2. Check the current `BGPPeer`, `BGPAdvertisement`, `BFDProfile` and FRR-K8s
+   custom resources. Identify their owners. Continue only if no BGP or custom
+   FRR configuration depends on this installation. The absence of a
+   configuration from the repository is not sufficient evidence. Before you
+   delete a CRD, keep a copy of its configuration. A Helm rollback does not
+   restore the contents of deleted custom resources.
+3. Check the allocation and the pool annotation of each LoadBalancer Service
+   for both address families. Verify that the old default pool has no
+   assignments. Verify that no Service requests it. Record the addresses of the
+   dedicated Gateway, Mailu and Plex pools. Also record their current
+   reachability from the networks that use them.
 4. Review a server dry run against the current release. With MetalLB 0.16.2,
-   the expected main-release changes are removal of 17 FRR-K8s objects,
-   removal of its speaker RBAC rule, and removal of `METALLB_BGP_TYPE=frr-k8s`
-   from the controller and speaker. **Both workloads roll**. Reject unexpected
-   address, selector, Service, resource-budget or L2 configuration changes.
-5. Deploy only `03-metallb/standup.yml` using the production inventory. The
-   speaker rolls one node at a time; VIPs can fail over during the rollout.
+   expect these changes to the main release:
+
+   - Removal of 17 FRR-K8s objects.
+   - Removal of its speaker RBAC rule.
+   - Removal of `METALLB_BGP_TYPE=frr-k8s` from the controller and the speaker.
+
+   **Both workloads roll**. Reject an unexpected change to an address, a
+   selector, a Service, a resource budget or the L2 configuration.
+5. Deploy only `03-metallb/standup.yml` with the production inventory. The
+   speaker rolls one node at a time. VIPs can fail over during the rollout.
    Helm also removes these four templated FRR-K8s CRDs and their instances:
    `bgpsessionstates.frrk8s.metallb.io`, `frrconfigurations.frrk8s.metallb.io`,
    `frrk8sconfigurations.frrk8s.metallb.io` and
    `frrnodestates.frrk8s.metallb.io`. The nine MetalLB CRDs remain.
-6. Verify controller/speaker readiness, unchanged Service allocations, all
-   dedicated pools and L2 advertisements, and Gateway/Mailu/Plex reachability.
-   Exercise IPv4 and IPv6 where configured. Confirm the FRR workloads,
-   webhook and four FRR-K8s CRDs are gone. Stop and recover on a regression.
-7. Recheck that the old default pool remains unused, then explicitly uninstall
-   its release (substitute the configured prefix/namespace if different):
+6. Verify these items:
+
+   - The controller and the speaker are ready.
+   - The Service allocations did not change.
+   - All dedicated pools and L2 advertisements are present.
+   - Gateway, Mailu and Plex are reachable.
+
+   Test each configured address family: IPv4 and IPv6. Verify that the FRR
+   workloads, the webhook and the four FRR-K8s CRDs are gone. If a regression
+   occurs, stop. Then recover. See
+   [Recovery and teardown](#recovery-and-teardown).
+7. Check again that the old default pool is unused. Then uninstall its
+   release explicitly. If the configured prefix or namespace is different, use
+   the configured value in the command:
 
    ```bash
    helm uninstall h3xinfra-metallb-post -n metallb-system --wait --timeout 300s
    ```
 
-   Verify only the old default pool and its advertisement disappeared and
-   repeat the dedicated-pool, allocation and reachability checks. Until this
-   uninstall succeeds, the old pool still exists despite the source cleanup.
+   Verify that only the old default pool and its advertisement disappeared.
+   Then do the dedicated-pool, allocation and reachability checks again. The
+   source cleanup does not remove the old pool. The pool exists until this
+   uninstall succeeds.
 
 ## Recovery and teardown
 
-If the main rollout fails, use the recorded successful main release revision
-with `helm rollback`, wait for controller, speaker and FRR readiness, and
-repeat the allocation and reachability checks. Restore reviewed custom
-configuration from the protected backup after its CRDs return; Helm rollback
-alone cannot restore custom resources that CRD deletion removed.
+If the main rollout fails, run `helm rollback` with the recorded successful
+revision of the main release. Wait until the controller, the speaker and FRR
+are ready. Then do the allocation and reachability checks again. After the
+CRDs return, restore the reviewed custom configuration from the protected
+backup. A Helm rollback alone cannot restore custom resources that the CRD
+deletion removed.
 
-If the old post release was already uninstalled and must be restored, use its
-chart from the recorded previous public checkout and the saved post values
-with `helm upgrade --install`. Confirm its original pool and advertisement
-identities and keep `autoAssign: false`. Do not use a full-stack deployment or
-teardown as a recovery shortcut.
+If you uninstalled the old post release and you must restore it, run
+`helm upgrade --install`. Use its chart from the recorded previous public
+checkout and the saved post values. Verify the original identities of its pool
+and its advertisement. Keep `autoAssign: false`. Do not use a full-stack
+deployment or teardown as a recovery shortcut.
 
-The confirmation-protected teardown removes the main release and namespace;
-this disrupts all MetalLB-backed Services. Helm owns the main CRDs, so there
-is no additional shell command deleting a partial CRD list. Do not run this
-teardown to perform the migration above.
+The confirmation-protected teardown removes the main release and the
+namespace. This disrupts all Services that use MetalLB. Helm owns the main
+CRDs. Thus, no additional shell command deletes a partial CRD list. Do not run
+this teardown to do the migration above.

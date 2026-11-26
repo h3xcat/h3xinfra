@@ -5,7 +5,7 @@ namespace and all `hostNetwork` pods. It is optional and off by default.
 
 ## Function
 
-When `standup.yml` applies the layer, it does these steps:
+When `standup.yml` deploys the layer, it does these steps:
 
 1. It sets `hostFirewall.enabled` on the Cilium chart. The chart writes the
    selected value to `enable-host-firewall` in the `cilium-config` ConfigMap.
@@ -13,8 +13,8 @@ When `standup.yml` applies the layer, it does these steps:
    ConfigMap into the agent PodTemplate. A changed checksum triggers a
    DaemonSet rolling update. The agents read `enable-host-firewall` when they
    start. The main Helm upgrade waits for readiness before the next task.
-3. It reconciles the `h3xinfra-cilium-post` chart. When enabled, the chart
-   adds one CiliumClusterwideNetworkPolicy,
+3. It reconciles the `h3xinfra-cilium-post` chart. If the host firewall is
+   enabled, the chart adds one CiliumClusterwideNetworkPolicy,
    `<prefix>-post-host-deny-external`.
 4. It sets the label `h3xinfra.io/host-firewall=enforce` on each node in
    `cilium.host_firewall.enforce_nodes`. It removes the label from all other
@@ -31,16 +31,17 @@ The policy sets `enableDefaultDeny` to `false`. Thus the policy does not put
 the node into default-deny mode. All traffic that the deny rule does not match
 stays allowed.
 
-CIDR rules do not select cluster identities. Traffic from pods, from Cilium
-health checks and from node addresses that Cilium knows is not affected.
-Cilium knows the addresses in the Node object (for example the `InternalIP`)
-and the `cilium_host` addresses. A node can also send traffic from an address
+CIDR rules do not select cluster identities. Thus, the deny rule does not
+affect traffic from pods, from Cilium health checks and from node addresses
+that Cilium knows. Cilium knows the addresses in the Node object (for example
+the `InternalIP`) and the `cilium_host` addresses. A node can also send traffic from an address
 that is not in the Node object, for example a SLAAC or temporary IPv6
 address. The deny rule checks this traffic against the trusted ranges. Thus
 the global IPv6 prefix of the node network must be a trusted range.
 
-With kube-proxy replacement, traffic to a LoadBalancer or NodePort Service is
-checked against the policy of the backend endpoint, not against this policy.
+With kube-proxy replacement, Cilium checks traffic to a LoadBalancer or
+NodePort Service against the policy of the backend endpoint. It does not check
+this traffic against this policy.
 
 The host firewall does not replace the edge firewall. Keep the router rules
 that block inbound traffic.
@@ -62,45 +63,53 @@ setting is not valid or if a name in `enforce_nodes` is not a cluster node.
 ## Agent rollouts and readiness
 
 The checksum covers the entire rendered `cilium-config`, not only the host
-firewall flag. Any rendered ConfigMap change can therefore restart the
-agents. Identical rendered configuration produces the same checksum. This is
-reconciliation during a Helm upgrade, not a watcher of arbitrary live
-ConfigMap edits or agent runtime drift.
+firewall flag. Thus, any change to the rendered ConfigMap can restart the
+agents. Identical rendered configuration produces the same checksum. This
+mechanism is a reconciliation during a Helm upgrade. It does not watch
+arbitrary live ConfigMap edits or agent runtime drift.
 
-The first upgrade that adds the checksum is expected to roll the agents even
-when the host firewall remains disabled. This adoption rollout also makes
-previously unannotated agents load the desired value, including recovery
-from an earlier enabled configuration to `enabled: false`. The old
-`h3xinfra.io/host-firewall-enabled` annotation is no longer read or managed by
-the playbook. Its removal is neither required for the checksum mechanism nor
-proven by omitting it from the new source; do not assume it has been cleaned
-up on existing DaemonSets.
+The first upgrade that adds the checksum will roll the agents, also if the host
+firewall stays disabled. This adoption rollout also makes the agents without
+the old annotation load the desired value. This also covers the recovery from
+an earlier enabled configuration to `enabled: false`. The playbook no longer
+reads or manages the old `h3xinfra.io/host-firewall-enabled` annotation. The
+checksum mechanism does not require the removal of this annotation. The new
+source omits the annotation, but this does not prove its removal. Do not
+assume that the annotation is gone from the DaemonSets that exist.
 
-Plan the adoption and later configuration changes as separate deployment
-operations with a maintenance window, verified recovery access, and agent
-readiness and network checks. This source change does not verify the live
-agent count, readiness, or rollout duration. The agent DaemonSet retains
-`RollingUpdate` with `maxUnavailable: 1`. This is a per-DaemonSet disruption
-limit, not a fleetwide sequencing or availability guarantee.
+Plan the adoption and each later configuration change as a separate
+deployment operation. Each operation needs these items:
 
-The main Helm task uses `wait: true` and a 1800-second timeout. Pinned Helm
-4.3.1 uses its watcher for `--wait`; the DaemonSet check requires the observed
-generation and all desired agents updated, available and ready. Preserve
-that behavior when changing tooling; `--wait=legacy` has weaker checks. A
-no-op Ansible Helm task does not independently wait for live drift to recover.
+- A maintenance window.
+- Verified recovery access.
+- Agent readiness checks and network checks.
+
+This source change does not verify the live agent count, readiness, or rollout
+duration. The agent DaemonSet keeps `RollingUpdate` with `maxUnavailable: 1`.
+This is a disruption limit for one DaemonSet. It does not guarantee an order or
+availability across the fleet.
+
+The main Helm task uses `wait: true` and a 1800-second timeout. The pinned Helm
+4.3.2 uses its watcher for `--wait`. Its DaemonSet check requires the observed
+generation. It also requires that all desired agents are up to date, available
+and ready. If you change the tools, preserve that behavior. `--wait=legacy` has
+weaker checks. A no-op Ansible Helm task does not independently wait for live
+drift to recover.
 
 An agent restart clears host endpoint audit mode. On an already labeled
 node, enforcement can resume immediately, before the playbook reconciles the
 policy and node labels. This applies to adoption, upgrades and any changed
-rendered ConfigMap. Removing a node from `enforce_nodes` alone does not remove
-its existing label before the main upgrade. If enforcement must stop first,
-use the immediate label-removal procedure below before applying the layer.
+rendered ConfigMap. A removal of a node from `enforce_nodes` alone does not
+remove the label of the node before the main upgrade. If enforcement must stop
+first, use the immediate label-removal procedure below before you deploy the
+layer.
 
 ## Staged Rollout
 
-Do the enforcement steps in sequence, one node at a time. Before the Cilium
-apply, plan the maintenance window and recovery access described above, and
-account for any nodes that already carry the enforcement label.
+Do the enforcement steps in sequence, one node at a time. Before you deploy the
+Cilium layer, plan the maintenance window and the recovery access from the
+previous section. Also account for each node that already has the enforcement
+label.
 
 1. Add the global IPv6 prefix of the node network to
    `extra_trusted_cidrs.ipv6`. Do not add a label to a node before you do this
@@ -109,8 +118,8 @@ account for any nodes that already carry the enforcement label.
    to `extra_trusted_cidrs`.
 3. Set `enabled: true`. Keep `enforce_nodes: []`.
 4. Run `ansible-playbook h3xinfra/playbooks/02-cilium/standup.yml`.
-   The changed ConfigMap checksum rolls the Cilium agent DaemonSet. Wait for
-   all agents to become ready before continuing.
+   The changed ConfigMap checksum rolls the Cilium agent DaemonSet. Before you
+   continue, wait until all agents are ready.
 5. Make sure that each agent shows the host firewall:
 
    ```bash
@@ -120,8 +129,8 @@ account for any nodes that already carry the enforcement label.
    done
    ```
 
-6. Select one agent node for the first test. Do not select a k3s server node.
-   Get the agent pod and the host endpoint ID of that node:
+6. Select one agent node for the first test. Do not select a control-plane
+   node. Get the agent pod and the host endpoint ID of that node:
 
    ```bash
    NODE_NAME=<node>
@@ -141,10 +150,10 @@ account for any nodes that already carry the enforcement label.
    ```
 
    Audit mode stops when the agent restarts. An already labeled node can
-   enforce its existing policy immediately, before policy or label
-   reconciliation. Any changed rendered `cilium-config`, as well as adoption
-   or an upgrade, can restart the agents. Recheck audit mode after a restart;
-   do not rely on the setting from the previous pod.
+   enforce its current policy immediately, before policy or label
+   reconciliation. A change to the rendered `cilium-config` can restart the
+   agents. Adoption and upgrades can also restart them. After a restart, check
+   audit mode again. Do not rely on the setting from the previous pod.
 
 8. Add the node name to `enforce_nodes`.
 9. Run `ansible-playbook h3xinfra/playbooks/02-cilium/standup.yml`.
@@ -156,13 +165,13 @@ account for any nodes that already carry the enforcement label.
     ```
 
 11. If a verdict shows `action audit` or `action deny` for traffic that the node
-    must accept, add the source range to `extra_trusted_cidrs` and do step 9
+    must accept, add the source range to `extra_trusted_cidrs`. Then do step 9
     again.
 12. If you set audit mode in step 7, set `PolicyAuditMode=Disabled` on the
     same endpoint.
 13. Make sure that SSH, the node `Ready` status, Longhorn replicas and
     workloads on the node operate correctly.
-14. Do steps 6 to 13 for each remaining node. Do the k3s server nodes last.
+14. Do steps 6 to 13 for each other node. Do the control-plane nodes last.
 
 ## Rollback
 
@@ -177,26 +186,28 @@ adds the label again.
 
 To remove the host firewall fully, set `enforce_nodes: []` and
 `enabled: false`. Then run `standup.yml` in the planned maintenance window.
-The changed rendered ConfigMap checksum rolls the agents to unload the host
-firewall datapath. After the main Helm upgrade is ready, the playbook removes
-the policy and then the node labels. Remove labels first with the immediate
-procedure above if existing enforcement must stop before that upgrade.
+The changed checksum of the rendered ConfigMap rolls the agents. The agents
+then unload the host firewall datapath. After the main Helm upgrade is ready,
+the playbook removes the policy and then the node labels. If the current
+enforcement must stop before that upgrade, remove the labels first with the
+immediate procedure above.
 
 Do step 5 of the staged rollout again. Each agent must show that the host
-firewall is disabled. Check readiness and connectivity as well. The initial
-checksum adoption covers the old unannotated-agent recovery case; later
-unchanged Helm inputs do not force a recovery rollout. If an agent still
-runs the wrong setting, investigate its runtime state and plan an explicit
-recovery rather than assuming another unchanged apply will restart it.
+firewall is disabled. Also check readiness and connectivity. The first
+checksum adoption covers the old recovery case for agents without the
+annotation. Later unchanged Helm inputs do not force a recovery rollout. If an
+agent still runs the wrong setting, investigate its runtime state. Then plan an
+explicit recovery. Do not assume that another playbook run with the same inputs
+will restart the agent.
 
 ## Known Limits
 
-- When the host firewall is on, the host drops some layer 2 protocols. This
+- When the host firewall is on, the node drops some layer 2 protocols. This
   occurs also when no policy selects the node.
-- The host also drops extended IP protocols (for example VRRP, IGMP, GRE and
+- The node also drops extended IP protocols (for example VRRP, IGMP, GRE and
   ESP), unless the agent has the `--enable-extended-ip-protocols` option.
-- For the full list of known issues, refer to the Cilium documentation:
+- For the full list of known problems, refer to the Cilium documentation:
   <https://docs.cilium.io/en/stable/security/policy/host/>.
 - When a node first enforces the policy, the node can drop reply traffic of
-  existing connections for a short time.
+  connections that already exist. This occurs for a short time.
 - Host policies do not apply to host WireGuard interfaces.

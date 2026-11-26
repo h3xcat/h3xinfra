@@ -2,9 +2,9 @@
 
 This layer is the Keycloak identity provider for H3X Infra. The upstream
 **Keycloak Operator** (`k8s.keycloak.org/v2beta1`) deploys Keycloak. A
-**CloudNativePG** Postgres `Cluster` is the backend. Terraform manages the realm and client configuration
-declaratively. Thus, the OIDC clients and the realm groups stay in sync
-with the inventory.
+**CloudNativePG** (CNPG) PostgreSQL `Cluster` is the backend. Terraform manages
+the realm and client configuration declaratively. Thus, the OIDC clients and
+the realm groups stay in sync with the inventory.
 
 ## Layout
 
@@ -25,72 +25,80 @@ with the inventory.
 
 ### Standup (`ansible-playbook playbooks/10-keycloak/standup.yml`)
 
-The standup playbook first ensures that the shared CloudNativePG operator
-is ready, including its Cluster CRD. It owns the existing Helm identity
-`cloudnative-pg` in `cnpg-system`, uses `chart_versions.cloudnative_pg`, and
-keeps all three namespace PSA labels at `restricted`. This lets a fresh
-cluster create the Keycloak database before private application layers run.
-The operator is shared with Open WebUI and is retained by Keycloak teardown.
+First, the standup playbook makes sure that the shared CNPG operator and its
+Cluster CRD are ready. The playbook owns the current Helm identity
+`cloudnative-pg` in `cnpg-system`. It uses `chart_versions.cloudnative_pg`. It
+keeps all three namespace PSA labels at `restricted`. This allows a new
+cluster to create the Keycloak database before the private application layers
+run. Keycloak and Open WebUI share the operator. The Keycloak teardown keeps it.
 
-Moving the existing shared operator requires the coordinated ownership handoff
+A move of the current shared operator needs the coordinated ownership handoff
 in [CNPG operator ownership](CNPG-OWNERSHIP.md). A namespace marker makes later
-public runs idempotent; it does not prove that the private `20-openwebui`
-Terraform state has forgotten the release. The installer refuses unexpected ownership, values,
-controller images or adoption schemas. It reuses existing Helm values and
-never forces release ownership or replaces/uninstalls the operator.
+public runs idempotent. But the marker does not prove that the release is no
+longer in the private `20-openwebui` Terraform state. The installer refuses
+unexpected ownership, values, controller images or adoption schemas. It reuses
+the current Helm values. It never forces release ownership. It never replaces
+or uninstalls the operator.
 
 After that prerequisite, the standup playbook does these steps:
 
 1. **Keycloak Operator**: The playbook applies the upstream manifests
-   pinned to `chart_versions.keycloak`. The Operator is distributed as raw
-   manifests, not as a Helm chart. The Deployment of the operator must reach
-   `Available` before the reconciliation continues.
+   pinned to `chart_versions.keycloak`. The Keycloak project publishes the
+   Operator as raw manifests, not as a Helm chart. The Deployment of the
+   operator must reach `Available` before the reconciliation continues.
 2. **Pre-chart** (`h3xinfra-keycloak-pre`) creates these items:
    - A `Secret` (`<prefix>-pre-bootstrap-admin`). It holds the master-realm
      admin username/password. The Keycloak CR uses this Secret through
      `spec.bootstrapAdmin.user.secret`.
-   - A **CloudNativePG `Cluster`** (`postgresql.cnpg.io/v1`). It is the backend of Keycloak.
-     Its primary and standby use required pod anti-affinity, so
-     they stay on different nodes. Keycloak connects through the CNPG-rendered
-     `<cluster>-rw` Service. This Service always points to the current primary.
+   - A **CNPG `Cluster`** (`postgresql.cnpg.io/v1`). It is the backend of Keycloak.
+     Its primary and its standby use a required pod anti-affinity. Thus,
+     they stay on different nodes. Keycloak connects through the
+     `<cluster>-rw` Service that CNPG renders. This Service always points to
+     the current primary.
    - One `HTTPRoute` (Gateway API) with named rules. It attaches only to the
      shared Envoy Gateway HTTPS listener. These are the rules:
      - **Public**: `/realms/`, `/resources/`, `/js/`, `/robots.txt` — downstream
-       services and end users can reach these paths.
+       applications and users can reach these paths.
      - **Admin**: `/admin/`, `/metrics`, `/health`, `/realms/master/` — a
        `SecurityPolicy` (`authorization.principal.clientCIDRs`) restricts these paths.
-       The values of the policy come from `keycloak.ingress.trusted_setup_ips`. The policy targets only the
-       `admin` rule using Envoy Gateway's rule-level policy attachment.
-       An empty allowlist denies admin access.
-       The master realm holds the Keycloak admin account, so its login, token
-       and account endpoints are in this rule. The longest matching prefix
-       wins: `/realms/master/` uses the admin rule, and every other realm
+       The values of the policy come from `keycloak.ingress.trusted_setup_ips`.
+       The policy targets only the `admin` rule. It uses the rule-level policy
+       attachment of Envoy Gateway. An empty allowlist denies admin access.
+       The master realm holds the Keycloak admin account. Thus, its sign-in,
+       token and account endpoints are in this rule. The longest prefix that
+       matches wins. `/realms/master/` uses the admin rule. Every other realm
        uses the public rule. With its default path settings, Envoy Gateway
-       normalizes the path (percent-encoded letters, repeated slashes) before
-       it selects the rule.
-       The host that runs this playbook must be in the allowlist: the
-       readiness checks read `/realms/master/`, and Terraform gets its token
-       from the master realm before it calls `/admin/`.
+       normalizes the path before it selects the rule. This covers
+       percent-encoded letters and repeated slashes.
+       The Ansible controller that runs this playbook must be in the
+       allowlist. The readiness checks read `/realms/master/`. Terraform gets
+       its token from the master realm before it calls `/admin/`.
 3. **Main chart** (`h3xinfra-keycloak-main`) renders a `Keycloak` CR
    (`k8s.keycloak.org/v2beta1`). The Operator reconciles the CR into these items:
-   a StatefulSet, a Service, soft topology spread constraints across nodes
-   and zones (`ScheduleAnyway`), JGroups KUBE_PING discovery for the
-   Infinispan distributed cache, and rolling upgrades. The spread constraints
-   allow multiple Keycloak pods on one node, so the CR also sets a required
-   pod anti-affinity on `kubernetes.io/hostname`: each replica runs on its
-   own node, and `keycloak.replicas` needs that many schedulable nodes. A
-   replica that has no free node stays `Pending`; the other replicas keep
-   serving. The CR prefers `amd64` nodes but allows `arm64` nodes. When
-   `instances > 1`, the chart renders a `PodDisruptionBudget` with
-   `minAvailable: 1`; the Operator does not render one.
+
+   - A StatefulSet.
+   - A Service.
+   - Soft topology spread constraints across nodes and zones (`ScheduleAnyway`).
+   - JGroups KUBE_PING discovery for the Infinispan distributed cache.
+   - Rolling updates.
+
+   The spread constraints allow more than one Keycloak pod on one node. Thus,
+   the CR also sets a required pod anti-affinity on `kubernetes.io/hostname`.
+   Each replica runs on its own node. Thus, `keycloak.replicas` needs the same
+   number of schedulable nodes. A replica that has no free node stays
+   `Pending`. The other replicas continue to serve requests. The CR prefers
+   `amd64` nodes but allows `arm64` nodes. When `instances > 1`, the chart
+   renders a `PodDisruptionBudget` with `minAvailable: 1`. The Operator does
+   not render one.
    Releases from before chart 0.4.1 wrote the CR as `v2alpha1`. Upgrade them
    with Helm 4.1.1 or later. Helm 4.0 and 4.1.0 also compare the API version
-   when they remove the objects of the previous release, so they delete the
+   when they remove the objects of the previous release. Thus, they delete the
    `Keycloak` object right after they update it
    ([helm/helm#31768](https://github.com/helm/helm/issues/31768)).
 4. **Readiness probe**: The probe sends requests to `/realms/master/.well-known/openid-configuration`.
-   It tries again until it gets `200`. The request comes from the host that
-   runs the playbook, so that host must be in `keycloak.ingress.trusted_setup_ips`.
+   It tries again until it gets `200`. The requests come from the Ansible
+   controller that runs the playbook. Thus, the Ansible controller must be in
+   `keycloak.ingress.trusted_setup_ips`.
 5. **Terraform apply**: The playbook renders `terraform.tfvars.json` from the inventory. It runs
    `terraform init` + `apply` against the new instance. This creates the
    configured realm, the OIDC clients and the groups.
@@ -98,58 +106,71 @@ After that prerequisite, the standup playbook does these steps:
 ### Teardown (`ansible-playbook playbooks/10-keycloak/teardown.yml -e confirm_destroy=yes-destroy-data`)
 
 The playbook stops at the start unless you give
-`-e confirm_destroy=yes-destroy-data`. It destroys the realm, the Helm releases,
-the operator, all four Keycloak CRDs and the namespace, including its PVCs.
-Back up the database and Terraform state, and verify recovery before proceeding.
-CNPG gives its PVCs a Cluster owner reference, so deleting the Cluster normally
-garbage-collects them; namespace deletion also removes remaining PVCs. Actual
-volume deletion depends on the PV reclaim policy and storage backend. There is
+`-e confirm_destroy=yes-destroy-data`. It deletes the realm, the Helm releases,
+the operator, all four Keycloak CRDs and the namespace with its PVCs.
+Back up the database and the Terraform state. Then verify the restore before
+you continue.
+CNPG gives its PVCs a Cluster owner reference. Thus, Kubernetes normally
+garbage-collects them after the deletion of the Cluster. The deletion of the
+namespace also removes the PVCs that remain. The actual deletion of the
+volumes depends on the PV reclaim policy and the storage backend. There is
 no name-based PVC sweep or change to retention settings. The shared CNPG
 operator and its CRDs are outside this teardown.
 
-The upstream Keycloak manifests include cluster-wide roles and CRDs. Teardown
-first checks all namespaces and refuses other custom resources or bindings
-that use those roles. Only the main release's Helm-owned Keycloak CR is allowed;
-realm-import, OIDC-client and SAML-client CRs must be removed or migrated by their
-owner while the operator is still running. Unavailable APIs and access errors stop the run.
-An already-absent CRD is allowed. These checks require cluster-wide list access
-to the four custom resource kinds and to RoleBindings and ClusterRoleBindings.
-In `--check` mode, ownership checks still run, but Helm only predicts deletion;
-the subsequent CR cleanup wait is skipped. A check-mode run cannot prove cleanup
-or finalizer completion.
+The upstream Keycloak manifests contain cluster-wide roles and CRDs. First,
+the teardown checks all namespaces. It refuses other custom resources or
+bindings that use those roles. The teardown allows only the Helm-owned
+Keycloak CR of the main release. The owner of a realm-import, OIDC-client or
+SAML-client CR must remove or migrate that CR while the operator still runs.
+Unavailable APIs and access errors stop the run. The teardown allows a CRD
+that is already absent. These checks need cluster-wide list access to the
+four custom resource kinds, to RoleBindings and to ClusterRoleBindings.
+In `--check` mode, the ownership checks still run, but Helm only predicts the
+deletion. The playbook then skips the wait for the CR cleanup. A check-mode
+run cannot prove the cleanup or the completion of the finalizers.
 
-Before an owner-approved teardown:
+Before a teardown that the owner approved, do these steps:
 
-1. Verify backups, state location, target namespace and release prefix. Inventory
-   every consumer of the Keycloak operator/CRDs/RBAC, including empty operator
-   installations. Pause GitOps and other writers for the entire maintenance
-   window; the preflight cannot prevent a concurrent resource creation.
-2. Resolve any shared ownership first. Do not bypass a failed preflight or remove
-   client finalizers: the operator must finish their cleanup.
-3. Run the confirmed teardown in that window. Terraform failure stops the run
-   while Keycloak is still available. After Helm removes the CRs, teardown waits
-   for all four kinds to be empty before removing the operator and CRDs, then
-   removes the namespace. Missing resources remain safe to rerun.
-4. On failure, keep writers paused and inspect the failed stage. If Terraform or
-   CR cleanup failed, restore operator/API availability and resolve that cause
-   before retrying. After namespace/storage deletion, reinstalling manifests
-   does not restore data: recovery requires the verified database/state backups.
+1. Verify the backups, the state location, the target namespace and the
+   release prefix.
+2. Make a list of all consumers of the Keycloak operator/CRDs/RBAC. The list
+   must also contain empty operator installations.
+3. Pause GitOps and other writers for the full maintenance window. The
+   preflight cannot prevent a concurrent resource creation.
+4. Fix each case of shared ownership. If the preflight fails, do not bypass it.
+   Do not remove client finalizers. The operator must finish their cleanup.
+5. Run the confirmed teardown in the maintenance window. If Terraform fails,
+   the run stops while Keycloak is still available. After Helm removes the
+   CRs, the teardown waits until all four kinds are empty. Then it removes the
+   operator and the CRDs. Then it removes the namespace. If some resources are
+   already absent, you can safely run the teardown again.
+6. If the teardown fails, do these steps:
+   1. Keep the writers paused.
+   2. Check the stage that failed.
+   3. If Terraform or the CR cleanup failed, make the operator and the API
+      available again.
+   4. Fix that cause before you try again.
 
-The ownership and PVC behavior above was checked against the pinned
+   After the namespace/storage deletion, a new install of the manifests does
+   not restore the data. A restore needs the verified database/state backups.
+
+The ownership and PVC behavior above comes from a source check. The check
+used the pinned
 [Keycloak 26.8.2 operator manifests](https://github.com/keycloak/keycloak-k8s-resources/blob/26.8.2/kubernetes/kubernetes.yml)
-and [CNPG 1.30.1 PVC ownership code](https://github.com/cloudnative-pg/cloudnative-pg/blob/v1.30.1/api/v1/cluster_funcs.go#L1315-L1320)
+and the [CNPG 1.30.1 PVC ownership code](https://github.com/cloudnative-pg/cloudnative-pg/blob/v1.30.1/api/v1/cluster_funcs.go#L1315-L1320)
 ([CNPG chart 0.29.1](https://github.com/cloudnative-pg/charts/blob/cloudnative-pg-v0.29.1/charts/cloudnative-pg/Chart.yaml)).
-Source checks and synthetic tests do not validate a live teardown or backup restore.
-Recheck the upstream resource set and these ownership guards when upgrading the operator pin.
+Source checks and synthetic tests do not verify a live teardown or a backup
+restore. When you update the operator pin, check the upstream resource set
+and these ownership guards again.
 
 ## Configuration
 
-Service settings are in `inventory/production/host_vars/k8s/keycloak.yml`.
-The charts require explicit image tags: the playbook supplies
+The Keycloak settings are in `inventory/production/host_vars/k8s/keycloak.yml`.
+The charts need explicit image tags. The playbook gives them
 `chart_versions.keycloak` and `image_versions.postgresql` from
 `inventory/production/group_vars/all/versions.yml`. The pre-chart always
-creates its bootstrap Secrets, database and HTTPS route; PostgreSQL instances
-must run on different nodes.
+creates its bootstrap Secrets, its database and its HTTPS route. The
+PostgreSQL instances must run on different nodes.
 
 ### Required vault-encrypted fields
 
@@ -157,79 +178,84 @@ Use `h3xinfra-gen-pass` to make the vault ciphertext for each field:
 
 | Field                          | Purpose                                     |
 |--------------------------------|---------------------------------------------|
-| `keycloak.admin.password`      | Master realm admin (also used by Terraform) |
-| `keycloak.db_password`         | Keycloak app DB user password (CNPG)        |
-| `keycloak.realm.smtp.password` | SMTP relay password (if SMTP enabled)       |
+| `keycloak.admin.password`      | Master realm admin. Terraform also uses it. |
+| `keycloak.db_password`         | Password of the Keycloak application database user (CNPG) |
+| `keycloak.realm.smtp.password` | SMTP relay password (if SMTP is enabled)    |
 | `keycloak.clients[*].client_secret` | Per-client confidential OIDC secret    |
 
 ### Adding an OIDC client
 
 For native Argo CD SSO, use the [Argo CD client example](../10-argocd/README.md).
 
-The default for clients is `access_type: CONFIDENTIAL`. Confidential clients require a vault-encrypted
-`client_secret`. Browser/CLI clients can opt into `access_type: PUBLIC` with
-`pkce_code_challenge_method: S256`. Public clients must not have a `client_secret`.
+The default for clients is `access_type: CONFIDENTIAL`. A confidential client
+must have a vault-encrypted `client_secret`. Browser/CLI clients can opt into
+`access_type: PUBLIC` with `pkce_code_challenge_method: S256`. Public clients
+must not have a `client_secret`.
 
-If you set `groups_claim: true` on a client, the layer adds a group membership mapper.
-The mapper puts short group names in ID tokens, access tokens and userinfo. The default value is
-false, and this setting does not change existing clients. With short names, subgroups that have the same name
-under different parents give the same group name. Thus, use unique names for RBAC bindings.
+If you set `groups_claim: true` on a client, the layer adds a group membership
+mapper. The mapper puts short group names in ID tokens, access tokens and
+userinfo. The default value is false. Thus, this setting does not change the
+current clients. With short names, subgroups that have the same name under
+different parents give the same group name. Thus, use unique names for RBAC
+bindings.
 
 `audiences` is a list of other client IDs. For each one, the layer adds an
-audience mapper, so the access tokens of this client carry that client in
+audience mapper. Thus, the access tokens of this client carry that client in
 `aud`. A resource server that checks the audience (for example an MCP server or
 an Envoy Gateway JWT policy) can then accept the tokens. ID tokens do not get
 the audience.
 
-`optional_scopes`, when set, is the complete list of optional client scopes of
-the client. It replaces the realm defaults. Review this list when adding a
-public client: keep `k8s-cluster` exclusive to the confidential `k8s-mcp`
-exchanger. The scope remains optional and is requested only during exchange.
+If you set `optional_scopes`, it is the complete list of optional client
+scopes of the client. It replaces the realm defaults. When you add a public
+client, review this list. Keep `k8s-cluster` exclusive to the confidential
+`k8s-mcp` exchanger. The scope stays optional. A client requests it only
+during the exchange.
 
-For Open WebUI to call Kubernetes MCP, add these fields to its existing client:
+To allow Open WebUI to call Kubernetes MCP, add these fields to its current client:
 
 ```yaml
 audiences: ["k8s-mcp"]
 optional_scopes: ["address", "phone", "offline_access", "microprofile-jwt"]
 ```
 
-Set the exchanger's complete optional-scope list on its existing client:
+Set the complete optional-scope list of the exchanger on its current client:
 
 ```yaml
 optional_scopes: ["address", "phone", "offline_access", "microprofile-jwt", "k8s-cluster"]
 ```
 
 The exchanger still needs confidential client authentication and
-`standard_token_exchange_enabled: true`. Open WebUI's ordinary access token
-carries `k8s-mcp`; the exchanged token carries the `kubernetes` audience and
-Kubernetes groups. The public client must not receive `k8s-cluster`.
+`standard_token_exchange_enabled: true`. The ordinary access token of Open
+WebUI carries `k8s-mcp`. The exchanged token carries the `kubernetes` audience
+and Kubernetes groups. The public client must not receive `k8s-cluster`.
 
 #### Migrating the existing Open WebUI/MCP resources
 
-The owner's state migration completed on 2026-11-13. The audience mapper and
-both optional-scope assignments retain their original IDs at the generic
+The state migration of the owner completed on 2026-11-13. The audience mapper
+and both optional-scope assignments keep their original IDs at the generic
 `client_audiences["openwebui:k8s-mcp"]`, `clients["openwebui"]` and
-`clients["k8s-mcp"]` addresses. The obsolete Open WebUI self-audience mapper
-was removed, and a fresh full Keycloak plan had no changes or drift. The
-three temporary address moves have therefore been retired from current source.
+`clients["k8s-mcp"]` addresses. The retired Open WebUI self-audience mapper
+is gone. A new full Keycloak plan showed no changes and no drift. Thus, the
+current source does not contain the three temporary address moves.
 
 The Open WebUI audience mapper keeps its installed display name
-`k8s-mcp-audience`. Other audience pairs keep the `audience-<client>` naming
-convention. Keycloak 26.8.2's [mapper update implementation](https://github.com/keycloak/keycloak/blob/26.8.2/model/jpa/src/main/java/org/keycloak/models/jpa/ClientAdapter.java#L460-L474)
-updates configuration but preserves the name, so a rename would remain in every
-plan. Do not delete and recreate the mapper to change its name.
+`k8s-mcp-audience`. Other audience pairs keep the `audience-<client>` name
+pattern. The [mapper update implementation](https://github.com/keycloak/keycloak/blob/26.8.2/model/jpa/src/main/java/org/keycloak/models/jpa/ClientAdapter.java#L460-L474)
+of Keycloak 26.8.2 updates the configuration but keeps the name. Thus, a
+rename stays in every plan. Do not delete and recreate the mapper to change
+its name.
 
-State convergence does not establish successful browser login or MCP exchange;
-those user-session checks remain pending. Restore older
-state with its [compatible historical source](#terraform-state), including
-the retired moves, before reviewing the upgrade to current source. Other
-checkouts sharing this NAS state are not separate deployments. Current mocked
-tests continue to enforce client authentication, mapper names and token claims,
-and complete optional-scope assignments.
+State convergence does not prove a successful browser sign-in or MCP
+exchange. Those user-session checks are still open. To restore an older
+state, use its [compatible historical source](#terraform-state). That source
+also contains the retired moves. Do this before you review the update to the
+current source. Other checkouts that share this NAS state are not separate
+deployments. The current mocked tests still enforce client authentication,
+mapper names and token claims, and complete optional-scope assignments.
 
 Example: a public PKCE client for MCP clients on a workstation (RFC 8252). For
 an `http` loopback redirect (`localhost`, `127.0.0.1`, `[::1]`), Keycloak
-ignores the port, so one entry accepts every port:
+ignores the port. Thus, one entry accepts every port:
 
 ```yaml
 - name: "mcp-clients"
@@ -277,7 +303,8 @@ oidc_issuer_url: "{{ keycloak.issuer_url_base }}/realms/{{ keycloak.realm.name }
 ### Groups and memberships
 
 `keycloak.groups` declares realm groups. Each group can get client roles and
-members. The default is `[]`, and then Terraform manages no extra groups.
+members. The default is `[]`. With the default, Terraform manages no extra
+groups.
 
 ```yaml
 keycloak:
@@ -303,8 +330,8 @@ These are the fields:
 | Field          | Default | Purpose |
 |----------------|---------|---------|
 | `name`         | —       | Top-level group name. It must be unique and must not contain `/`. |
-| `client_roles` | `{}`    | Client name → role names. Each role must be in that client's `client_roles`. |
-| `members`      | `[]`    | Lowercase usernames of existing, enabled users. |
+| `client_roles` | `{}`    | Client name → role names. Each role must be in the `client_roles` of that client. |
+| `members`      | `[]`    | Lowercase usernames of users that exist and are enabled. |
 
 The role mappings are authoritative. Terraform sets the role mappings of a
 declared group to exactly its `client_roles` (`exhaustive = true`). It removes
@@ -319,8 +346,8 @@ from `members`, Terraform removes only that membership. When you remove a
 group, Terraform deletes the group, and all of its members lose it.
 
 Thus, `members` is a minimum, not the full member list. Terraform never
-removes a member that `members` does not list, for example a user added in
-the admin console. `terraform plan` does not show such a member as drift.
+removes a member that `members` does not list, for example a user that
+someone added in the admin console. `terraform plan` does not show such a member as drift.
 Check the *Members* tab of each declared group to see who has its roles.
 
 Terraform does not create users. It looks up each member by exact username.
@@ -329,15 +356,15 @@ not exist. It also fails when the user is disabled. On a new realm, Terraform
 reads the users only during apply. Thus, add members only after the users
 exist.
 
-`k8s-admins` and `k8s-viewers` are not allowed in `keycloak.groups`.
-`terraform/kubernetes_oidc.tf` manages them, and an admin assigns their
+`keycloak.groups` must not contain `k8s-admins` or `k8s-viewers`.
+`terraform/kubernetes_oidc.tf` manages them. A Keycloak admin assigns their
 members in the admin console.
 
 A group with the same name can already exist in Keycloak, for example from
 an older playbook. Then the apply fails, because Keycloak rejects a second
 top-level group with that name. There are two ways to fix it:
 
-- Delete the group in the admin console, then run standup. Terraform creates
+- Delete the group in the admin console. Then run standup. Terraform creates
   the group again with only the declared roles and members. The old members
   lose the group roles until the run ends.
 - Import the group. This keeps the group id and its members.
@@ -352,8 +379,8 @@ To import a group, do these steps:
    ```
 
    The tag runs only the tasks that create the Terraform directories and
-   render the file. An older `terraform.tfvars.json` has no `groups`, and
-   then the import fails with "Configuration for import target does not
+   render the file. An older `terraform.tfvars.json` has no `groups`. With
+   that file, the import fails with "Configuration for import target does not
    exist".
 3. Find the group id in the admin console (*Groups* → the group → the id in
    the URL).
@@ -370,25 +397,25 @@ To import a group, do these steps:
 6. Run `ansible-playbook playbooks/10-keycloak/standup.yml`. Terraform then
    sets the role mappings and adds the members.
 
-`tests/test_groups.py` runs all local `*.tftest.hcl` files together with a mocked
-provider: `groups.tftest.hcl` covers groups and memberships, and
-`oidc_clients.tftest.hcl` covers client authentication and claims. It copies only
-the required module definitions into a temporary directory; no deployment state,
-backend or generated tfvars are loaded.
+`tests/test_groups.py` runs all local `*.tftest.hcl` files together with a
+mocked provider. `groups.tftest.hcl` covers groups and memberships.
+`oidc_clients.tftest.hcl` covers client authentication and claims. The script
+copies only the necessary module definitions into a temporary directory. It
+does not load deployment state, a backend or generated tfvars.
 
 ### Master realm
 
 Terraform manages only the MFA browser flow of the built-in `master` realm
-(`mfa.tf`). It does not manage the other realm settings, so it does not turn
-on brute-force detection there. Turn it on once in the admin console:
+(`mfa.tf`). It does not manage the other realm settings. Thus, it does not
+turn on brute-force detection there. Turn it on one time in the admin console:
 *master* realm → *Realm settings* → *Security defenses* → *Brute force
-detection*. Do not import the realm into Terraform: Terraform would then
-manage every master realm setting.
+detection*. Do not import the realm into Terraform. If you import it,
+Terraform manages every master realm setting.
 
-A lockout of the admin user also stops the Terraform login (password grant
+A lockout of the admin user also stops the Terraform sign-in (password grant
 on `admin-cli`). The admin route rule keeps the master realm behind
-`keycloak.ingress.trusted_setup_ips`, so only allowed sources can cause a
-lockout. The password grant cannot send a second factor, so do not require
+`keycloak.ingress.trusted_setup_ips`. Thus, only allowed sources can cause a
+lockout. The password grant cannot send a second factor. Thus, do not require
 OTP for the admin user that Terraform uses.
 
 ### Proxy headers
@@ -397,21 +424,21 @@ The main chart sets the Keycloak `proxy-trusted-addresses` option to the pod
 CIDRs (`cluster_cidr.ipv4` and `cluster_cidr.ipv6`). The Envoy pods connect
 from these CIDRs. Keycloak ignores `X-Forwarded-*` headers from all other
 sources. To trust all sources again, set `keycloak.proxy_trusted_addresses: []`.
-All other pods also use these CIDRs. Host traffic can also use them (the
-`cilium_host` address). Thus the main controls are the gateway header removal
-and the network policy.
+All other pods also use these CIDRs. Traffic from the host network can also
+use them (the `cilium_host` address). Thus, the main controls are the header
+removal in the Gateway and the network policy.
 
-The shared gateway removes the client copies of these headers before Envoy
+The shared Gateway removes the client copies of these headers before Envoy
 sets its own values (`ClientTrafficPolicy` in `h3xinfra-gateway-pre`). To
-turn off this policy, set `gateway.client_traffic_policy.enabled: false` and
-run `playbooks/07-gateway/standup.yml`.
+turn off this policy, set `gateway.client_traffic_policy.enabled: false`.
+Then run `playbooks/07-gateway/standup.yml`.
 
-After the deploy, the playbook waits until the StatefulSet replaces all
+After the deployment, the playbook waits until the StatefulSet replaces all
 Keycloak pods. Then it sends `3 * keycloak.replicas` requests to
-`/realms/master/.well-known/openid-configuration` and reads the issuer from
-each response. Envoy spreads these requests over the pods, so usually each
-pod answers some of them. If Keycloak does not trust the Envoy pods,
-the issuer starts with `http://` and the playbook stops.
+`/realms/master/.well-known/openid-configuration`. It reads the issuer from
+each response. Envoy spreads these requests over the pods. Thus, usually each
+pod answers some of them. If Keycloak does not trust the Envoy pods, the
+issuer starts with `http://`. Then the playbook stops.
 
 ### Network policy
 
@@ -425,14 +452,14 @@ the operator does not remove its policy.
 |---------------|---------|--------|
 | `keycloak.network_policy.enabled` | `false` | Ingress rules. Port 8080 accepts only the Envoy Gateway pods and the Keycloak Operator. Kubelet probes use port 9000. The database accepts Keycloak, its own instances, the CNPG operator, Prometheus and kubelet probes. |
 | `keycloak.network_policy.egress` | `false` | Egress rules. Keycloak can reach DNS, the other Keycloak pods, the database and the realm SMTP port. The database can reach DNS, the API server and its own instances. |
-| `keycloak.network_policy.cnpg_operator_namespace` | `cnpg-system` | Namespace of the CloudNativePG operator. |
+| `keycloak.network_policy.cnpg_operator_namespace` | `cnpg-system` | Namespace of the CNPG operator. |
 | `keycloak.network_policy.prometheus_namespace` | `""` | Namespace of the Prometheus that scrapes the CNPG metrics port. An empty value removes the rule. |
 
 Enable the ingress rules first and the egress rules second:
 
 1. Set `keycloak.network_policy.enabled: true`.
 2. Run `ansible-playbook playbooks/10-keycloak/standup.yml`.
-3. Log in to one application through the gateway OIDC flow.
+3. Sign in to one application through the Gateway OIDC flow.
 4. Run one `kubectl` command as an OIDC user.
 5. Run `kubectl -n keycloak get networkpolicy`.
 6. Make sure that `<release_name_prefix>-main-network-policy` is not in the list.
@@ -446,30 +473,31 @@ Enable the ingress rules first and the egress rules second:
 13. Send a test email from the realm email settings.
 14. Do steps 3 to 8 again.
 
-To roll back, set the key to `false` and run the playbook. The Keycloak
+To roll back, set the key to `false`. Then run the playbook. The Keycloak
 Operator then creates its default `NetworkPolicy` again.
 
 ## Terraform state
 
 `terraform/backend.tf` configures a `local` backend at
-`/h3xinfra/state/keycloak/terraform.tfstate`. This path is on the NAS mounted
-at `/h3xinfra` in the controller, so workspace clones share the same state.
-The playbook creates the state directory before Terraform runs. The Ansible
-Terraform module uses `force_init: true` to initialize the configured backend
-on each run.
+`/h3xinfra/state/keycloak/terraform.tfstate`. This path is on the NAS mount at
+`/h3xinfra` on the Ansible controller. Thus, workspace clones share the same
+state. The playbook creates the state directory before Terraform runs. The
+Ansible Terraform module uses `force_init: true` to initialize the configured
+backend on each run.
 
-The completed MFA and Open WebUI/MCP migrations no longer need their old address moves in
-current source. Before restoring older state, pause normal applies and use the
-recorded compatible migration-bearing source revision for that backup. The
-pre-cleanup moves remain in Git history. Use an isolated recovery checkout;
-do not replay the historical stack or overwrite adopted state merely to
-retire compatibility code. Review the state upgrade before resuming automation;
-unexpected flow, client or authentication changes are a stop condition. Keep
-the recovery copy intact; its age does not require keeping obsolete bridges in
-the normal deployment configuration.
+The MFA and Open WebUI/MCP migrations are complete. The current source does
+not need their old address moves. Before you restore an older state, pause the
+normal applies. Then use the recorded compatible source revision with the
+migrations for that backup. The Git history keeps the pre-cleanup moves. Use
+an isolated recovery checkout. Do not replay the historical stack or overwrite
+the adopted state only to retire compatibility code. Review the state update
+before you start the automation again. Unexpected flow, client or
+authentication changes are a stop condition. Keep the recovery copy intact.
+The age of the copy is not a reason to keep retired bridges in the normal
+deployment configuration.
 
 The playbook renders a new `terraform.tfvars.json` file at each run.
 
-The file contains plaintext secrets. Keep `terraform.tfvars.json` only on the local machine. Git already ignores it.
+The file contains plaintext secrets. Keep `terraform.tfvars.json` only on the Ansible controller. Git already ignores it.
 
 

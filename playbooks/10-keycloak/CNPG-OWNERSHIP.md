@@ -2,120 +2,154 @@
 
 `10-keycloak` owns the shared `cloudnative-pg` Helm release in `cnpg-system`.
 It installs the operator before any Keycloak CNPG Cluster. The private Open
-WebUI database consumes the same operator; it must not install a second copy.
-Keycloak teardown retains the shared release, namespace and CRDs.
+WebUI database uses the same operator. It must not install a second copy. The
+Keycloak teardown keeps the shared release, the namespace and the CRDs.
 
 The owner's private `20-openwebui` handoff completed on 2026-11-13. Both old
-Terraform addresses are absent, the fresh private plan has no changes, and
-the operator-only rerun without acknowledgement passed. Resource UIDs and
-specifications were unchanged, the Helm release was at revision 10, and the
+Terraform addresses are absent. The fresh private plan has no changes. The
+operator-only rerun without acknowledgement passed. The resource UIDs and
+specifications did not change. The Helm release was at revision 10. The
 operator did not restart.
-The completed private forget-only blocks have been retired; normal runs use
-the existing ownership marker and retain the checks described below.
+The completed private forget-only blocks are retired. Normal runs use the
+current ownership marker. They keep the checks that this document describes
+below.
 
-The chart repository is `https://cloudnative-pg.github.io/charts`; the version
-comes from `chart_versions.cloudnative_pg`. `cnpg-values.yaml` retains the
-operator budgets. The namespace keeps enforce/audit/warn PSA labels at
-`restricted`, using the existing `h3xinfra-pod-security` field manager.
-Helm upgrades reuse existing values without reset, replacement, forced
-ownership, automatic uninstall or failure cleanup.
+The chart repository is `https://cloudnative-pg.github.io/charts`. The version
+comes from `chart_versions.cloudnative_pg`. `cnpg-values.yaml` keeps the
+operator budgets. The namespace keeps its enforce/audit/warn PSA labels at
+`restricted`. The playbook manages these labels with the current
+`h3xinfra-pod-security` field manager.
+Helm upgrades reuse the current values. They do not use these features:
 
-After adoption, ordinary runs can reconcile reviewed chart-pin and values-file
-changes. Exact existing-values, pinned-manifest and live-CRD comparisons are
-one-time adoption gates. Release identity, state and controller ownership/image
-checks still run. Helm merges the reviewed values file into retained values;
-unspecified existing values are reused. No manual Helm edit or additional
-override is needed for an owned release's normal configuration updates.
-Deleting a key from the desired file alone does not clear its installed value;
-future removals need a reviewed explicit reset or migration.
+- A reset of the values.
+- Replacement.
+- Forced ownership.
+- Automatic uninstall.
+- Cleanup after a failure.
+
+After adoption, ordinary runs can reconcile reviewed changes to the chart pin
+and the values file. The exact comparisons of current values, pinned manifests
+and live CRDs are one-time adoption gates. The checks of release identity,
+state and controller ownership/image still run. Helm merges the reviewed
+values file into the retained values. Helm reuses the current values that the
+file does not specify. Normal configuration updates of an owned release need
+no manual Helm edit and no additional override. If you delete a key from the
+desired file, this alone does not clear its installed value. A future removal
+needs a reviewed explicit reset or migration.
 
 ## Fresh installations
 
-On a fresh cluster, ordinary Keycloak standup installs the operator and waits
-for the Cluster CRD and controller before creating the Keycloak database.
-The private stack runs Keycloak before Terraform application layers, including
-Open WebUI. A pre-created empty `cnpg-system` namespace is supported; the
-installer checks native workloads/configuration and refuses orphaned operator
-objects or conflicting namespace ownership/security settings.
+On a fresh cluster, the ordinary Keycloak standup installs the operator. Then
+it waits for the Cluster CRD and the controller. After that, it creates the
+Keycloak database. The private stack runs Keycloak before the Terraform
+application layers, for example Open WebUI. The installer supports a
+pre-created empty `cnpg-system` namespace. It checks the native
+workloads/configuration. It refuses orphaned operator objects. It also refuses
+namespace ownership/security settings that conflict.
 
-The operator can also be installed by itself:
+You can also install the operator by itself:
 
 ```sh
 ansible-playbook -i inventory/production playbooks/10-keycloak/standup.yml --tags cnpg-operator
 ```
 
 From a private checkout, prefix the playbook path with `h3xinfra/`. This tag
-runs the connection guards and operator tasks only. It does not change
+runs only the connection guards and the operator tasks. It does not change
 Keycloak clients/groups, deploy Keycloak charts or apply Keycloak Terraform.
 
 ## Adopting an existing installation
 
-Source preparation is not authorization to migrate a live operator. The
-existing owner must first relinquish both the Helm release and namespace PSA
-labels without deleting either. Current source no longer contains the completed
-private `20-openwebui` transition. A restored pre-handoff state needs its
-[compatible historical source](README.md#terraform-state) and a separately
-reviewed state upgrade before current automation resumes. The namespace itself
-was not a separate Terraform namespace resource.
+Source preparation does not authorize the migration of a live operator.
+First, the old owner must give up both the Helm release and the namespace PSA
+labels. It must not delete either of them. The current source no longer
+contains the completed private `20-openwebui` transition. A restored
+pre-handoff state needs its
+[compatible historical source](README.md#terraform-state). It also needs a
+separately reviewed state upgrade before the current automation starts again.
+The namespace itself was not a separate Terraform namespace resource.
 
 The coordinated source can merge after review and CI, before the deployment
-window. An existing normal stack will then stop at this adoption guard until
-the owner completes the handoff. Earlier stack stages may already have run;
-the guard prevents this new owner from modifying the unadopted operator.
+window. For an installation that exists, a normal stack run will then stop at
+this adoption guard until the owner completes the handoff. Earlier stack
+stages can run before the guard. The guard stops this new owner before it
+changes the unadopted operator.
 
 Freeze normal Keycloak/full-stack and old-owner runs during the handoff.
-Verify the actual release identity, all stored values, controller image,
-served CRD schemas, PSA labels and healthy databases. Freeze chart upgrades
-for this change: the existing release must match the current pinned chart
-and rendered manifests exactly. Do not make a mismatch pass by resetting
-values, changing resource names or uninstalling/reinstalling the chart.
+Verify these items:
 
-After applying and verifying the old owner's reviewed forget-only plan,
-run only the operator task path once with the explicit acknowledgement:
+- The actual release identity.
+- All stored values.
+- The controller image.
+- The served CRD schemas.
+- The PSA labels.
+- The health of the databases.
+
+Freeze chart updates for this change. The deployed release must match the
+current pinned chart and the rendered manifests exactly. If there is a
+mismatch, do not reset values, change resource names or uninstall/reinstall
+the chart to make it pass.
+
+Apply the reviewed forget-only plan of the old owner. Verify the result. Then
+run only the operator task path one time with the explicit acknowledgement:
 
 ```sh
 ansible-playbook -i inventory/production playbooks/10-keycloak/standup.yml \
   --tags cnpg-operator -e cnpg_operator_handoff=yes-terraform-forgot-cnpg
 ```
 
-The acknowledgement does not bypass identity, values, chart/manifest,
-controller ownership or live CRD schema checks. An existing unmarked release
-must be deployed and have its expected controller. A foreign, pending or
-unmarked failed release requires separate investigation. No new Helm owner
-is forced onto existing resources.
+The acknowledgement does not bypass these checks:
+
+- Identity.
+- Values.
+- Chart/manifest.
+- Controller ownership.
+- Live CRD schema.
+
+An unmarked release that exists must have the deployed status. It must also
+have its expected controller. A foreign release, a release in a `pending-*`
+state, or an unmarked failed release needs a separate investigation. The
+playbook does not force a new Helm owner onto resources that exist.
 
 The namespace annotation `h3xinfra.io/cnpg-operator-owner: 10-keycloak`
 records the orchestration owner for later runs. **It is not proof that a
-Terraform state forgot the release or labels.** That evidence comes from the
-owner's state handoff. The marker is written after preflight checks, before
-Helm reconciliation, so a failed public install can leave it behind. A retry
-still checks identity, state and controller ownership; a failed release must
-match the current pin. Do not remove the marker or supply acknowledgement to
-hide a mismatch.
+Terraform state forgot the release or the labels.** That evidence comes from
+the owner's state handoff. The playbook writes the marker after the preflight
+checks and before the Helm reconciliation. Thus, a failed public install can
+leave the marker behind. A retry still checks identity, state and controller
+ownership. A failed release must match the current pin. Do not remove the
+marker or supply the acknowledgement to hide a mismatch.
 
-Before resuming normal automation, verify continuous operator identity,
-namespace labels, CRD identities/schemas and both databases. Review a fresh
-old-owner plan and require no attempt to recreate or delete the operator or
-its labels. Do not revert the old owner's resource declarations and apply;
-returning ownership requires a separate reviewed handoff with public runs
-frozen. Keep the state handoff, resource identity and no-acknowledgement rerun
-evidence with the completion record. Older recovery copies follow
-[state recovery](README.md#terraform-state) and do not require retaining
-completed transition blocks in current source.
+Before you start normal automation again, verify the continuous operator
+identity, the namespace labels, the CRD identities/schemas and both databases.
+Review a fresh plan of the old owner. This plan must not try to recreate or
+delete the operator or its labels. Do not apply a revert of the resource
+declarations of the old owner. A return of ownership needs a separate reviewed
+handoff with frozen public runs. Keep the evidence of the state handoff, the
+resource identity and the no-acknowledgement rerun with the completion record.
+Older recovery copies follow [state recovery](README.md#terraform-state). They
+do not need the completed transition blocks in the current source.
 
 ## Source validation limits
 
 Tests run the real task conditions against isolated stub Kubernetes/Helm
-modules for fresh, already-owned, legacy, mismatched and partial-failure
-cases. Real local Helm renders verify the pinned controller and CRD source.
-These checks do not inspect a cluster, Terraform state or live schema drift;
-owner verification remains required before deployment.
+modules. They cover these cases:
 
-Required Kubernetes discovery failures are rejected explicitly; an unavailable
-API is not evidence that resources are absent. The pinned `kubernetes.core`
-6.6.0 `k8s_info` implementation nevertheless converts an HTTP 400 read into
-`api_found: true, resources: []`, which its result cannot distinguish from an
-empty response. Before a fresh install or handoff, the owner must independently
-verify successful reads of the required namespace, controller and chart-object
-identities and resolve API/query errors. The local mocks do not prove successful
-live reads, and these guards do not remove that module limitation.
+- Fresh installations.
+- Releases that the layer already owns.
+- Older installations.
+- Mismatches.
+- Partial failures.
+
+Real local Helm renders verify the pinned controller and CRD source. These
+checks do not read a cluster, a Terraform state or live schema drift. Before
+deployment, the owner must still verify these items.
+
+The playbook explicitly rejects failures of the required Kubernetes discovery.
+An unavailable API is not evidence that resources are absent. But the pinned
+`kubernetes.core` 6.6.0 `k8s_info` implementation converts an HTTP 400 read
+into `api_found: true, resources: []`. Its result cannot distinguish this from
+an empty response. Before a fresh install or handoff, the owner must
+independently verify successful reads of the required namespace, controller
+and chart-object identities. The owner must also fix API/query errors. The
+local mocks do not prove successful live reads. These guards do not remove
+that module limitation.
