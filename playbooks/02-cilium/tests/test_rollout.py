@@ -1,4 +1,4 @@
-"""Check chart-driven agent restarts and per-DaemonSet rollout limits."""
+"""Check chart-driven agent restarts, per-DaemonSet rollout limits and the socket LB scope."""
 
 import copy
 import os
@@ -46,7 +46,7 @@ class CiliumChartRolloutTests(unittest.TestCase):
             raise AssertionError("render tests must use the pinned Cilium chart")
         cls.values = yaml.safe_load((LAYER / "cilium-values.yaml").read_text())
 
-    def render(self, *, enabled=False, debug=False, rollout=None):
+    def render(self, *, enabled=False, debug=False, rollout=None, hostns_only=None):
         values = copy.deepcopy(self.values)
         values["hostFirewall"] = {"enabled": enabled}
         values["debug"] = {"enabled": debug}
@@ -61,6 +61,8 @@ class CiliumChartRolloutTests(unittest.TestCase):
         values["extraConfig"]["ipv6-mcast-device"] = "eth0"
         if rollout is not None:
             values["rollOutCiliumPods"] = rollout
+        if hostns_only is not None:
+            values["socketLB"] = {"hostNamespaceOnly": hostns_only}
         result = subprocess.run(
             [HELM, "template", "h3xinfra-cilium-main", self.chart,
              "--namespace", "kube-system", "-f", "-"],
@@ -95,6 +97,8 @@ class CiliumChartRolloutTests(unittest.TestCase):
         for options, key, value in (
             ({"enabled": True}, "enable-host-firewall", "true"),
             ({"debug": True}, "debug", "true"),
+            # The rollback of the socket LB scope also rolls the agents.
+            ({"hostns_only": False}, "bpf-lb-sock-hostns-only", "false"),
         ):
             with self.subTest(options=options):
                 changed = self.render(**options)
@@ -107,6 +111,14 @@ class CiliumChartRolloutTests(unittest.TestCase):
         # Returning to disabled produces the same template, so an on -> off
         # upgrade also replaces the enabled template without a custom marker.
         self.assertEqual(baseline, self.render())
+
+    def test_socket_lb_stays_in_the_host_namespace(self):
+        # Kata VM pods bypass socket LB, so pods need the per-packet Service
+        # translation of bpf_lxc. kube-proxy-replacement=true enables socket
+        # LB for the host namespace even with bpf-lb-sock=false.
+        data = self.render()["ConfigMap", "cilium-config"]["data"]
+        self.assertEqual(data["kube-proxy-replacement"], "true")
+        self.assertEqual(data["bpf-lb-sock-hostns-only"], "true")
 
     def test_rendered_agent_and_envoy_roll_one_at_a_time(self):
         documents = self.render()

@@ -95,6 +95,17 @@ bpf:
 
 kubeProxyReplacement: true
 
+# Socket LB only in the host network namespace (cilium-config
+# bpf-lb-sock-hostns-only "true"). Pods get the per-packet Service
+# translation of bpf_lxc on their veth, as with kube-proxy. Kata VM pods
+# need it: their guest kernel owns the sockets, so the socket LB hooks of the
+# host never see them and a ClusterIP is not reachable. Do not set
+# socketLB.enabled: with kubeProxyReplacement true the agent always enables
+# socket LB, and the rendered bpf-lb-sock "false" has no effect. A change of
+# this value rolls the agents. See KUBE-PROXY-REPLACEMENT.md.
+socketLB:
+  hostNamespaceOnly: true
+
 # Preserve source IP with direct server return.
 loadBalancer:
   mode: "dsr"

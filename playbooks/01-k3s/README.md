@@ -628,6 +628,11 @@ only in its virtual machine.
 This layer installs only the runtime on the nodes. The RuntimeClass, the
 node label and the pods are not in this layer.
 
+A Kata pod gets to a Service only through the per-packet LB of Cilium.
+`playbooks/02-cilium` limits socket LB to the host network namespace for this
+reason. See
+[Socket LB and Pods](../02-cilium/KUBE-PROXY-REPLACEMENT.md#socket-lb-and-pods).
+
 These inventory variables control the playbook:
 
 | Variable | Effect |
