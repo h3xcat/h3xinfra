@@ -1,0 +1,387 @@
+---
+# Per-node steps for kata-ci.yml. The plays run them with serial: 1 and
+# define the kata_ci_* vars. A node with kata_ci_enabled gets Kata and the
+# kata-ci runtime. On every other node, the kata-ci runtime is removed.
+
+# Rollback: kata_ci_enabled false removes only the containerd drop-in. The
+# release under /opt/kata-releases, /opt/kata and the module files stay. The
+# removal comes before the service check: if the drop-in stops K3s from
+# starting, the unit fails or restarts in a loop, and the check stops the
+# play. systemd then starts K3s again without the drop-in.
+- name: Remove the containerd drop-in for the kata-ci runtime
+  ansible.builtin.file:
+    path: "{{ kata_ci_containerd_dropin }}"
+    state: absent
+  when: not (kata_ci_on | bool)
+
+- name: Read and check the K3s service state
+  ansible.builtin.import_tasks: k3s-service-state.yml
+  vars:
+    k3s_service_name: "{{ kata_ci_unit_name }}"
+
+# --- Checks before any change ------------------------------------------------
+
+- name: Read the machine architecture
+  ansible.builtin.command: uname -m
+  register: kata_ci_arch
+  changed_when: false
+  check_mode: false
+  when: kata_ci_on | bool
+
+- name: Read the KVM device
+  ansible.builtin.stat:
+    path: /dev/kvm
+  register: kata_ci_kvm
+  when: kata_ci_on | bool
+
+- name: Refuse a node without x86_64 or KVM
+  ansible.builtin.assert:
+    that:
+      - (kata_ci_arch.stdout | trim) == 'x86_64'
+      - kata_ci_kvm.stat.ischr | default(false) | bool
+    fail_msg: >-
+      Kata needs an x86_64 node with /dev/kvm (the play installs
+      kata-static-<kata_version>-amd64). {{ inventory_hostname }} is
+      {{ kata_ci_arch.stdout | trim }}, and /dev/kvm is
+      {{ 'present' if (kata_ci_kvm.stat.ischr | default(false) | bool) else 'missing' }}.
+    quiet: true
+  when: kata_ci_on | bool
+
+# containerd of a stopped K3s cannot answer. Its node gets the check at the
+# next run.
+- name: Read the containerd version
+  ansible.builtin.command:
+    argv: [k3s, crictl, version]
+  register: kata_ci_crictl_version
+  changed_when: false
+  check_mode: false
+  when:
+    - kata_ci_on | bool
+    - k3s_service_active | bool
+
+- name: Refuse a containerd older than 2.3
+  ansible.builtin.assert:
+    that: kata_ci_containerd_version is version('2.3', '>=')
+    fail_msg: >-
+      Kata {{ kata_version }} needs containerd 2.3 or later. K3s on
+      {{ inventory_hostname }} runs containerd {{ kata_ci_containerd_version }}.
+      Update K3s first.
+    quiet: true
+  when:
+    - kata_ci_on | bool
+    - k3s_service_active | bool
+
+# --- Kata release ------------------------------------------------------------
+
+- name: Read the Kata release directory
+  ansible.builtin.stat:
+    path: "{{ kata_ci_release_dir }}"
+    get_checksum: false
+  register: kata_ci_release
+  when: kata_ci_on | bool
+
+# The archive is about 1 GiB and the extracted release about 2.1 GiB (Kata
+# 4.4.0). The download also uses a temporary copy. The margin keeps the node
+# away from the kubelet disk eviction threshold.
+- name: Read the free disk space under /opt
+  ansible.builtin.command:
+    argv: [df, --output=avail, --block-size=1M, /opt]
+  register: kata_ci_free
+  changed_when: false
+  check_mode: false
+  when:
+    - kata_ci_on | bool
+    - not kata_ci_release.stat.exists
+
+- name: Refuse the download with less than 10 GiB free under /opt
+  ansible.builtin.assert:
+    that: (kata_ci_free.stdout_lines | last | trim | int) >= 10240
+    fail_msg: >-
+      {{ inventory_hostname }} has {{ kata_ci_free.stdout_lines | last | trim }} MiB
+      free under /opt. The Kata release needs 10 GiB (10240 MiB).
+    quiet: true
+  when:
+    - kata_ci_on | bool
+    - not kata_ci_release.stat.exists
+
+- name: Install zstd for the Kata release archive
+  ansible.builtin.apt:
+    name: zstd
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+  when:
+    - kata_ci_on | bool
+    - not kata_ci_release.stat.exists
+
+- name: Create the Kata releases directory
+  ansible.builtin.file:
+    path: /opt/kata-releases
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: kata_ci_on | bool
+
+# get_url fails when the sha256 of the download differs from kata_sha256. An
+# archive that is already there and has the correct sha256 is not downloaded
+# again.
+- name: Download the Kata release archive
+  ansible.builtin.get_url:
+    url: "{{ kata_ci_url }}"
+    dest: "{{ kata_ci_archive }}"
+    checksum: "sha256:{{ kata_sha256 }}"
+    owner: root
+    group: root
+    mode: "0600"
+    timeout: 120
+  when:
+    - kata_ci_on | bool
+    - not kata_ci_release.stat.exists
+
+# The archive holds ./opt/kata/...; --strip-components=3 removes ./opt/kata.
+# tar writes into a temporary directory, and the rename makes the release
+# directory appear only after a complete extraction. GNU tar refuses absolute
+# member names and "..". kata_version is checked to be digits and dots.
+- name: Extract the Kata release
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      rm -rf '{{ kata_ci_release_dir }}.partial'
+      mkdir -m 0755 '{{ kata_ci_release_dir }}.partial'
+      tar --zstd -xf '{{ kata_ci_archive }}' -C '{{ kata_ci_release_dir }}.partial' --no-same-owner --strip-components=3 ./opt/kata
+      mv '{{ kata_ci_release_dir }}.partial' '{{ kata_ci_release_dir }}'
+    creates: "{{ kata_ci_release_dir }}"
+  when: kata_ci_on | bool
+
+- name: Remove the Kata release archive
+  ansible.builtin.file:
+    path: "{{ kata_ci_archive }}"
+    state: absent
+  when: kata_ci_on | bool
+
+# The shim, QEMU, virtiofsd, the QEMU configuration and the guest kernel and
+# image that it names. follow: a dangling symlink counts as missing.
+- name: Read the Kata files of the kata-ci runtime
+  ansible.builtin.stat:
+    path: "{{ kata_ci_release_dir }}/{{ item }}"
+    follow: true
+    get_checksum: false
+  loop:
+    - runtime-rs/bin/containerd-shim-kata-v2
+    - bin/qemu-system-x86_64
+    - libexec/virtiofsd
+    - share/defaults/kata-containers/runtime-rs/configuration-qemu-runtime-rs.toml
+    - share/kata-containers/vmlinux.container
+    - share/kata-containers/kata-containers.img
+  register: kata_ci_files
+  when:
+    - kata_ci_on | bool
+    - kata_ci_release_ready | bool
+
+- name: Refuse a Kata release without these files
+  ansible.builtin.assert:
+    that: (kata_ci_files.results | rejectattr('stat.exists') | list | length) == 0
+    fail_msg: >-
+      {{ kata_ci_release_dir }} on {{ inventory_hostname }} has no
+      {{ kata_ci_files.results | rejectattr('stat.exists') | map(attribute='item') | list }}.
+      Remove the directory and run the play again.
+    quiet: true
+  when:
+    - kata_ci_on | bool
+    - kata_ci_release_ready | bool
+
+# The release archive has no config.d directory.
+- name: Create the config.d directory of the Kata release
+  ansible.builtin.file:
+    path: "{{ kata_ci_kata_dropin | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - kata_ci_on | bool
+    - kata_ci_release_ready | bool
+
+# The shim merges config.d/*.toml into configuration-qemu-runtime-rs.toml at
+# each pod start, so a change needs no restart. An array replaces the shipped
+# array. The release default for enable_annotations allows kernel_params,
+# default_vcpus and default_memory; the empty list allows no annotation.
+- name: Write the Kata hardening drop-in
+  ansible.builtin.copy:
+    dest: "{{ kata_ci_kata_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by h3xinfra (playbooks/01-k3s/kata-ci.yml). Do not edit.
+      # The Kata shim merges this file into configuration-qemu-runtime-rs.toml.
+      [hypervisor.qemu]
+      path = "{{ kata_ci_qemu }}"
+      valid_hypervisor_paths = ["{{ kata_ci_qemu }}"]
+      virtio_fs_daemon = "{{ kata_ci_virtiofsd }}"
+      valid_virtio_fs_daemon_paths = ["{{ kata_ci_virtiofsd }}"]
+      # Pod annotations cannot change the VM configuration.
+      enable_annotations = []
+      # QEMU runs as root. Its seccomp filter blocks obsolete system calls,
+      # privilege changes, new processes and resource control calls.
+      rootless = false
+      seccomp_sandbox = "on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny"
+      # No performance counters and no nested virtualization in the guest.
+      cpu_features = "pmu=off,vmx=off"
+
+      [agent.kata]
+      debug_console_enabled = false
+
+      [runtime]
+      # An emptyDir is a sparse disk image on the node and ext4 in the guest,
+      # so dockerd can use overlayfs on /var/lib/docker.
+      emptydir_mode = "block-plain"
+  when:
+    - kata_ci_on | bool
+    - kata_ci_release_ready | bool
+
+# A rename replaces the symlink, so a new pod sees the old or the new release.
+# Pods that run keep the files of their release.
+- name: Point /opt/kata to the Kata release
+  ansible.builtin.file:
+    src: "{{ kata_ci_release_dir }}"
+    dest: /opt/kata
+    state: link
+  when:
+    - kata_ci_on | bool
+    - kata_ci_release_ready | bool
+
+# The shim opens /dev/vhost-vsock (agent channel) and /dev/vhost-net (pod
+# network). persistent writes /etc/modules-load.d/<module>.conf.
+- name: Load the vhost modules now and at boot
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+    persistent: present
+  loop:
+    - vhost_vsock
+    - vhost_net
+  when: kata_ci_on | bool
+
+# --- containerd runtime ------------------------------------------------------
+
+# K3s writes only the imports line for this directory. It does not create it.
+- name: Create the containerd drop-in directory
+  ansible.builtin.file:
+    path: "{{ kata_ci_containerd_dropin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: kata_ci_on | bool
+
+# version = 3: containerd migrates an imported file without a version from
+# version 1. A plugin table in an imported file merges into the table of the
+# generated configuration; the runc runtime stays. runtime_path makes
+# containerd ignore runtime_type for the shim lookup. A privileged container
+# gets no host devices. No pod or container annotation goes to the shim.
+- name: Write the containerd drop-in for the kata-ci runtime
+  ansible.builtin.copy:
+    dest: "{{ kata_ci_containerd_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by h3xinfra (playbooks/01-k3s/kata-ci.yml). Do not edit.
+      # K3s imports config-v3.toml.d/*.toml. containerd reads this file only
+      # when K3s starts.
+      version = 3
+
+      [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.'kata-ci']
+        runtime_type = "io.containerd.kata.v2"
+        runtime_path = "{{ kata_ci_shim }}"
+        privileged_without_host_devices = true
+        pod_annotations = []
+        container_annotations = []
+
+      [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.'kata-ci'.options]
+        ConfigPath = "{{ kata_ci_config }}"
+  when: kata_ci_on | bool
+
+# --- Restart -----------------------------------------------------------------
+
+- name: Read the runtimes of the running containerd
+  ansible.builtin.command:
+    argv: [k3s, crictl, info, -o, json]
+  register: kata_ci_crictl_info
+  changed_when: false
+  check_mode: false
+  when: k3s_service_active | bool
+
+# A fact, so the decision stays the same during the restart tasks. The check
+# after the restart registers kata_ci_crictl_info again.
+- name: Decide whether K3s must restart
+  ansible.builtin.set_fact:
+    kata_ci_restart: "{{ (k3s_service_active | bool) and kata_ci_loaded != kata_ci_expected }}"
+
+# The service state and the restart are shared with the other playbooks that
+# restart K3s (tasks/k3s-service-state.yml, tasks/restart-k3s.yml).
+- name: Restart K3s to load the containerd drop-in
+  ansible.builtin.import_tasks: restart-k3s.yml
+  vars:
+    k3s_service_name: "{{ kata_ci_unit_name }}"
+    k3s_restart: "{{ kata_ci_restart }}"
+
+# --- Checks after the restart ------------------------------------------------
+
+- name: Read the runtimes of the containerd after the restart
+  ansible.builtin.command:
+    argv: [k3s, crictl, info, -o, json]
+  register: kata_ci_crictl_info
+  changed_when: false
+  retries: 6
+  delay: 5
+  until: kata_ci_crictl_info.rc == 0
+  when:
+    - k3s_service_active | bool
+    - not ansible_check_mode
+
+# A containerd configuration template (config-v3.toml.tmpl) can drop the
+# imports line. grep -c prints only the number of matching lines.
+- name: Count the drop-in imports in the generated containerd configuration
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -c
+      - -F
+      - '"{{ kata_ci_containerd_dropin_dir }}/*.toml"'
+      - "{{ kata_ci_containerd_config }}"
+  register: kata_ci_imports
+  changed_when: false
+  check_mode: false
+  failed_when: kata_ci_imports.rc > 1
+  when:
+    - kata_ci_on | bool
+    - k3s_service_active | bool
+    - not ansible_check_mode
+
+- name: Check that containerd imports the drop-in directory
+  ansible.builtin.assert:
+    that: (kata_ci_imports.stdout | trim | int) > 0
+    fail_msg: >-
+      {{ kata_ci_containerd_config }} on {{ inventory_hostname }} does not import
+      {{ kata_ci_containerd_dropin_dir }}/*.toml. Look for a config-v3.toml.tmpl or
+      config.toml.tmpl template next to it.
+    quiet: true
+  when:
+    - kata_ci_on | bool
+    - k3s_service_active | bool
+    - not ansible_check_mode
+
+- name: Check the kata-ci runtime of the running containerd
+  ansible.builtin.assert:
+    that: kata_ci_loaded == kata_ci_expected
+    fail_msg: >-
+      containerd on {{ inventory_hostname }} has the kata-ci runtime
+      {{ kata_ci_loaded }}, not {{ kata_ci_expected }}. Look at
+      {{ kata_ci_containerd_dropin_dir }} and the K3s journal.
+    quiet: true
+  when:
+    - k3s_service_active | bool
+    - not ansible_check_mode

@@ -83,3 +83,11 @@ kubelet_seccomp_default: false
 # otherwise). See the 01-k3s README, "Unsafe Sysctls".
 # kubelet_allowed_unsafe_sysctls:
 #   - net.ipv4.conf.all.src_valid_mark
+
+# Kata Containers runtime for CI pods (playbooks/01-k3s/kata-ci.yml). Off when
+# not set. Set kata_ci_enabled: true in the host_vars of each x86_64 node that
+# gets the kata-ci runtime, one node first. kata_sha256 is the sha256 of
+# kata-static-<kata_version>-amd64.tar.zst in the GitHub release metadata.
+# See the 01-k3s README, "Kata Containers for CI Pods".
+# kata_version: "4.4.0"
+# kata_sha256: "ccbc0cbc591089d0c57012b78da64b23ef43e0bac0f869dc7bfebe8588c33986"

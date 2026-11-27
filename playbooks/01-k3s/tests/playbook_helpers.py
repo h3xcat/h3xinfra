@@ -7,6 +7,7 @@ playbooks use. No hosts are contacted.
 import base64
 import copy
 import json
+import operator
 from pathlib import Path
 import re
 import time
@@ -46,7 +47,25 @@ def environment(native=True):
         "from_json": json.loads,
     })
     env.tests["match"] = lambda value, pattern: re.match(pattern, value) is not None
+    env.tests["version"] = version_test
     return env
+
+
+VERSION_OPERATORS = {
+    "==": operator.eq, "!=": operator.ne, "<": operator.lt, "<=": operator.le, ">": operator.gt, ">=": operator.ge,
+}
+
+
+def version_test(value, other, op="=="):
+    """Stand-in for the Ansible version test: compares the leading numbers.
+
+    "2.3.7-k3s1" counts as 2.3.7. Text without a leading number counts as 0.
+    """
+    def numbers(text):
+        found = re.match(r"[0-9]+([.][0-9]+)*", str(text))
+        return tuple(int(n) for n in found.group(0).split(".")) if found else (0,)
+
+    return VERSION_OPERATORS[op](numbers(value), numbers(other))
 
 
 def conditions(task):
