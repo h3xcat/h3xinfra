@@ -25,3 +25,7 @@ longhorn:
       oidc_issuer_url: "https://auth.app.example.com/realms/h3xinfra"
       client_id: "longhorn"
       client_secret: "{{ longhorn_oidc_client_secret }}"
+      # Optional: admit only these Keycloak groups. The UI proxies the
+      # Longhorn API without authentication. Set `groups_claim: true` on the
+      # Keycloak client first, or the gate denies all users.
+      # allowed_groups: ["k8s-admins"]

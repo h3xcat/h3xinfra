@@ -5,6 +5,10 @@
 {{- $_ := required "longhornIngress.oidc.clientSecret is required when oidc.enabled" .Values.longhornIngress.oidc.clientSecret -}}
 {{- $_ := required "longhornIngress.oidc.secretRef.name is required when oidc.enabled" .Values.longhornIngress.oidc.secretRef.name -}}
 {{- end }}
+{{- $groups := .Values.longhornIngress.oidc.allowedGroups }}
+{{- if and $groups (not .Values.longhornIngress.oidc.enabled) }}
+{{- fail "longhornIngress.oidc.allowedGroups needs oidc.enabled: the group check reads the OIDC ID token" }}
+{{- end }}
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: SecurityPolicy
@@ -18,16 +22,45 @@ spec:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: {{ include "h3xinfra-longhorn-post.fullname" . }}
-  {{- if .Values.longhornIngress.trustedIPs }}
+  {{- if or .Values.longhornIngress.trustedIPs $groups }}
+  # One Allow rule: all principals in it must match (client CIDR AND group).
   authorization:
     defaultAction: Deny
     rules:
       - action: Allow
         principal:
+          {{- with .Values.longhornIngress.trustedIPs }}
           clientCIDRs:
-            {{- range .Values.longhornIngress.trustedIPs }}
+            {{- range . }}
             - {{ . | quote }}
             {{- end }}
+          {{- end }}
+          {{- if $groups }}
+          jwt:
+            provider: keycloak-id-token
+            claims:
+              - name: groups
+                valueType: StringArray
+                values:
+                  {{- range $groups }}
+                  - {{ . | quote }}
+                  {{- end }}
+          {{- end }}
+  {{- end }}
+  {{- if $groups }}
+  # The OIDC filter runs first: it drops a client-supplied header and sets it
+  # from the validated session. The JWT filter reads only that header.
+  jwt:
+    providers:
+      - name: keycloak-id-token
+        issuer: {{ .Values.longhornIngress.oidc.issuerUrl | quote }}
+        audiences:
+          - {{ .Values.longhornIngress.oidc.clientId | quote }}
+        remoteJWKS:
+          uri: {{ printf "%s/protocol/openid-connect/certs" .Values.longhornIngress.oidc.issuerUrl | quote }}
+        extractFrom:
+          headers:
+            - name: {{ .Values.longhornIngress.oidc.idTokenHeader | quote }}
   {{- end }}
   {{- if .Values.longhornIngress.oidc.enabled }}
   oidc:
@@ -38,6 +71,10 @@ spec:
       name: {{ .Values.longhornIngress.oidc.secretRef.name | quote }}
     redirectURL: {{ printf "https://%s/oauth2/callback" .Values.longhornIngress.host | quote }}
     logoutPath: "/oauth2/sign_out"
+    {{- if $groups }}
+    forwardIDToken:
+      header: {{ .Values.longhornIngress.oidc.idTokenHeader | quote }}
+    {{- end }}
     scopes:
       - openid
       - email
