@@ -616,3 +616,193 @@ Set the sysctl in the pod instead (`spec.securityContext.sysctls`). Also add
 it to `kubelet_allowed_unsafe_sysctls`. `wg-quick` does not write the sysctl
 if its value is already `1`. Thus, the WireGuard container needs no
 privileges for it.
+
+# Kata Containers for CI Pods
+
+`kata-ci.yml` installs Kata Containers on a node and adds the containerd
+runtime `kata-ci`. A pod with a RuntimeClass for the handler `kata-ci` runs
+in its own QEMU virtual machine. The runtime is for CI runner pods. A
+privileged container in such a pod, for example `dockerd`, gets root access
+only in its virtual machine.
+
+This layer installs only the runtime on the nodes. The RuntimeClass, the
+node label and the pods are not in this layer.
+
+These inventory variables control the playbook:
+
+| Variable | Effect |
+| --- | --- |
+| `kata_ci_enabled` | `true` installs Kata on the node and adds the `kata-ci` runtime. Set it in the `host_vars` of the node. The default is `false`. With `false`, the playbook removes the runtime. |
+| `kata_version` | The Kata version, for example `4.4.0`. The playbook needs it on each node with `kata_ci_enabled: true`. |
+| `kata_sha256` | The SHA-256 of `kata-static-<kata_version>-amd64.tar.zst`. The playbook needs it on each node with `kata_ci_enabled: true`. |
+
+This example installs Kata 4.4.0 on one node:
+
+```yaml
+# group_vars/all: the version and the SHA-256 of its release archive
+kata_version: "4.4.0"
+kata_sha256: "ccbc0cbc591089d0c57012b78da64b23ef43e0bac0f869dc7bfebe8588c33986"
+
+# host_vars of the node
+kata_ci_enabled: true
+```
+
+Take `kata_sha256` from the GitHub release metadata of the version. This
+command prints it:
+
+```sh
+gh release view 4.4.0 --repo kata-containers/kata-containers --json assets \
+  --jq '.assets[] | select(.name == "kata-static-4.4.0-amd64.tar.zst") | .digest'
+```
+
+The playbook checks both variables on all nodes before it changes a node.
+`kata_version` must have the form `<major>.<minor>.<patch>`. `kata_sha256`
+must have 64 lowercase hexadecimal characters.
+
+## Installation Steps
+
+On a node with `kata_ci_enabled: true`, the playbook does these steps:
+
+1. It checks that the node is `x86_64` and has `/dev/kvm`. If K3s runs, it
+   also checks that containerd has version 2.3 or later. Kata 4.4 needs
+   containerd 2.3. K3s v1.37.2 contains containerd 2.3.7.
+2. If the release is not on the node, it checks that `/opt` has 10 GiB of
+   free space. The archive of Kata 4.4.0 has approximately 1 GiB. The release
+   files use approximately 2.1 GiB.
+3. It installs the `zstd` package. Then it downloads the release archive from
+   GitHub. It verifies the SHA-256 of the archive against `kata_sha256`.
+4. It extracts the archive to `/opt/kata-releases/<kata_version>` and deletes
+   the archive. The release contains the runtime-rs shim, QEMU, `virtiofsd`,
+   the guest kernel and the guest image. The release directory appears only
+   after a complete extraction.
+5. It writes the hardening drop-in of Kata into the release. See
+   [Kata Settings](#kata-settings). The release archive has no `config.d`
+   directory, so the playbook creates it first.
+6. It points the symlink `/opt/kata` to the release.
+7. It loads the kernel modules `vhost_vsock` and `vhost_net`. It also writes
+   them to `/etc/modules-load.d`. Thus, the node loads them at each boot.
+8. It writes the containerd drop-in
+   `/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/50-kata-ci.toml`.
+   K3s does not create the directory `config-v3.toml.d`, so the playbook
+   creates it first.
+
+K3s v1.37 writes an `imports` line for `config-v3.toml.d/*.toml` into the
+containerd configuration that it generates. containerd merges the tables of
+an imported file into that configuration. The `runc` runtime stays. The
+drop-in sets these values for the `kata-ci` runtime:
+
+| Key | Value | Effect |
+| --- | --- | --- |
+| `runtime_type` | `io.containerd.kata.v2` | The shim API of Kata. |
+| `runtime_path` | `/opt/kata/runtime-rs/bin/containerd-shim-kata-v2` | containerd starts this shim. It does not look for a shim in `PATH`. |
+| `privileged_without_host_devices` | `true` | A privileged container gets no devices of the node. |
+| `pod_annotations`, `container_annotations` | `[]` | containerd sends no pod annotations and no container annotations to the shim. |
+| `options.ConfigPath` | `/opt/kata/share/defaults/kata-containers/runtime-rs/configuration-qemu-runtime-rs.toml` | The shim uses QEMU. |
+
+The drop-in has `version = 3`. containerd reads an imported file without a
+version as a version 1 file.
+
+## Kata Settings
+
+The shim reads `configuration-qemu-runtime-rs.toml` at each pod start. It
+merges the files of the `config.d` directory next to that file into it. The
+shim resolves the symlinks in the path first. Thus, the playbook writes the
+drop-in to
+`/opt/kata-releases/<kata_version>/share/defaults/kata-containers/runtime-rs/config.d/50-h3xinfra-kata-ci.toml`.
+Each release gets its own copy before `/opt/kata` points to it. A change of
+this drop-in needs no restart.
+
+| Key | Value | Effect |
+| --- | --- | --- |
+| `enable_annotations` | `[]` | Pod annotations cannot change the virtual machine. The release default allows `kernel_params`, `default_vcpus` and `default_memory`. |
+| `valid_hypervisor_paths`, `valid_virtio_fs_daemon_paths` | `/opt/kata/bin/qemu-system-x86_64`, `/opt/kata/libexec/virtiofsd` | The shim starts only the QEMU and the `virtiofsd` of the release. |
+| `seccomp_sandbox` | `on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny` | The seccomp filter of QEMU blocks deprecated system calls (`obsolete`), privilege changes (`elevateprivileges`), new processes (`spawn`) and resource control calls (`resourcecontrol`). |
+| `cpu_features` | `pmu=off,vmx=off` | The guest gets no performance counters and no nested virtualization. |
+| `debug_console_enabled` | `false` | The guest has no debug console. |
+| `emptydir_mode` | `block-plain` | An `emptyDir` volume is a sparse disk image on the node and an ext4 file system in the guest. Thus, `dockerd` can use overlayfs on `/var/lib/docker`. |
+| `rootless` | `false` | QEMU runs as root. |
+
+With `rootless = true`, QEMU runs as a temporary user without privileges.
+The Kata documentation says that a block device fails if that user cannot
+open it. There was no test of `rootless` with privileged containers and
+`block-plain` volumes. Thus, `rootless` stays off. The seccomp filter is then
+the main limit on a QEMU process that an attacker controls. Test `rootless`
+on one node before you change it.
+
+## Restarts and Checks
+
+containerd reads its drop-in only when K3s starts. The playbook reads the
+`kata-ci` runtime of the containerd that runs (`k3s crictl info`). It
+restarts K3s only if that runtime differs from the runtime that the node must
+have. This covers these cases:
+
+- The drop-in is new or changed.
+- The playbook removed the drop-in.
+- An earlier run stopped before the restart.
+
+The restart uses the shared task files `tasks/k3s-service-state.yml` and
+`tasks/restart-k3s.yml`. See [Restarts](#restarts) for their guards. The
+playbook works on the control-plane nodes first and then on the agent nodes,
+one node at a time. It never starts a stopped K3s.
+
+After the restart, the playbook checks these items:
+
+- The containerd configuration that K3s generated imports
+  `config-v3.toml.d/*.toml`. A template `config-v3.toml.tmpl` can remove this
+  line.
+- The containerd that runs has the `kata-ci` runtime with the values of the
+  drop-in. On the other nodes, it has no `kata-ci` runtime.
+
+A new `kata_version` installs a new release and points `/opt/kata` to it.
+This change needs no K3s restart. New pods use the new release. Pods that run
+keep their release. The playbook does not delete old releases. When no pod
+uses an old release, delete its directory by hand.
+
+`standup.yml` imports `kata-ci.yml` before the K3s install, as it imports
+`registries.yml`. A new node thus has the drop-in at the first start of K3s.
+After the install, a new cluster has no CNI. Then a node cannot become Ready
+after a restart. To deploy only this change, run this command from the root
+of the repository:
+
+```sh
+ansible-playbook playbooks/01-k3s/kata-ci.yml
+```
+
+`--check` shows the nodes that a real run restarts. In check mode, the
+playbook does not download or extract the release.
+
+Enable Kata on one node first. Then start a test pod with the `kata-ci`
+RuntimeClass on that node. Make sure that the pod starts before you enable
+Kata on the next node.
+
+## Kata Removal
+
+1. Stop the pods that use the `kata-ci` RuntimeClass on the node. Make sure
+   that no new pod with this RuntimeClass can start on the node.
+2. Set `kata_ci_enabled: false` for the node, or remove the variable.
+3. Run `ansible-playbook playbooks/01-k3s/kata-ci.yml`. It removes the
+   containerd drop-in and restarts K3s on the node.
+
+The playbook removes the drop-in before it checks the K3s service. Thus, the
+removal also works if the drop-in stops K3s. In that case, the playbook stops
+at the service check. systemd starts K3s again without the drop-in. If K3s
+shows `failed`, start it with `systemctl restart k3s-agent` (`k3s` on a
+control-plane node). Then run the playbook again.
+
+The playbook does not remove `/opt/kata`, `/opt/kata-releases` or the module
+files in `/etc/modules-load.d`. Without the containerd drop-in, containerd
+does not use them. To remove them, delete them by hand.
+
+## Upstream Facts
+
+The playbook depends on these facts of Kata 4.4.0 and K3s v1.37.2. Check them
+again after an update of Kata or K3s:
+
+- The archive `kata-static-<version>-amd64.tar.zst` contains `./opt/kata/`.
+  The runtime-rs shim is `runtime-rs/bin/containerd-shim-kata-v2` in it.
+- The shim reads `config.d` next to the real path of its configuration file
+  (`src/libs/kata-types/src/config/drop_in.rs`).
+- The shim takes the configuration path from `options.ConfigPath`
+  (`src/runtime-rs/crates/runtimes/common/src/config.rs`).
+- K3s imports `config-v3.toml.d/*.toml` from the containerd configuration
+  directory (`pkg/agent/templates/templates.go`).

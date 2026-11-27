@@ -278,6 +278,14 @@
 - name: Configure the containerd registries
   import_playbook: registries.yml
 
+# Opt-in Kata Containers runtime for CI pods (kata_ci_enabled, per host). It
+# runs before the install for the same reason. On a running cluster it
+# restarts only the nodes whose kata-ci runtime must change, one at a time.
+# After the install, a new cluster has no CNI yet, so no node can become
+# Ready for the restart checks.
+- name: Configure the Kata CI runtime
+  import_playbook: kata-ci.yml
+
 # K3s install. The next three plays copy the plays of playbooks/site.yml in
 # the k3s.orchestration collection (1.2.2): the same roles in the same order,
 # with the same become and gather_facts. Compare them with site.yml again

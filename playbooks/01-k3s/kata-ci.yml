@@ -1,0 +1,133 @@
+---
+# =============================================================================
+# Kata Containers runtime for CI pods (RuntimeClass handler `kata-ci`).
+#
+# Opt-in per host. Driven by these inventory vars:
+#   kata_ci_enabled  true installs Kata and adds the kata-ci runtime to the
+#                    containerd of K3s. Default false: the node has no kata-ci
+#                    runtime, and a drop-in from an earlier run is removed.
+#   kata_version     Kata release, for example "4.4.0".
+#   kata_sha256      sha256 of kata-static-<kata_version>-amd64.tar.zst (the
+#                    digest of the release asset on GitHub).
+#
+# On a node with kata_ci_enabled the play:
+#   1. checks x86_64, /dev/kvm and containerd >= 2.3 (Kata 4.4 needs 2.3),
+#   2. downloads the release archive, checks kata_sha256 and extracts it to
+#      /opt/kata-releases/<kata_version> (QEMU, virtiofsd, guest kernel and
+#      image, the runtime-rs shim),
+#   3. writes the Kata hardening drop-in into the config.d directory of that
+#      release, then points /opt/kata to the release,
+#   4. loads vhost_vsock and vhost_net now and at boot,
+#   5. writes the containerd drop-in
+#      /var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/50-kata-ci.toml.
+#      K3s v1.37 imports config-v3.toml.d/*.toml into the containerd
+#      configuration that it generates.
+#
+# containerd reads the drop-in only when K3s starts. A node restarts only when
+# the kata-ci runtime of its running containerd (`k3s crictl info`) differs
+# from the runtime that it should have. That covers a drop-in that changed in
+# this run, a removed drop-in and an earlier run that stopped before the
+# restart. Servers restart first, then agents, one node at a time, with the
+# guards of tasks/restart-k3s.yml (other servers ready, etcd nodes Ready and
+# not cordoned, no kured lock). After the restart, the play checks that the
+# generated containerd configuration imports config-v3.toml.d and that the
+# running containerd has the kata-ci runtime (or, on other nodes, has not).
+# The play stops at the first failure, before it touches the next node.
+#
+# A stopped K3s (inactive) is never started or restarted, and its node gets
+# the containerd checks at the next run. A failed or starting K3s stops the
+# play. On a node without kata_ci_enabled, the drop-in is removed before that
+# check, so the rollback also works when the drop-in stops K3s from starting.
+# standup.yml imports this playbook before the K3s install, as registries.yml.
+# =============================================================================
+- name: Validate the Kata CI runtime settings
+  hosts: k3s_cluster
+  become: false
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    # The values go into a URL and a shell command, so only digits, dots and
+    # hex characters pass.
+    - name: Check kata_version and kata_sha256
+      ansible.builtin.assert:
+        that:
+          - kata_version | default('') | string is match('^[0-9]+[.][0-9]+[.][0-9]+$')
+          - kata_sha256 | default('') | string is match('^[0-9a-f]{64}$')
+        fail_msg: >-
+          kata_ci_enabled is true on {{ inventory_hostname }}. Set kata_version
+          (for example 4.4.0) and kata_sha256 (64 lowercase hex characters: the
+          sha256 of kata-static-<kata_version>-amd64.tar.zst in the GitHub
+          release metadata).
+        quiet: true
+      when: kata_ci_enabled | default(false) | bool
+
+- name: Apply the Kata CI runtime on servers, one at a time
+  hosts: server
+  become: true
+  gather_facts: false
+  serial: 1
+  max_fail_percentage: 0
+  vars: &kata_ci_vars
+    kata_ci_on: "{{ kata_ci_enabled | default(false) | bool }}"
+    kata_ci_unit_name: "{{ 'k3s' if inventory_hostname in groups.get('server', []) else 'k3s-agent' }}"
+    kata_ci_release_dir: "/opt/kata-releases/{{ kata_version }}"
+    kata_ci_archive: "/opt/kata-releases/kata-static-{{ kata_version }}-amd64.tar.zst"
+    kata_ci_url: "https://github.com/kata-containers/kata-containers/releases/download/{{ kata_version }}/kata-static-{{ kata_version }}-amd64.tar.zst"
+    # Paths in the release archive (./opt/kata/...). The shipped
+    # configuration-qemu-runtime-rs.toml uses the same paths.
+    kata_ci_shim: /opt/kata/runtime-rs/bin/containerd-shim-kata-v2
+    kata_ci_qemu: /opt/kata/bin/qemu-system-x86_64
+    kata_ci_virtiofsd: /opt/kata/libexec/virtiofsd
+    kata_ci_config: /opt/kata/share/defaults/kata-containers/runtime-rs/configuration-qemu-runtime-rs.toml
+    # The shim resolves symlinks in the configuration path (fs::canonicalize
+    # in kata-types) and reads the drop-ins in the config.d directory next to
+    # the real file. So the drop-in goes into the release directory, and each
+    # release gets its own copy before /opt/kata points to it.
+    kata_ci_kata_dropin: "{{ kata_ci_release_dir }}/share/defaults/kata-containers/runtime-rs/config.d/50-h3xinfra-kata-ci.toml"
+    kata_ci_containerd_dropin_dir: /var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d
+    kata_ci_containerd_dropin: "{{ kata_ci_containerd_dropin_dir }}/50-kata-ci.toml"
+    # Generated by K3s at every start; holds registry credentials, so the
+    # play only counts lines in it.
+    kata_ci_containerd_config: /var/lib/rancher/k3s/agent/etc/containerd/config.toml
+    # In check mode the release is not extracted. Tasks that need its files
+    # then run only when an earlier run installed it.
+    kata_ci_release_ready: "{{ not ansible_check_mode or (kata_ci_release.stat.exists | default(false) | bool) }}"
+    # "RuntimeVersion:  v2.3.7-k3s1" in `k3s crictl version`.
+    kata_ci_containerd_version: >-
+      {{ (kata_ci_crictl_version.stdout_lines | default([]) | select('match', '^RuntimeVersion:')
+          | first | default('RuntimeVersion: v0')).split()[-1].lstrip('v') }}
+    # The kata-ci runtime of the running containerd (`k3s crictl info`), or
+    # none. kata_ci_loaded keeps only the fields that the drop-in sets.
+    kata_ci_runtime: >-
+      {{ ((((kata_ci_crictl_info.stdout | default('{}', true) | from_json).get('config') or {})
+           .get('containerd') or {}).get('runtimes') or {}).get('kata-ci') }}
+    kata_ci_loaded: >-
+      {{ none if not kata_ci_runtime else
+         {'runtime_type': kata_ci_runtime.get('runtimeType'),
+          'runtime_path': kata_ci_runtime.get('runtimePath'),
+          'privileged_without_host_devices': kata_ci_runtime.get('privileged_without_host_devices'),
+          'pod_annotations': kata_ci_runtime.get('PodAnnotations') or [],
+          'container_annotations': kata_ci_runtime.get('ContainerAnnotations') or [],
+          'config_path': (kata_ci_runtime.get('options') or {}).get('ConfigPath')} }}
+    kata_ci_expected: >-
+      {{ none if not (kata_ci_on | bool) else
+         {'runtime_type': 'io.containerd.kata.v2',
+          'runtime_path': kata_ci_shim,
+          'privileged_without_host_devices': true,
+          'pod_annotations': [],
+          'container_annotations': [],
+          'config_path': kata_ci_config} }}
+  tasks:
+    - name: Apply the Kata CI runtime
+      ansible.builtin.import_tasks: tasks/kata-ci.yml
+
+- name: Apply the Kata CI runtime on agents, one at a time
+  hosts: agent
+  become: true
+  gather_facts: false
+  serial: 1
+  max_fail_percentage: 0
+  vars: *kata_ci_vars
+  tasks:
+    - name: Apply the Kata CI runtime
+      ansible.builtin.import_tasks: tasks/kata-ci.yml
