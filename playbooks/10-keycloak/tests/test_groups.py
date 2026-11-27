@@ -1,4 +1,4 @@
-"""Test mocked Keycloak client/group/reset-flow plans and the groups tfvars pass-through."""
+"""Test mocked Keycloak client/group/reset-flow/events plans and the groups tfvars pass-through."""
 
 import json
 import os
@@ -14,10 +14,11 @@ import yaml
 
 LAYER = Path(__file__).resolve().parents[1]
 TERRAFORM = os.environ.get("TERRAFORM") or shutil.which("terraform") or "terraform"
-# Only the realm, client, group, scope and authentication flow files. No
+# Only the realm, client, group, scope, authentication flow and events files. No
 # backend, state, tfvars or real provider calls can enter this test.
 MODULE_FILES = ("providers.tf", "variables.tf", "realm.tf", "clients.tf", "groups.tf",
-                "kubernetes_oidc.tf", "mfa.tf", "reset_credentials.tf", ".terraform.lock.hcl")
+                "kubernetes_oidc.tf", "mfa.tf", "reset_credentials.tf", "events.tf",
+                ".terraform.lock.hcl")
 
 
 class KeycloakGroupsTests(unittest.TestCase):
