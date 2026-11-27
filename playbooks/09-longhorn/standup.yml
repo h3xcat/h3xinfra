@@ -354,6 +354,7 @@
               clientSecret: "{{ longhorn.auth.oauth2_proxy.client_secret | default('') }}"
               secretRef:
                 name: "{{ longhorn.release_name_prefix }}-oidc"
+              allowedGroups: "{{ longhorn.auth.oauth2_proxy.allowed_groups | default([]) }}"
         set_values:
           # `jobs` is a list of dicts; pass through to_json so Helm gets
           # native YAML/JSON instead of an Ansible-stringified list.

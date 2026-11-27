@@ -36,6 +36,14 @@ spec:
         - path:
             type: PathPrefix
             value: /
+      {{- if and .Values.longhornIngress.oidc.enabled .Values.longhornIngress.oidc.allowedGroups }}
+      filters:
+        # The group check reads the ID token; the UI does not need it.
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - {{ .Values.longhornIngress.oidc.idTokenHeader | quote }}
+      {{- end }}
       backendRefs:
         - name: longhorn-frontend
           port: 80

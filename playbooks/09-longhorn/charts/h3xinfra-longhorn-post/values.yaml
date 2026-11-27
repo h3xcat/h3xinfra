@@ -27,6 +27,15 @@ longhornIngress:
     clientSecret: ""
     secretRef:
       name: ""
+    # Keycloak groups that may use the UI. Empty = any realm user. When set,
+    # the OIDC filter forwards the ID token in idTokenHeader, the JWT filter
+    # validates it (issuer, audience = clientId), and the policy allows only
+    # a token whose `groups` claim holds one of these groups. The Keycloak
+    # client must send that claim in the ID token.
+    allowedGroups: []
+    # Header that carries the validated ID token from the OIDC filter to the
+    # JWT filter. The route removes it before the request reaches the UI.
+    idTokenHeader: X-Oidc-Id-Token
 
 # Longhorn RecurringJob CRs (scheduled snapshots / backups). Each entry in
 # `jobs` renders a RecurringJob; an empty list renders none.

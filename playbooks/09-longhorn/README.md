@@ -64,6 +64,16 @@ pods accept TCP 8000 only from the Envoy proxy pods of
 This also applies to pods in the Longhorn namespace. Without a gateway name, the
 UI admits no pod.
 
+OIDC alone admits each user of the realm. Post chart 0.5.0 adds an optional
+group gate. Set `longhorn.auth.oauth2_proxy.allowed_groups`, for example
+`["k8s-admins"]`. Then the OIDC filter forwards the ID token in the header
+`X-Oidc-Id-Token`. The JWT filter validates the token, with the client ID as
+the audience. The policy admits only a token with one of the groups in its
+`groups` claim. The route removes the header before the request goes to the
+UI. Before you set the list, set `groups_claim: true` on the Keycloak client
+(`10-keycloak`). Without the claim, the gate denies all users. An empty list
+keeps the earlier policy.
+
 ## Attended Failure Recovery
 
 `nodeDownPodDeletionPolicy: do-nothing` disables the automatic force deletion of
