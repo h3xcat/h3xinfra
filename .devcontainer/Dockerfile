@@ -34,7 +34,7 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
 # (renovate.json caps it via allowedVersions). Renovate bumps the ARGs through
 # the generic `# renovate:` marker manager.
 # renovate: datasource=github-releases depName=kubernetes/kubernetes extractVersion=^v(?<version>.+)$
-ARG KUBECTL_VERSION=1.37.2
+ARG KUBECTL_VERSION=1.37.3
 # renovate: datasource=github-releases depName=helm/helm
 ARG HELM_VERSION=v4.3.2
 
